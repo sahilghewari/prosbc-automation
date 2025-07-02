@@ -317,7 +317,6 @@ function FileManagement({ onAuthError }) {
               { id: 'overview', label: '📊 Overview', icon: '📊' },
               { id: 'df-files', label: '📄 DF Files', icon: '📄' },
               { id: 'dm-files', label: '🗺️ DM Files', icon: '🗺️' },
-              { id: 'management', label: '⚙️ Management', icon: '⚙️' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -432,13 +431,8 @@ function FileManagement({ onAuthError }) {
                       <span className="text-xl">🗺️</span>
                       <span>Manage DM Files</span>
                     </button>
-                    <button
-                      onClick={() => setActiveTab('management')}
-                      className="p-4 bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-lg hover:from-indigo-600 hover:to-indigo-700 transition-all duration-200 flex items-center space-x-2"
-                    >
-                      <span className="text-xl">⚙️</span>
-                      <span>Tools & Settings</span>
-                    </button>
+                    
+                
                   </div>
                 </div>
               </div>
@@ -486,145 +480,7 @@ function FileManagement({ onAuthError }) {
               </div>
             )}
 
-            {/* Management Tab */}
-            {activeTab === 'management' && (
-              <div className="space-y-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  
-                  {/* File Operations */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-6">
-                    <div className="flex items-center mb-4">
-                      <span className="text-3xl mr-3">📂</span>
-                      <h3 className="text-xl font-bold text-gray-800">File Operations</h3>
-                    </div>
-                    <div className="space-y-3">
-                      <button
-                        onClick={loadFiles}
-                        disabled={refreshing}
-                        className={`w-full p-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          refreshing
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                        }`}
-                      >
-                        🔄 Refresh All Files
-                      </button>
-                      <button
-                        onClick={handleSystemStatusCheck}
-                        disabled={isLoading}
-                        className={`w-full p-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          isLoading
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-green-100 text-green-700 hover:bg-green-200'
-                        }`}
-                      >
-                        📊 Check System Status
-                      </button>
-                      <button
-                        onClick={() => setMessage("")}
-                        className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all duration-200"
-                      >
-                        🧹 Clear Messages
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Best Practices */}
-                  <div className="bg-white border border-gray-200 rounded-xl p-6">
-                    <div className="flex items-center mb-4">
-                      <span className="text-3xl mr-3">💡</span>
-                      <h3 className="text-xl font-bold text-gray-800">Best Practices</h3>
-                    </div>
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <p>• Always export backup before updating files</p>
-                      <p>• Test file changes in staging environment</p>
-                      <p>• Validate file formats before updating</p>
-                      <p>• Monitor system after file changes</p>
-                      <p>• Keep documentation of file modifications</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* File Actions Guide */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                  <div className="flex items-center mb-6">
-                    <span className="text-3xl mr-3">📖</span>
-                    <h3 className="text-xl font-bold text-gray-800">Available Actions</h3>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-blue-800 flex items-center">
-                        <span className="mr-2">✏️</span>
-                        Update Files
-                      </h4>
-                      <div className="bg-blue-50 rounded-lg p-4 text-sm">
-                        <p className="text-gray-600 mb-2">Modify file content directly in the browser</p>
-                        <ul className="text-gray-600 space-y-1">
-                          <li>• Edit CSV data inline</li>
-                          <li>• Validate changes before saving</li>
-                          <li>• Auto-backup before updates</li>
-                        </ul>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-green-800 flex items-center">
-                        <span className="mr-2">💾</span>
-                        Export Files
-                      </h4>
-                      <div className="bg-green-50 rounded-lg p-4 text-sm">
-                        <p className="text-gray-600 mb-2">Download files for backup or editing</p>
-                        <ul className="text-gray-600 space-y-1">
-                          <li>• Download as original format</li>
-                          <li>• Create local backups</li>
-                          <li>• Share configurations</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-red-800 flex items-center">
-                        <span className="mr-2">🗑️</span>
-                        Delete Files
-                      </h4>
-                      <div className="bg-red-50 rounded-lg p-4 text-sm">
-                        <p className="text-gray-600 mb-2">Remove unused or outdated files</p>
-                        <ul className="text-gray-600 space-y-1">
-                          <li>• Confirmation required</li>
-                          <li>• Permanent deletion</li>
-                          <li>• Cleanup old versions</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* System Status Check */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                  <div className="flex items-center mb-4">
-                    <span className="text-3xl mr-3">🔍</span>
-                    <h3 className="text-xl font-bold text-gray-800">System Status</h3>
-                  </div>
-                  <div className="space-y-3">
-                    <p className="text-gray-600 text-sm">
-                      Check the current status of the ProSBC system and diagnose potential issues
-                    </p>
-                    <button
-                      onClick={handleSystemStatusCheck}
-                      disabled={isLoading}
-                      className={`w-full px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        isLoading
-                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                          : 'bg-green-100 text-green-700 hover:bg-green-200'
-                      }`}
-                    >
-                      {isLoading ? 'Checking...' : '🛠️ Check System Status'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+           
           </div>
         </div>
 

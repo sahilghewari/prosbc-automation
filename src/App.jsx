@@ -3,11 +3,11 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import NapCreator from './components/NapCreator';
 import NapManager from './components/NapManager';
-import NapTester from './components/NapTester';
 import FileUploader from './components/FileUploader';
 import FileManagement from './components/FileManagement';
-import DfManager from './components/DfManager';
-import DmManager from './components/DmManager';
+import RoutesetMapping from './components/RoutesetMapping';
+import ActivationGeneration from './components/ActivationGeneration';
+
 import { setupAuthentication } from './utils/napApiClientFixed';
 import './App.css';
 
@@ -17,7 +17,6 @@ function App() {
   const [authError, setAuthError] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Initialize authentication on app load
   useEffect(() => {
     const initializeAuth = async () => {
       try {
@@ -37,7 +36,6 @@ function App() {
     setAuthError('Authentication required. Please check your .env file credentials.');
   };
 
-  // Show loading or error state if not ready
   if (!isReady) {
     return (
       <div className="min-h-screen bg-gray-100 pt-16">
@@ -80,37 +78,19 @@ function App() {
         return <NapCreator onAuthError={handleAuthError} />;
       case 'nap-management':
         return <NapManager onAuthError={handleAuthError} />;
-      case 'nap-tester':
-        return <NapTester />;
       case 'dm-df-upload':
         return <FileUploader onAuthError={handleAuthError} />;
       case 'dm-df-management':
         return <FileManagement onAuthError={handleAuthError} />;
-      case 'df-manager':
-        return <DfManager onAuthError={handleAuthError} />;
-      case 'dm-manager':
-        return <DmManager onAuthError={handleAuthError} />;
       case 'routeset-mapping':
-        return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Routeset Mapping</h2>
-            <p className="text-gray-600 mb-2">Mapping of Routeset files and NAP</p>
-            <p className="text-gray-500">This section will handle the mapping between routeset files and NAP configurations.</p>
-          </div>
-        );
+        return <RoutesetMapping onAuthError={handleAuthError} />;
       case 'activation-generation':
-        return (
-          <div className="p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Activation and Generation</h2>
-            <p className="text-gray-600">This section will handle activation and generation processes.</p>
-          </div>
-        );
+        return <ActivationGeneration onAuthError={handleAuthError} />;
       default:
         return <NapCreator onAuthError={handleAuthError} />;
     }
   };
 
-  // Show main app if ready
   return (
     <div className="min-h-screen bg-gray-100">
       <Navbar />

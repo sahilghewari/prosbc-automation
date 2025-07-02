@@ -135,44 +135,7 @@ function FileUploader({ onAuthError }) {
         </div>
 
         {/* File Upload Info */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 mb-8">
-          <div className="mb-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <span className="text-3xl">ℹ️</span>
-              <h3 className="text-2xl font-bold text-gray-800">File Upload Workflow</h3>
-            </div>
-            <p className="text-gray-600 mb-4">
-              This tool follows ProSBC's exact file upload workflow for seamless integration:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-800">Upload Steps:</h4>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                    <span>Access file upload form</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center text-xs font-bold">2</span>
-                    <span>Extract CSRF token</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                    <span>POST file with form data</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-800">File Types:</h4>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div><span className="font-medium text-purple-600">DF Files:</span> Routeset definitions for call routing</div>
-                  <div><span className="font-medium text-pink-600">DM Files:</span> Digit maps for number translation</div>
-                  <div><span className="font-medium text-blue-600">Format:</span> XML/CSV files from ProSBC exports</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        
 
         {/* Tab Navigation */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 mb-8">
@@ -345,41 +308,7 @@ function FileUploader({ onAuthError }) {
           </div>
         )}
 
-        {/* File Management Tips */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8">
-          <div className="flex items-center mb-6">
-            <span className="text-3xl mr-3">💡</span>
-            <h3 className="text-2xl font-bold text-gray-800">File Management Tips</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <h4 className="font-semibold text-gray-800 flex items-center">
-                <span className="text-purple-600 mr-2">📄</span>
-                DF File Best Practices
-              </h4>
-              <ul className="text-sm text-gray-600 space-y-1 ml-6">
-                <li>• Ensure XML files are well-formed</li>
-                <li>• Validate routeset definitions before upload</li>
-                <li>• Keep backup copies of working configurations</li>
-                <li>• Test in staging environment first</li>
-              </ul>
-            </div>
-            
-            <div className="space-y-3">
-              <h4 className="font-semibold text-gray-800 flex items-center">
-                <span className="text-pink-600 mr-2">🗺️</span>
-                DM File Best Practices
-              </h4>
-              <ul className="text-sm text-gray-600 space-y-1 ml-6">
-                <li>• Verify digit patterns are correct</li>
-                <li>• Check for conflicting mapping rules</li>
-                <li>• Document any custom transformations</li>
-                <li>• Test number translation thoroughly</li>
-              </ul>
-            </div>
-          </div>
-        </div>
+      
       </div>
     </div>
   );

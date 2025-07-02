@@ -321,46 +321,7 @@ function NapCreator({ onAuthError }) {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <div className="container mx-auto px-4 py-8 max-w-5xl">
         
-        {/* NAP Creation Info */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 mb-8">
-          <div className="mb-6">
-            <div className="flex items-center space-x-3 mb-4">
-              <span className="text-3xl">ℹ️</span>
-              <h3 className="text-2xl font-bold text-gray-800">ProSBC NAP Creation Workflow</h3>
-            </div>
-            <p className="text-gray-600 mb-4">
-              This tool now follows ProSBC's exact NAP creation workflow for better compatibility:
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-800">Creation Steps:</h4>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold">1</span>
-                    <span>POST to /naps with basic data</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold">2</span>
-                    <span>Server redirects to /naps/&#123;id&#125;/edit</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                    <span>PUT to /naps/&#123;id&#125; with full config</span>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <h4 className="font-semibold text-gray-800">Creation Options:</h4>
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div><span className="font-medium text-blue-600">Full Config:</span> Complete NAP with all form settings</div>
-                  <div><span className="font-medium text-green-600">SIP Proxy:</span> Basic proxy configuration only</div>
-                  <div><span className="font-medium text-orange-600">Simple:</span> Name only (fastest creation)</div>
-                  <div><span className="font-medium text-purple-600">Check NAPs:</span> View existing NAPs</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+       
 
         {/* Header */}
         <div className="text-center mb-12">
