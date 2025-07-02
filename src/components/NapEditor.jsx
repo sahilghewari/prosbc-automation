@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import NapEditService from '../utils/napEditService';
 
-const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSuccess }) => {
+const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessionCookie = '', onSuccess, onAuthError }) => {
+  console.log('EditNapModal rendered with props:', { isOpen, napId, baseUrl, sessionCookieExists: !!sessionCookie });
   const [formData, setFormData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -10,20 +11,26 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
   const napEditService = new NapEditService(baseUrl, sessionCookie);
 
   useEffect(() => {
+    console.log('NapEditor useEffect triggered:', { isOpen, napId, baseUrl });
     if (isOpen && napId) {
       loadNapData();
     }
   }, [isOpen, napId]);
 
   const loadNapData = async () => {
+    console.log('Loading NAP data for ID:', napId);
+    console.log('Base URL:', baseUrl);
+    console.log('Session Cookie available:', !!sessionCookie);
+    
     setLoading(true);
     setError(null);
     try {
       const data = await napEditService.getNapForEdit(napId);
+      console.log('NAP data loaded successfully:', data);
       setFormData(data);
     } catch (err) {
-      setError('Failed to load NAP data');
-      console.error(err);
+      console.error('Error loading NAP data:', err);
+      setError('Failed to load NAP data: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -56,13 +63,13 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-900">Edit NAP Configuration</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-lg shadow-2xl border border-gray-700 w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b border-gray-700 bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800">
+          <h2 className="text-2xl font-bold text-white">Edit NAP Configuration</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+            className="text-gray-400 hover:text-gray-200 text-2xl font-bold"
           >
             ×
           </button>
@@ -70,13 +77,13 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
 
         {loading && (
           <div className="flex items-center justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <span className="ml-2 text-gray-600">Loading NAP data...</span>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <span className="ml-2 text-gray-300">Loading NAP data...</span>
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md m-6">
+          <div className="bg-red-900/30 border border-red-700 text-red-400 px-4 py-3 rounded-md m-6">
             {error}
           </div>
         )}
@@ -84,8 +91,8 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
         {formData && (
           <>
             {/* Tab Navigation */}
-            <div className="border-b border-gray-200">
-              <nav className="flex space-x-8 px-6">
+            <div className="border-b border-gray-700 bg-gray-800/50">
+              <nav className="flex space-x-8 px-6 overflow-x-auto">
                 {[
                   { id: 'basic', label: 'Basic Settings' },
                   { id: 'sip', label: 'SIP Configuration' },
@@ -102,8 +109,8 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                     onClick={() => setActiveTab(tab.id)}
                     className={`py-4 px-1 border-b-2 font-medium text-sm ${
                       activeTab === tab.id
-                        ? 'border-blue-500 text-blue-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        ? 'border-blue-500 text-blue-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500'
                     }`}
                   >
                     {tab.label}
@@ -112,35 +119,35 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
               </nav>
             </div>
 
-            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[60vh]">
-              <div className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[60vh]" style={{scrollbarColor: '#4A5568 #1A202C', scrollbarWidth: 'thin'}}>
+              <div className="p-6 space-y-6 bg-gray-800">
                 {/* Basic Settings Tab */}
                 {activeTab === 'basic' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Basic Settings</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">Basic Settings</h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           NAP Name
                         </label>
                         <input
                           type="text"
                           value={formData.name || ''}
                           onChange={(e) => handleInputChange('name', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           required
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Default Profile
                         </label>
                         <select
                           value={formData.profileId || '1'}
                           onChange={(e) => handleInputChange('profileId', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         >
                           <option value="1">default</option>
                           <option value="2">asterisk</option>
@@ -155,9 +162,9 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         id="enabled"
                         checked={formData.enabled || false}
                         onChange={(e) => handleInputChange('enabled', e.target.checked)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
                       />
-                      <label htmlFor="enabled" className="ml-2 text-sm text-gray-700">
+                      <label htmlFor="enabled" className="ml-2 text-sm text-gray-300">
                         Enable this NAP
                       </label>
                     </div>
@@ -167,7 +174,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* SIP Configuration Tab */}
                 {activeTab === 'sip' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">SIP Configuration</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">SIP Configuration</h3>
                     
                     <div className="flex items-center mb-4">
                       <input
@@ -175,9 +182,9 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         id="sipUseProxy"
                         checked={formData.sipUseProxy || false}
                         onChange={(e) => handleInputChange('sipUseProxy', e.target.checked)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
                       />
-                      <label htmlFor="sipUseProxy" className="ml-2 text-sm text-gray-700">
+                      <label htmlFor="sipUseProxy" className="ml-2 text-sm text-gray-300">
                         Use Proxy Address
                       </label>
                     </div>
@@ -185,27 +192,27 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                     {formData.sipUseProxy && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Proxy Address
                           </label>
                           <input
                             type="text"
                             value={formData.proxyAddress || ''}
                             onChange={(e) => handleInputChange('proxyAddress', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                             placeholder="IP address or domain name"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Proxy Port
                           </label>
                           <input
                             type="number"
                             value={formData.proxyPort || '5060'}
                             onChange={(e) => handleInputChange('proxyPort', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           />
                         </div>
                       </div>
@@ -220,7 +227,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           onChange={(e) => handleInputChange('filterByProxyPort', e.target.checked)}
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <label htmlFor="filterByProxyPort" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="filterByProxyPort" className="ml-2 text-sm text-gray-300">
                           Filter by proxy port
                         </label>
                       </div>
@@ -233,7 +240,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           onChange={(e) => handleInputChange('pollRemoteProxy', e.target.checked)}
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <label htmlFor="pollRemoteProxy" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="pollRemoteProxy" className="ml-2 text-sm text-gray-300">
                           Poll Remote Proxy
                         </label>
                       </div>
@@ -246,7 +253,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           onChange={(e) => handleInputChange('acceptOnlyAuthorizedUsers', e.target.checked)}
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <label htmlFor="acceptOnlyAuthorizedUsers" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="acceptOnlyAuthorizedUsers" className="ml-2 text-sm text-gray-300">
                           Accept only authorized users
                         </label>
                       </div>
@@ -255,24 +262,24 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                     {formData.pollRemoteProxy && (
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Polling Interval
                           </label>
                           <input
                             type="number"
                             value={formData.proxyPollingInterval || '1'}
                             onChange={(e) => handleInputChange('proxyPollingInterval', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Unit
                           </label>
                           <select
                             value={formData.proxyPollingIntervalUnit || 'minutes'}
                             onChange={(e) => handleInputChange('proxyPollingIntervalUnit', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           >
                             <option value="milliseconds">milliseconds</option>
                             <option value="seconds">seconds</option>
@@ -287,7 +294,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* Authentication Tab */}
                 {activeTab === 'authentication' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Authentication Parameters</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">Authentication Parameters</h3>
                     
                     <div className="space-y-3">
                       <div className="flex items-center">
@@ -296,23 +303,23 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           id="registerToProxy"
                           checked={formData.registerToProxy || false}
                           onChange={(e) => handleInputChange('registerToProxy', e.target.checked)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
                         />
-                        <label htmlFor="registerToProxy" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="registerToProxy" className="ml-2 text-sm text-gray-300">
                           Register to Proxy
                         </label>
                       </div>
 
                       {formData.registerToProxy && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Address to Register
                           </label>
                           <input
                             type="text"
                             value={formData.addressToRegister || ''}
                             onChange={(e) => handleInputChange('addressToRegister', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                             placeholder="sip:username@hostname"
                           />
                         </div>
@@ -324,9 +331,9 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           id="ignoreRealm"
                           checked={formData.ignoreRealm || false}
                           onChange={(e) => handleInputChange('ignoreRealm', e.target.checked)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
                         />
-                        <label htmlFor="ignoreRealm" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="ignoreRealm" className="ml-2 text-sm text-gray-300">
                           Ignore realm
                         </label>
                       </div>
@@ -337,9 +344,9 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           id="reuseChallenge"
                           checked={formData.reuseChallenge || false}
                           onChange={(e) => handleInputChange('reuseChallenge', e.target.checked)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
                         />
-                        <label htmlFor="reuseChallenge" className="ml-2 text-sm text-gray-700">
+                        <label htmlFor="reuseChallenge" className="ml-2 text-sm text-gray-300">
                           Reuse challenge
                         </label>
                       </div>
@@ -347,38 +354,38 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Realm
                         </label>
                         <input
                           type="text"
                           value={formData.realm || ''}
                           onChange={(e) => handleInputChange('realm', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           User
                         </label>
                         <input
                           type="text"
                           value={formData.authUser || ''}
                           onChange={(e) => handleInputChange('authUser', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Password
                         </label>
                         <input
                           type="password"
                           value={formData.authPassword || ''}
                           onChange={(e) => handleInputChange('authPassword', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
                     </div>
@@ -388,11 +395,11 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* NAT Settings Tab */}
                 {activeTab === 'nat' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">NAT Settings</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">NAT Settings</h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-200 mb-1">
                           Remote Method (RTP)
                         </label>
                         <select
@@ -407,7 +414,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-200 mb-1">
                           Remote Method (SIP)
                         </label>
                         <select
@@ -422,7 +429,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-200 mb-1">
                           Local Method (RTP)
                         </label>
                         <input
@@ -434,7 +441,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-200 mb-1">
                           Local Method (SIP)
                         </label>
                         <input
@@ -451,7 +458,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* SIP-I Parameters Tab */}
                 {activeTab === 'sipi' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">SIP-I Parameters</h3>
+                    <h3 className="text-lg font-semibold text-gray-100">SIP-I Parameters</h3>
                     
                     <div className="space-y-4">
                       <div className="flex items-center">
@@ -462,20 +469,20 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           onChange={(e) => handleInputChange('sipiEnable', e.target.checked)}
                           className="mr-2"
                         />
-                        <label htmlFor="sipiEnable" className="text-sm font-medium text-gray-700">
+                        <label htmlFor="sipiEnable" className="text-sm font-medium text-gray-200">
                           Enable SIP-I
                         </label>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-200 mb-1">
                             ISUP Protocol Variant
                           </label>
                           <select
                             value={formData.isupProtocolVariant || 'ITU'}
                             onChange={(e) => handleInputChange('isupProtocolVariant', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="ANSI88">ANSI88</option>
                             <option value="ANSI92">ANSI92</option>
@@ -496,7 +503,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-200 mb-1">
                             Content Type
                           </label>
                           <input
@@ -508,7 +515,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-200 mb-1">
                             Call Progress Method
                           </label>
                           <select
@@ -529,7 +536,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                             onChange={(e) => handleInputChange('appendFToOutgoingCalls', e.target.checked)}
                             className="mr-2"
                           />
-                          <label htmlFor="appendFToOutgoingCalls" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="appendFToOutgoingCalls" className="text-sm font-medium text-gray-200">
                             Append F to Outgoing Calls
                           </label>
                         </div>
@@ -541,7 +548,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* Advanced Tab */}
                 {activeTab === 'advanced' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Advanced Parameters</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">Advanced Parameters</h3>
                     
                     <div className="space-y-4">
                       <div className="flex items-center">
@@ -552,14 +559,14 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                           onChange={(e) => handleInputChange('mapAnyResponseToAvailableStatus', e.target.checked)}
                           className="mr-2"
                         />
-                        <label htmlFor="mapAnyResponseToAvailableStatus" className="text-sm font-medium text-gray-700">
+                        <label htmlFor="mapAnyResponseToAvailableStatus" className="text-sm font-medium text-gray-200">
                           Map any response to available status
                         </label>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-200 mb-1">
                             Response Timeout
                           </label>
                           <div className="flex space-x-2">
@@ -581,7 +588,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-200 mb-1">
                             Max Forwards (Proxy Polling)
                           </label>
                           <input
@@ -600,19 +607,19 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                             onChange={(e) => handleInputChange('triggersCallProgress', e.target.checked)}
                             className="mr-2"
                           />
-                          <label htmlFor="triggersCallProgress" className="text-sm font-medium text-gray-700">
+                          <label htmlFor="triggersCallProgress" className="text-sm font-medium text-gray-200">
                             183 triggers call progress
                           </label>
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-300 mb-1">
                             Privacy Type
                           </label>
                           <select
                             value={formData.privacyType || 'P-Asserted-Identity'}
                             onChange={(e) => handleInputChange('privacyType', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           >
                             <option value="None">None</option>
                             <option value="Remote-Party-Id">Remote-Party-Id</option>
@@ -628,83 +635,83 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* Rate Limiting Tab */}
                 {activeTab === 'ratelimit' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Rate Limiting</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">Rate Limiting</h3>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Calls Per Second
                         </label>
                         <input
                           type="number"
                           value={formData.maxCallsPerSecond || '0'}
                           onChange={(e) => handleInputChange('maxCallsPerSecond', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Incoming Calls Per Second
                         </label>
                         <input
                           type="number"
                           value={formData.maxIncomingCallsPerSecond || '0'}
                           onChange={(e) => handleInputChange('maxIncomingCallsPerSecond', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Outgoing Calls Per Second
                         </label>
                         <input
                           type="number"
                           value={formData.maxOutgoingCallsPerSecond || '0'}
                           onChange={(e) => handleInputChange('maxOutgoingCallsPerSecond', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Simultaneous Incoming Calls
                         </label>
                         <input
                           type="number"
                           value={formData.maxSimultaneousIncomingCalls || '0'}
                           onChange={(e) => handleInputChange('maxSimultaneousIncomingCalls', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Simultaneous Outgoing Calls
                         </label>
                         <input
                           type="number"
                           value={formData.maxSimultaneousOutgoingCalls || '0'}
                           onChange={(e) => handleInputChange('maxSimultaneousOutgoingCalls', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Max Simultaneous Total Calls
                         </label>
                         <input
                           type="number"
                           value={formData.maxSimultaneousTotalCalls || '0'}
                           onChange={(e) => handleInputChange('maxSimultaneousTotalCalls', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Processing Delay Low Threshold
                         </label>
                         <div className="flex space-x-2">
@@ -712,12 +719,12 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                             type="number"
                             value={formData.processingDelayLowThreshold || '3'}
                             onChange={(e) => handleInputChange('processingDelayLowThreshold', e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           />
                           <select
                             value={formData.processingDelayLowUnit || 'seconds'}
                             onChange={(e) => handleInputChange('processingDelayLowUnit', e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           >
                             <option value="seconds">seconds</option>
                             <option value="minutes">minutes</option>
@@ -726,7 +733,7 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Processing Delay High Threshold
                         </label>
                         <div className="flex space-x-2">
@@ -734,12 +741,12 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                             type="number"
                             value={formData.processingDelayHighThreshold || '6'}
                             onChange={(e) => handleInputChange('processingDelayHighThreshold', e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           />
                           <select
                             value={formData.processingDelayHighUnit || 'seconds'}
                             onChange={(e) => handleInputChange('processingDelayHighUnit', e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           >
                             <option value="seconds">seconds</option>
                             <option value="minutes">minutes</option>
@@ -748,19 +755,19 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Nb Calls Per Period
                         </label>
                         <input
                           type="number"
                           value={formData.nbCallsPerPeriod || '1'}
                           onChange={(e) => handleInputChange('nbCallsPerPeriod', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
                           Period Duration
                         </label>
                         <div className="flex space-x-2">
@@ -768,12 +775,12 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                             type="number"
                             value={formData.periodDuration || '1'}
                             onChange={(e) => handleInputChange('periodDuration', e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           />
                           <select
                             value={formData.periodDurationUnit || 'seconds'}
                             onChange={(e) => handleInputChange('periodDurationUnit', e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-white"
                           >
                             <option value="seconds">seconds</option>
                             <option value="minutes">minutes</option>
@@ -787,26 +794,26 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* SIP Transport Servers Tab */}
                 {activeTab === 'sipservers' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">SIP Transport Servers</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">SIP Transport Servers</h3>
                     
                     <div className="space-y-6">
                       {/* Current SIP Servers */}
                       <div className="space-y-3">
-                        <h4 className="text-md font-semibold text-gray-700">Current Servers</h4>
-                        <div className="border border-gray-200 rounded-lg min-h-[100px] p-4 bg-gray-50">
+                        <h4 className="text-md font-semibold text-gray-300">Current Servers</h4>
+                        <div className="border border-gray-600 rounded-lg min-h-[100px] p-4 bg-gray-700/50">
                           {!formData.selectedSipServers || formData.selectedSipServers.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">No SIP servers selected</p>
+                            <p className="text-gray-400 text-center py-4">No SIP servers selected</p>
                           ) : (
                             <div className="space-y-2">
                               {formData.selectedSipServers.map((server) => (
-                                <div key={server.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
-                                  <span className="font-medium text-gray-800">{server.name}</span>
+                                <div key={server.id} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-600">
+                                  <span className="font-medium text-gray-200">{server.name}</span>
                                   <button
                                     onClick={() => {
                                       const updatedServers = formData.selectedSipServers.filter(s => s.id !== server.id);
                                       handleInputChange('selectedSipServers', updatedServers);
                                     }}
-                                    className="text-red-600 hover:text-red-800 font-medium text-sm"
+                                    className="text-red-400 hover:text-red-300 font-medium text-sm"
                                   >
                                     Remove
                                   </button>
@@ -819,12 +826,12 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
 
                       {/* Available SIP Servers */}
                       <div className="space-y-3">
-                        <h4 className="text-md font-semibold text-gray-700">Available Servers</h4>
+                        <h4 className="text-md font-semibold text-gray-300">Available Servers</h4>
                         <div className="flex space-x-4">
                           <select
                             multiple
                             size="5"
-                            className="flex-1 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 p-3 bg-white"
+                            className="flex-1 border-2 border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-400 p-3 bg-gray-700 text-gray-200"
                             value={[]}
                             onChange={(e) => {
                               const selectedOptions = Array.from(e.target.selectedOptions);
@@ -856,8 +863,8 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         </div>
                       </div>
                       
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <p className="text-sm text-blue-800">
+                      <div className="bg-blue-900/30 border border-blue-700 p-4 rounded-lg">
+                        <p className="text-sm text-blue-300">
                           <strong>Note:</strong> You can add/remove SIP transport servers using the interface above. 
                           Changes will be saved when you submit the form.
                         </p>
@@ -869,26 +876,26 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                 {/* Port Ranges Tab */}
                 {activeTab === 'portranges' && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-gray-900">VOIP Media Port Ranges</h3>
+                    <h3 className="text-lg font-semibold text-gray-200">VOIP Media Port Ranges</h3>
                     
                     <div className="space-y-6">
                       {/* Current Port Ranges */}
                       <div className="space-y-3">
-                        <h4 className="text-md font-semibold text-gray-700">Current Port Ranges</h4>
-                        <div className="border border-gray-200 rounded-lg min-h-[100px] p-4 bg-gray-50">
+                        <h4 className="text-md font-semibold text-gray-300">Current Port Ranges</h4>
+                        <div className="border border-gray-600 rounded-lg min-h-[100px] p-4 bg-gray-700/50">
                           {!formData.selectedPortRanges || formData.selectedPortRanges.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">No port ranges selected</p>
+                            <p className="text-gray-400 text-center py-4">No port ranges selected</p>
                           ) : (
                             <div className="space-y-2">
                               {formData.selectedPortRanges.map((range) => (
-                                <div key={range.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200">
-                                  <span className="font-medium text-gray-800">{range.name}</span>
+                                <div key={range.id} className="flex items-center justify-between bg-gray-800 p-3 rounded-lg border border-gray-600">
+                                  <span className="font-medium text-gray-200">{range.name}</span>
                                   <button
                                     onClick={() => {
                                       const updatedRanges = formData.selectedPortRanges.filter(r => r.id !== range.id);
                                       handleInputChange('selectedPortRanges', updatedRanges);
                                     }}
-                                    className="text-red-600 hover:text-red-800 font-medium text-sm"
+                                    className="text-red-400 hover:text-red-300 font-medium text-sm"
                                   >
                                     Remove
                                   </button>
@@ -901,12 +908,12 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
 
                       {/* Available Port Ranges */}
                       <div className="space-y-3">
-                        <h4 className="text-md font-semibold text-gray-700">Available Port Ranges</h4>
+                        <h4 className="text-md font-semibold text-gray-300">Available Port Ranges</h4>
                         <div className="flex space-x-4">
                           <select
                             multiple
                             size="5"
-                            className="flex-1 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 p-3 bg-white"
+                            className="flex-1 border-2 border-gray-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-400 p-3 bg-gray-700 text-gray-200"
                             value={[]}
                             onChange={(e) => {
                               const selectedOptions = Array.from(e.target.selectedOptions);
@@ -938,8 +945,8 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
                         </div>
                       </div>
                       
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <p className="text-sm text-blue-800">
+                      <div className="bg-blue-900/30 border border-blue-700 p-4 rounded-lg">
+                        <p className="text-sm text-blue-300">
                           <strong>Note:</strong> You can add/remove port ranges using the interface above. 
                           Changes will be saved when you submit the form.
                         </p>
@@ -951,22 +958,38 @@ const EditNapModal = ({ isOpen, onClose, napId, baseUrl, sessionCookie, onSucces
               </div>
 
               {/* Footer */}
-              <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+              <div className="border-t border-gray-600 px-6 py-4 bg-gray-700 flex justify-end space-x-3">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md font-medium transition-colors duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-md font-medium transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
-                  {loading ? 'Saving...' : 'Save Changes'}
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Save Changes
+                    </>
+                  )}
                 </button>
               </div>
+
             </form>
           </>
         )}

@@ -13,8 +13,21 @@ const NapManagerEnhanced = ({ onAuthError }) => {
   const [editData, setEditData] = useState({});
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedNapId, setSelectedNapId] = useState(null);
+  const [baseUrl, setBaseUrl] = useState('/api');
+  const [sessionCookie, setSessionCookie] = useState('');
 
   useEffect(() => {
+    // Get session cookie from document.cookie
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {});
+    
+    if (cookies['_prosbc_session']) {
+      setSessionCookie(cookies['_prosbc_session']);
+    }
+    
     loadNaps();
   }, []);
 
@@ -72,6 +85,28 @@ const NapManagerEnhanced = ({ onAuthError }) => {
   const handleEditNap = (napId) => {
     setSelectedNapId(napId);
     setEditModalOpen(true);
+    
+    // Make sure we have the base URL
+    if (!baseUrl) {
+      setBaseUrl('/api');
+    }
+    
+    // Get session cookie if we don't have it yet
+    if (!sessionCookie) {
+      const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+      
+      if (cookies['_prosbc_session']) {
+        setSessionCookie(cookies['_prosbc_session']);
+      }
+    }
+    
+    console.log('Editing NAP:', napId);
+    console.log('Base URL:', baseUrl);
+    console.log('Session Cookie Available:', !!sessionCookie);
   };
 
   const handleEditSuccess = () => {
@@ -343,7 +378,10 @@ const NapManagerEnhanced = ({ onAuthError }) => {
       {/* Modal Components */}
       {editModalOpen && selectedNapId && (
         <EditNapModal
+          isOpen={editModalOpen}
           napId={selectedNapId}
+          baseUrl={baseUrl}
+          sessionCookie={sessionCookie}
           onClose={() => {
             setEditModalOpen(false);
             setSelectedNapId(null);

@@ -1,7 +1,8 @@
 class NapEditService {
-  constructor(baseUrl, sessionCookie) {
-    this.baseUrl = baseUrl || '/api'; // Use your proxy path
+  constructor(baseUrl = '/api', sessionCookie = '') {
+    this.baseUrl = baseUrl;
     this.sessionCookie = sessionCookie;
+    console.log('NapEditService initialized:', { baseUrl: this.baseUrl, sessionCookieAvailable: !!this.sessionCookie });
   }
 
   // Helper method to make requests with better error handling
