@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import NapCreator from './components/NapCreator';
+import NapCreatorEnhanced from './components/NapCreatorEnhanced';
 import NapManager from './components/NapManager';
 import FileUploader from './components/FileUploader';
 import FileManagement from './components/FileManagement';
@@ -75,7 +76,7 @@ function App() {
   const renderContent = () => {
     switch (activeSection) {
       case 'nap-creation':
-        return <NapCreator onAuthError={handleAuthError} />;
+        return <NapCreatorEnhanced onAuthError={handleAuthError} />;
       case 'nap-management':
         return <NapManager onAuthError={handleAuthError} />;
       case 'dm-df-upload':
@@ -87,7 +88,7 @@ function App() {
       case 'activation-generation':
         return <ActivationGeneration onAuthError={handleAuthError} />;
       default:
-        return <NapCreator onAuthError={handleAuthError} />;
+        return <NapCreatorEnhanced onAuthError={handleAuthError} />;
     }
   };
 

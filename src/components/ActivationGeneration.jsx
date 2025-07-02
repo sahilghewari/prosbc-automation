@@ -353,7 +353,74 @@ const ActivationGeneration = ({ onAuthError }) => {
         </div>
       )}
 
-    
+      {/* Routing Database Generation Section */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900">Routing Database Generation</h3>
+          <p className="text-sm text-gray-600 mt-1">Generate routing database from mapped routesets CSV files</p>
+        </div>
+        
+        <div className="p-6">
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Information Panel */}
+            <div className="flex-1">
+              <div className="p-4 bg-amber-50 rounded-lg">
+                <h4 className="text-sm font-medium text-amber-900 mb-2">⚠️ Important Notice</h4>
+                <div className="text-sm text-amber-700 space-y-1">
+                  <p>• This operation will <strong>delete and recreate</strong> the routing table</p>
+                  <p>• All existing routing data will be replaced with mapped routesets</p>
+                  <p>• Ensure routeset CSV files are properly mapped before proceeding</p>
+                  <p>• This process may take several minutes to complete</p>
+                </div>
+              </div>
+              
+              {mappings.length > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Current Routeset Mappings</h4>
+                  <div className="text-sm text-blue-700">
+                    <p><strong>Total Mappings:</strong> {mappings.length}</p>
+                    <p><strong>Status:</strong> Ready for generation</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Action Button */}
+            <div className="flex flex-col justify-center">
+              <button
+                onClick={handleGenerateDatabase}
+                disabled={generating || activating || validating}
+                className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {generating ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Generating Database...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Generate Routing Database
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          
+          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-900 mb-2">Process Steps</h4>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p>1. <strong>Backup:</strong> Current routing data is backed up automatically</p>
+              <p>2. <strong>Clear:</strong> Existing routing table is cleared</p>
+              <p>3. <strong>Import:</strong> Routeset CSV files are processed and imported</p>
+              <p>4. <strong>Validate:</strong> New routing data is validated for consistency</p>
+              <p>5. <strong>Activate:</strong> New routing database becomes active</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Refresh Button */}
       <div className="flex justify-end">
