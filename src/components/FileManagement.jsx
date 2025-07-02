@@ -200,30 +200,30 @@ function FileManagement({ onAuthError }) {
 
   const getMessageClasses = () => {
     if (message.includes("✅") || message.includes("success")) {
-      return "bg-green-50 text-green-800 border-green-200 border-l-4 border-l-green-500";
+      return "bg-green-900/30 text-green-300 border-green-700 border-l-4 border-l-green-500";
     } else if (message.includes("❌") || message.includes("Failed")) {
-      return "bg-red-50 text-red-800 border-red-200 border-l-4 border-l-red-500";
+      return "bg-red-900/30 text-red-300 border-red-700 border-l-4 border-l-red-500";
     } else if (message.includes("🔄") || message.includes("Uploading")) {
-      return "bg-blue-50 text-blue-800 border-blue-200 border-l-4 border-l-blue-500";
+      return "bg-blue-900/30 text-blue-300 border-blue-700 border-l-4 border-l-blue-500";
     } else if (message.includes("📊")) {
-      return "bg-yellow-50 text-yellow-800 border-yellow-200 border-l-4 border-l-yellow-500";
+      return "bg-yellow-900/30 text-yellow-300 border-yellow-700 border-l-4 border-l-yellow-500";
     }
-    return "bg-gray-50 text-gray-800 border-gray-200 border-l-4 border-l-gray-500";
+    return "bg-gray-700 text-gray-300 border-gray-600 border-l-4 border-l-gray-500";
   };
 
   // Render file table
   const renderFileTable = (files, fileType, typeLabel, colorClass) => (
-    <div className="bg-white border border-gray-200 rounded-xl p-6">
+    <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center">
           <span className="text-3xl mr-3">{fileType === 'routesets_definitions' ? '📄' : '🗺️'}</span>
-          <h3 className="text-xl font-bold text-gray-800">{typeLabel} Files</h3>
+          <h3 className="text-xl font-bold text-white">{typeLabel} Files</h3>
         </div>
-        <span className="text-sm text-gray-500">{files.length} file(s)</span>
+        <span className="text-sm text-gray-300">{files.length} file(s)</span>
       </div>
 
       {files.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-gray-400">
           <div className="text-4xl mb-2">📂</div>
           <p>No {typeLabel.toLowerCase()} files found</p>
         </div>
@@ -231,18 +231,18 @@ function FileManagement({ onAuthError }) {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">File Name</th>
-                <th className="text-center py-3 px-4 font-semibold text-gray-700">Actions</th>
+              <tr className="border-b border-gray-600">
+                <th className="text-left py-3 px-4 font-semibold text-gray-300">File Name</th>
+                <th className="text-center py-3 px-4 font-semibold text-gray-300">Actions</th>
               </tr>
             </thead>
             <tbody>
               {files.map((file) => (
-                <tr key={file.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={file.id} className="border-b border-gray-700 hover:bg-gray-700/50">
                   <td className="py-4 px-4">
                     <div className="flex items-center">
                       <span className="text-xl mr-3">{fileType === 'routesets_definitions' ? '📄' : '🗺️'}</span>
-                      <span className="font-medium text-gray-800">{file.name}</span>
+                      <span className="font-medium text-white">{file.name}</span>
                     </div>
                   </td>
                   <td className="py-4 px-4">
@@ -252,8 +252,8 @@ function FileManagement({ onAuthError }) {
                         disabled={isLoading}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                           isLoading 
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : `bg-${colorClass}-100 text-${colorClass}-700 hover:bg-${colorClass}-200`
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            : `bg-${colorClass}-600 text-white hover:bg-${colorClass}-700`
                         }`}
                         title="Edit file content"
                       >
@@ -265,8 +265,8 @@ function FileManagement({ onAuthError }) {
                         disabled={isLoading}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                           isLoading 
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
                         }`}
                         title="Export file"
                       >
@@ -278,8 +278,8 @@ function FileManagement({ onAuthError }) {
                         disabled={isLoading}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                           isLoading 
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                            : 'bg-red-600 text-white hover:bg-red-700'
                         }`}
                         title="Delete file"
                       >
@@ -297,22 +297,22 @@ function FileManagement({ onAuthError }) {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-4">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent mb-4">
             🗂️ ProSBC File Management Center
           </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+          <p className="text-xl text-gray-300 max-w-3xl mx-auto">
             Manage, update, export, and delete Definition Files (DF) and Digit Map Files (DM)
           </p>
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 mb-8">
-          <div className="flex border-b border-gray-200">
+        <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-xl mb-8 backdrop-blur-sm">
+          <div className="flex border-b border-gray-700">
             {[
               { id: 'overview', label: '📊 Overview', icon: '📊' },
               { id: 'df-files', label: '📄 DF Files', icon: '📄' },
@@ -322,8 +322,8 @@ function FileManagement({ onAuthError }) {
                 key={tab.id}
                 className={`flex-1 px-6 py-4 text-lg font-semibold transition-all duration-200 ${
                   activeTab === tab.id
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white'
                 } ${tab.id === 'overview' ? 'rounded-tl-2xl' : ''} ${tab.id === 'management' ? 'rounded-tr-2xl' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -342,14 +342,14 @@ function FileManagement({ onAuthError }) {
             {activeTab === 'overview' && (
               <div className="space-y-8">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-gray-800">File Overview</h2>
+                  <h2 className="text-2xl font-bold text-white">File Overview</h2>
                   <button
                     onClick={loadFiles}
                     disabled={refreshing}
                     className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center space-x-2 ${
                       refreshing
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-600 hover:to-purple-600'
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700'
                     }`}
                   >
                     <span className="text-lg">{refreshing ? '⏳' : '🔄'}</span>
@@ -360,23 +360,23 @@ function FileManagement({ onAuthError }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   
                   {/* DF Files Summary */}
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-6">
+                  <div className="bg-gray-700 border border-gray-600 rounded-xl p-6 backdrop-blur-sm">
                     <div className="flex items-center mb-4">
                       <span className="text-3xl mr-3">📄</span>
-                      <h3 className="text-2xl font-bold text-purple-800">Definition Files (DF)</h3>
+                      <h3 className="text-2xl font-bold text-purple-300">Definition Files (DF)</h3>
                     </div>
                     <div className="space-y-3">
-                      <p className="text-purple-700 text-sm">
+                      <p className="text-purple-200 text-sm">
                         Configure routeset definitions for call routing through ProSBC
                       </p>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-purple-600">Total Files:</span>
-                          <span className="font-medium text-purple-800">{dfFiles.length}</span>
+                          <span className="text-purple-300">Total Files:</span>
+                          <span className="font-medium text-purple-200">{dfFiles.length}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-purple-600">Last Refresh:</span>
-                          <span className="font-medium text-purple-800">
+                          <span className="text-purple-300">Last Refresh:</span>
+                          <span className="font-medium text-purple-200">
                             {refreshing ? 'Refreshing...' : 'Ready'}
                           </span>
                         </div>
@@ -385,23 +385,23 @@ function FileManagement({ onAuthError }) {
                   </div>
 
                   {/* DM Files Summary */}
-                  <div className="bg-gradient-to-br from-pink-50 to-pink-100 border border-pink-200 rounded-xl p-6">
+                  <div className="bg-gray-700 border border-gray-600 rounded-xl p-6 backdrop-blur-sm">
                     <div className="flex items-center mb-4">
                       <span className="text-3xl mr-3">🗺️</span>
-                      <h3 className="text-2xl font-bold text-pink-800">Digit Map Files (DM)</h3>
+                      <h3 className="text-2xl font-bold text-pink-300">Digit Map Files (DM)</h3>
                     </div>
                     <div className="space-y-3">
-                      <p className="text-pink-700 text-sm">
+                      <p className="text-pink-200 text-sm">
                         Define number translation rules and digit manipulation patterns
                       </p>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
-                          <span className="text-pink-600">Total Files:</span>
-                          <span className="font-medium text-pink-800">{dmFiles.length}</span>
+                          <span className="text-pink-300">Total Files:</span>
+                          <span className="font-medium text-pink-200">{dmFiles.length}</span>
                         </div>
                         <div className="flex justify-between text-sm">
-                          <span className="text-pink-600">Last Refresh:</span>
-                          <span className="font-medium text-pink-800">
+                          <span className="text-pink-300">Last Refresh:</span>
+                          <span className="font-medium text-pink-200">
                             {refreshing ? 'Refreshing...' : 'Ready'}
                           </span>
                         </div>
@@ -411,22 +411,22 @@ function FileManagement({ onAuthError }) {
                 </div>
 
                 {/* Quick Actions */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6">
-                  <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 backdrop-blur-sm">
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center">
                     <span className="text-2xl mr-2">⚡</span>
                     Quick Actions
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <button
                       onClick={() => setActiveTab('df-files')}
-                      className="p-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 flex items-center space-x-2"
+                      className="p-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 flex items-center space-x-2"
                     >
                       <span className="text-xl">📄</span>
                       <span>Manage DF Files</span>
                     </button>
                     <button
                       onClick={() => setActiveTab('dm-files')}
-                      className="p-4 bg-gradient-to-r from-pink-500 to-pink-600 text-white rounded-lg hover:from-pink-600 hover:to-pink-700 transition-all duration-200 flex items-center space-x-2"
+                      className="p-4 bg-gradient-to-r from-pink-600 to-pink-700 text-white rounded-lg hover:from-pink-700 hover:to-pink-800 transition-all duration-200 flex items-center space-x-2"
                     >
                       <span className="text-xl">🗺️</span>
                       <span>Manage DM Files</span>
@@ -442,14 +442,14 @@ function FileManagement({ onAuthError }) {
             {activeTab === 'df-files' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-gray-800">Definition Files (DF)</h2>
+                  <h2 className="text-2xl font-bold text-white">Definition Files (DF)</h2>
                   <button
                     onClick={loadFiles}
                     disabled={refreshing}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                       refreshing
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        : 'bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 border border-purple-600/30'
                     }`}
                   >
                     {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
@@ -463,14 +463,14 @@ function FileManagement({ onAuthError }) {
             {activeTab === 'dm-files' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <h2 className="text-2xl font-bold text-gray-800">Digit Map Files (DM)</h2>
+                  <h2 className="text-2xl font-bold text-white">Digit Map Files (DM)</h2>
                   <button
                     onClick={loadFiles}
                     disabled={refreshing}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                       refreshing
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-pink-100 text-pink-700 hover:bg-pink-200'
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
                     }`}
                   >
                     {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
@@ -486,7 +486,7 @@ function FileManagement({ onAuthError }) {
 
         {/* Status Message */}
         {message && (
-          <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100 mb-8">
+          <div className="bg-gray-800 rounded-2xl p-8 shadow-lg border border-gray-700 mb-8">
             <div className={`p-6 rounded-xl border font-mono text-sm leading-relaxed whitespace-pre-line ${getMessageClasses()}`}>
               {message}
             </div>
@@ -495,16 +495,16 @@ function FileManagement({ onAuthError }) {
 
         {/* Edit Modal */}
         {editModal.isOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-              <div className="p-6 border-b border-gray-200">
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+            <div className="bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-gray-700">
+              <div className="p-6 border-b border-gray-700">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-xl font-bold text-gray-800">
+                  <h3 className="text-xl font-bold text-white">
                     Edit File: {editModal.fileName}
                   </h3>
                   <button
                     onClick={() => setEditModal({ isOpen: false, fileType: '', fileId: '', fileName: '', content: '' })}
-                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                    className="text-gray-400 hover:text-white text-2xl"
                   >
                     ✕
                   </button>
@@ -515,15 +515,15 @@ function FileManagement({ onAuthError }) {
                 <textarea
                   value={editModal.content}
                   onChange={(e) => setEditModal({ ...editModal, content: e.target.value })}
-                  className="w-full h-96 p-4 border border-gray-300 rounded-lg font-mono text-sm resize-vertical"
+                  className="w-full h-96 p-4 bg-gray-900 border border-gray-700 rounded-lg font-mono text-sm text-gray-200 resize-vertical"
                   placeholder="File content..."
                 />
               </div>
               
-              <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+              <div className="p-6 border-t border-gray-700 flex justify-end space-x-3">
                 <button
                   onClick={() => setEditModal({ isOpen: false, fileType: '', fileId: '', fileName: '', content: '' })}
-                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all duration-200"
+                  className="px-6 py-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-all duration-200"
                 >
                   Cancel
                 </button>
@@ -532,7 +532,7 @@ function FileManagement({ onAuthError }) {
                   disabled={isLoading}
                   className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                     isLoading
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                       : 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700'
                   }`}
                 >

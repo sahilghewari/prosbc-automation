@@ -320,90 +320,144 @@ const RoutesetMapping = ({ onAuthError }) => {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Routeset Mapping</h2>
-        <p className="text-gray-600">Mapping of Routeset files and NAP configurations</p>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 border-b border-gray-600 shadow-xl">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
+            🗺️ Routeset Mapping Center
+          </h2>
+          <p className="text-gray-400 text-lg">Advanced mapping of Routeset files and NAP configurations</p>
+        </div>
       </div>
 
-      {/* Success Message */}
-      {successMessage && (
-        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            <span className="text-green-800">{successMessage}</span>
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Success Message */}
+        {successMessage && (
+          <div className="mb-6 bg-green-900/20 border border-green-700 rounded-xl p-4 backdrop-blur-sm">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-green-300">{successMessage}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Error Message */}
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <svg className="w-5 h-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            <span className="text-red-800">{error}</span>
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-900/20 border border-red-700 rounded-xl p-4 backdrop-blur-sm">
+            <div className="flex items-center">
+              <svg className="w-5 h-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span className="text-red-300">{error}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-     
-
-      {/* Mapping Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Mapping of Routeset files and NAP</h3>
-        </div>
-        
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  NAPs
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Routeset Definition
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Routeset Digitmap
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {mappings.map((mapping, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-blue-600">
-                      {mapping.napName}
+        {/* Mapping Table */}
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl shadow-2xl border border-gray-700 mb-6 overflow-hidden">
+          <div className="px-6 py-6 border-b border-gray-600 bg-gradient-to-r from-gray-700/50 to-gray-800/50">
+            <div className="flex items-center">
+              <div className="bg-purple-600/20 p-3 rounded-lg mr-4">
+                <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-white">Mapping Configuration</h3>
+                <p className="text-gray-400 text-sm mt-1">Configure routeset file mappings and NAP associations</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-700">
+              <thead className="bg-gray-700/50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    <div className="flex items-center space-x-2">
+                      <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>NAPs</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {mapping.routesetDefinition || (
-                        <span className="text-gray-400 italic">Not mapped</span>
-                      )}
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    <div className="flex items-center space-x-2">
+                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                      </svg>
+                      <span>Routeset Definition</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {mapping.routesetDigitmap || (
-                        <span className="text-gray-400 italic">Not mapped</span>
-                      )}
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    <div className="flex items-center space-x-2">
+                      <svg className="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>Routeset Digitmap</span>
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <button
-                      onClick={() => handleEditNap(mapping.napName)}
-                      className="text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      Edit Mapping
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    <div className="flex items-center justify-center space-x-2">
+                      <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4" />
+                      </svg>
+                      <span>Actions</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-gray-800/30 divide-y divide-gray-700">
+                {mappings.map((mapping, index) => (
+                  <tr key={index} className="hover:bg-gray-700/50 transition-all duration-200">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
+                          <span className="text-white font-bold text-sm">{mapping.napName?.charAt(0) || 'N'}</span>
+                        </div>
+                        <div className="text-sm font-medium text-blue-400">
+                          {mapping.napName}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-300">
+                        {mapping.routesetDefinition ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-900/50 text-green-400 border border-green-700">
+                            {mapping.routesetDefinition}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-700/50 text-gray-400 border border-gray-600">
+                            Not mapped
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-300">
+                        {mapping.routesetDigitmap ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-900/50 text-yellow-400 border border-yellow-700">
+                            {mapping.routesetDigitmap}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-700/50 text-gray-400 border border-gray-600">
+                            Not mapped
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => handleEditNap(mapping.napName)}
+                        className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-300 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 border border-blue-600/30 hover:border-blue-500"
+                      >
+                        <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Mapping
                     </button>
                   </td>
                 </tr>
@@ -422,58 +476,58 @@ const RoutesetMapping = ({ onAuthError }) => {
       {/* Edit Modal */}
       {editingNap && editFormData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto backdrop-blur-sm">
+            <div className="px-6 py-4 border-b border-gray-700">
+              <h3 className="text-lg font-semibold text-white">
                 Editing {editingNap}
               </h3>
             </div>
             
             <div className="px-6 py-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Priority
                 </label>
                 <input
                   type="text"
                   value={editFormData.priority}
                   onChange={(e) => setEditFormData({ ...editFormData, priority: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Weight
                 </label>
                 <input
                   type="text"
                   value={editFormData.weight}
                   onChange={(e) => setEditFormData({ ...editFormData, weight: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Called Pre Remap
                 </label>
                 <input
                   type="text"
                   value={editFormData.calledPreRemap}
                   onChange={(e) => setEditFormData({ ...editFormData, calledPreRemap: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Routeset Definition
                 </label>
                 <select
                   value={editFormData.currentDefinition}
                   onChange={(e) => setEditFormData({ ...editFormData, currentDefinition: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select a definition file...</option>
                   {availableFiles.definitions.map((file) => (
@@ -485,13 +539,13 @@ const RoutesetMapping = ({ onAuthError }) => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-300 mb-1">
                   Routeset Digitmap
                 </label>
                 <select
                   value={editFormData.currentDigitmap}
                   onChange={(e) => setEditFormData({ ...editFormData, currentDigitmap: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select a digitmap file...</option>
                   {availableFiles.digitmaps.map((file) => (
@@ -503,18 +557,18 @@ const RoutesetMapping = ({ onAuthError }) => {
               </div>
             </div>
             
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+            <div className="px-6 py-4 border-t border-gray-600 flex justify-end space-x-3">
               <button
                 onClick={handleCancelEdit}
                 disabled={saving}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 border border-gray-600 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveMapping}
                 disabled={saving}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 border border-transparent rounded-md hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 {saving ? (
                   <div className="flex items-center">
@@ -531,13 +585,13 @@ const RoutesetMapping = ({ onAuthError }) => {
       )}
 
       {/* Routing Database Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Routing Database</h3>
+      <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl backdrop-blur-sm">
+        <div className="px-6 py-4 border-b border-gray-700">
+          <h3 className="text-lg font-semibold text-white">Routing Database</h3>
         </div>
         
         <div className="px-6 py-4">
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-sm text-gray-300 mb-4">
             Generate routing database from the mapped routeset files above.
           </p>
           
@@ -564,19 +618,19 @@ const RoutesetMapping = ({ onAuthError }) => {
             </button>
             
             {mappings.length === 0 && (
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-400">
                 No routeset mappings available
               </span>
             )}
             
             {generating && (
-              <span className="text-sm text-blue-600">
+              <span className="text-sm text-blue-400">
                 This may take a few minutes...
               </span>
             )}
           </div>
           
-          <p className="text-xs text-gray-500 mt-3">
+          <p className="text-xs text-gray-400 mt-3">
             <strong>Warning:</strong> This will delete and recreate the routing table with the above routesets CSV files.
             {mappings.length > 0 && (
               <span className="block mt-1">
@@ -592,11 +646,11 @@ const RoutesetMapping = ({ onAuthError }) => {
         <button
           onClick={loadMappings}
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 border border-gray-600 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-all duration-200"
         >
           {loading ? (
             <div className="flex items-center">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-300 mr-2"></div>
               Refreshing...
             </div>
           ) : (
@@ -605,7 +659,9 @@ const RoutesetMapping = ({ onAuthError }) => {
         </button>
       </div>
     </div>
+</div>
   );
 };
+
 
 export default RoutesetMapping;

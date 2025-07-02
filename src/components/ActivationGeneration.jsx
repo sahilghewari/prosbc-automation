@@ -219,8 +219,8 @@ const ActivationGeneration = ({ onAuthError }) => {
       <div className="p-6">
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-2 text-gray-600">Loading activation and generation data...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+            <p className="mt-2 text-gray-300">Loading activation and generation data...</p>
           </div>
         </div>
       </div>
@@ -230,54 +230,54 @@ const ActivationGeneration = ({ onAuthError }) => {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Activation and Generation</h2>
-        <p className="text-gray-600">Manage configuration activation and routing database generation</p>
+        <h2 className="text-2xl font-bold text-white mb-2">Activation and Generation</h2>
+        <p className="text-gray-300">Manage configuration activation and routing database generation</p>
       </div>
 
       {/* Success Message */}
       {successMessage && (
-        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="mb-6 bg-green-900/30 border border-green-700 rounded-lg p-4 backdrop-blur-sm">
           <div className="flex items-center">
-            <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-5 h-5 text-green-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span className="text-green-800">{successMessage}</span>
+            <span className="text-green-300">{successMessage}</span>
           </div>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="mb-6 bg-red-900/30 border border-red-700 rounded-lg p-4 backdrop-blur-sm">
           <div className="flex items-center">
-            <svg className="w-5 h-5 text-red-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+            <svg className="w-5 h-5 text-red-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
-            <span className="text-red-800">{error}</span>
+            <span className="text-red-300">{error}</span>
           </div>
         </div>
       )}
 
       {/* Configuration Activation Section */}
       {configurations.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Configuration Activation</h3>
-            <p className="text-sm text-gray-600 mt-1">Validate and activate system configurations</p>
+        <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl mb-6 backdrop-blur-sm">
+          <div className="px-6 py-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold text-white">Configuration Activation</h3>
+            <p className="text-sm text-gray-300 mt-1">Validate and activate system configurations</p>
           </div>
           
           <div className="p-6">
             <div className="flex flex-col lg:flex-row gap-6">
               {/* Configuration Selection */}
               <div className="flex-1">
-                <label htmlFor="config-select" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="config-select" className="block text-sm font-medium text-gray-300 mb-2">
                   Select Configuration
                 </label>
                 <select
                   id="config-select"
                   value={selectedConfig}
                   onChange={(e) => setSelectedConfig(parseInt(e.target.value))}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                   disabled={activating || validating || generating}
                 >
                   {configurations.map(config => (
@@ -287,9 +287,9 @@ const ActivationGeneration = ({ onAuthError }) => {
                   ))}
                 </select>
                 
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="text-sm font-medium text-blue-900 mb-2">Configuration Details</h4>
-                  <div className="text-sm text-blue-700">
+                <div className="mt-4 p-4 bg-blue-900/30 border border-blue-700 rounded-lg backdrop-blur-sm">
+                  <h4 className="text-sm font-medium text-blue-300 mb-2">Configuration Details</h4>
+                  <div className="text-sm text-blue-200">
                     <p><strong>Selected:</strong> {configurations.find(c => c.id === selectedConfig)?.name || 'None'}</p>
                     <p><strong>Status:</strong> {configurations.find(c => c.id === selectedConfig)?.isSelected ? 'Currently Active' : 'Inactive'}</p>
                   </div>
@@ -301,11 +301,11 @@ const ActivationGeneration = ({ onAuthError }) => {
                 <button
                   onClick={handleValidateConfiguration}
                   disabled={validating || activating || generating}
-                  className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {validating ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                       Validating...
                     </>
                   ) : (
@@ -321,7 +321,7 @@ const ActivationGeneration = ({ onAuthError }) => {
                 <button
                   onClick={handleActivateConfiguration}
                   disabled={activating || validating || generating}
-                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
                   {activating ? (
                     <>
@@ -340,9 +340,9 @@ const ActivationGeneration = ({ onAuthError }) => {
               </div>
             </div>
             
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Instructions</h4>
-              <div className="text-sm text-gray-600 space-y-1">
+            <div className="mt-6 p-4 bg-gray-700 border border-gray-600 rounded-lg">
+              <h4 className="text-sm font-medium text-white mb-2">Instructions</h4>
+              <div className="text-sm text-gray-300 space-y-1">
                 <p>• <strong>Validate:</strong> Check the configuration for errors without applying changes</p>
                 <p>• <strong>Activate:</strong> Apply the selected configuration to the system</p>
                 <p>• Only one configuration can be active at a time</p>
@@ -354,19 +354,19 @@ const ActivationGeneration = ({ onAuthError }) => {
       )}
 
       {/* Routing Database Generation Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">Routing Database Generation</h3>
-          <p className="text-sm text-gray-600 mt-1">Generate routing database from mapped routesets CSV files</p>
+      <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl mb-6 backdrop-blur-sm">
+        <div className="px-6 py-4 border-b border-gray-700">
+          <h3 className="text-lg font-semibold text-white">Routing Database Generation</h3>
+          <p className="text-sm text-gray-300 mt-1">Generate routing database from mapped routesets CSV files</p>
         </div>
         
         <div className="p-6">
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Information Panel */}
             <div className="flex-1">
-              <div className="p-4 bg-amber-50 rounded-lg">
-                <h4 className="text-sm font-medium text-amber-900 mb-2">⚠️ Important Notice</h4>
-                <div className="text-sm text-amber-700 space-y-1">
+              <div className="p-4 bg-amber-900/30 border border-amber-700 rounded-lg backdrop-blur-sm">
+                <h4 className="text-sm font-medium text-amber-300 mb-2">⚠️ Important Notice</h4>
+                <div className="text-sm text-amber-200 space-y-1">
                   <p>• This operation will <strong>delete and recreate</strong> the routing table</p>
                   <p>• All existing routing data will be replaced with mapped routesets</p>
                   <p>• Ensure routeset CSV files are properly mapped before proceeding</p>
@@ -375,9 +375,9 @@ const ActivationGeneration = ({ onAuthError }) => {
               </div>
               
               {mappings.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="text-sm font-medium text-blue-900 mb-2">Current Routeset Mappings</h4>
-                  <div className="text-sm text-blue-700">
+                <div className="mt-4 p-4 bg-blue-900/30 border border-blue-700 rounded-lg backdrop-blur-sm">
+                  <h4 className="text-sm font-medium text-blue-300 mb-2">Current Routeset Mappings</h4>
+                  <div className="text-sm text-blue-200">
                     <p><strong>Total Mappings:</strong> {mappings.length}</p>
                     <p><strong>Status:</strong> Ready for generation</p>
                   </div>
@@ -390,7 +390,7 @@ const ActivationGeneration = ({ onAuthError }) => {
               <button
                 onClick={handleGenerateDatabase}
                 disabled={generating || activating || validating}
-                className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
               >
                 {generating ? (
                   <>
@@ -409,9 +409,9 @@ const ActivationGeneration = ({ onAuthError }) => {
             </div>
           </div>
           
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">Process Steps</h4>
-            <div className="text-sm text-gray-600 space-y-1">
+          <div className="mt-6 p-4 bg-gray-700 border border-gray-600 rounded-lg">
+            <h4 className="text-sm font-medium text-white mb-2">Process Steps</h4>
+            <div className="text-sm text-gray-300 space-y-1">
               <p>1. <strong>Backup:</strong> Current routing data is backed up automatically</p>
               <p>2. <strong>Clear:</strong> Existing routing table is cleared</p>
               <p>3. <strong>Import:</strong> Routeset CSV files are processed and imported</p>
@@ -427,11 +427,11 @@ const ActivationGeneration = ({ onAuthError }) => {
         <button
           onClick={loadData}
           disabled={loading || activating || validating || generating}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 border border-gray-600 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-all duration-200"
         >
           {loading ? (
             <div className="flex items-center">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-300 mr-2"></div>
               Refreshing...
             </div>
           ) : (

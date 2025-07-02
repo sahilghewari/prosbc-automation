@@ -289,21 +289,7 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
     setSelectedPortRanges([]);
   };
   
-  const handleSipServerToggle = (serverId) => {
-    setSelectedSipServers(prev => 
-      prev.includes(serverId) 
-        ? prev.filter(id => id !== serverId)
-        : [...prev, serverId]
-    );
-  };
-  
-  const handlePortRangeToggle = (rangeId) => {
-    setSelectedPortRanges(prev => 
-      prev.includes(rangeId) 
-        ? prev.filter(id => id !== rangeId)
-        : [...prev, rangeId]
-    );
-  };
+  // These functions are now replaced by direct onChange handlers in the select elements
 
   return (
     <div className="nap-creator-enhanced">
@@ -466,36 +452,50 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
         {/* SIP Transport Servers */}
         <div className="form-section">
           <h3>SIP Transport Servers</h3>
-          <div className="checkbox-group">
-            {availableSipServers.map(server => (
-              <label key={server.id} className="checkbox-item">
-                <input
-                  type="checkbox"
-                  checked={selectedSipServers.includes(server.id)}
-                  onChange={() => handleSipServerToggle(server.id)}
-                  disabled={loading}
-                />
-                {server.name}
-              </label>
-            ))}
+          <div className="form-group">
+            <label htmlFor="sipServers">Select SIP Servers</label>
+            <select
+              id="sipServers"
+              multiple
+              value={selectedSipServers}
+              onChange={(e) => {
+                const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                setSelectedSipServers(selectedOptions);
+              }}
+              className="multi-select"
+              disabled={loading}
+            >
+              {availableSipServers.map(server => (
+                <option key={server.id} value={server.id}>
+                  {server.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         {/* Port Ranges */}
         <div className="form-section">
           <h3>Port Ranges</h3>
-          <div className="checkbox-group">
-            {availablePortRanges.map(range => (
-              <label key={range.id} className="checkbox-item">
-                <input
-                  type="checkbox"
-                  checked={selectedPortRanges.includes(range.id)}
-                  onChange={() => handlePortRangeToggle(range.id)}
-                  disabled={loading}
-                />
-                {range.name}
-              </label>
-            ))}
+          <div className="form-group">
+            <label htmlFor="portRanges">Select Port Ranges</label>
+            <select
+              id="portRanges"
+              multiple
+              value={selectedPortRanges}
+              onChange={(e) => {
+                const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                setSelectedPortRanges(selectedOptions);
+              }}
+              className="multi-select"
+              disabled={loading}
+            >
+              {availablePortRanges.map(range => (
+                <option key={range.id} value={range.id}>
+                  {range.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

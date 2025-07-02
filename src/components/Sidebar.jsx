@@ -73,19 +73,19 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
   ];
 
   return (
-    <div className={`fixed left-0 top-16 bg-gray-800 text-white transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'} h-[calc(100vh-4rem)] overflow-y-auto`}>
+    <div className={`fixed left-0 top-16 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white transition-all duration-300 ${isCollapsed ? 'w-16' : 'w-64'} h-[calc(100vh-4rem)] overflow-y-auto border-r border-gray-700 shadow-2xl backdrop-blur-sm`}>
       {/* Sidebar Header */}
-      <div className="p-4 border-b border-gray-700">
+      <div className="p-4 border-b border-gray-600">
         <div className="flex items-center justify-between">
           {!isCollapsed && (
-            <h2 className="text-lg font-semibold">Navigation</h2>
+            <h2 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Navigation</h2>
           )}
           <button
             onClick={handleCollapseToggle}
-            className="text-gray-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-600 rounded p-1"
+            className="text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-2 transition-all duration-200 hover:bg-gray-700"
           >
             <svg 
-              className={`w-5 h-5 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} 
+              className={`w-5 h-5 transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} 
               fill="none" 
               stroke="currentColor" 
               viewBox="0 0 24 24"
@@ -97,39 +97,48 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
       </div>
 
       {/* Menu Items */}
-      <nav className="mt-4">
-        <ul className="space-y-1">
+      <nav className="mt-4 px-2">
+        <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.id}>
               <button
                 onClick={() => onSectionChange?.(item.id)}
-                className={`w-full flex items-center px-4 py-3 text-left hover:bg-gray-700 transition-colors ${
-                  activeSection === item.id ? 'bg-blue-600 border-r-4 border-blue-400' : ''
+                className={`w-full flex items-center px-3 py-3 rounded-lg text-left transition-all duration-200 group ${
+                  activeSection === item.id 
+                    ? 'bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg transform scale-105' 
+                    : 'hover:bg-gray-700 hover:transform hover:scale-102'
                 }`}
                 title={isCollapsed ? item.title : ''}
               >
-                <span className="flex-shrink-0">
+                <span className={`flex-shrink-0 transition-colors duration-200 ${
+                  activeSection === item.id ? 'text-white' : 'text-gray-400 group-hover:text-white'
+                }`}>
                   {item.icon}
                 </span>
                 {!isCollapsed && (
-                  <div className="ml-3">
-                    <span className="block text-sm font-medium">
+                  <div className="ml-3 overflow-hidden">
+                    <span className={`block text-sm font-medium transition-colors duration-200 ${
+                      activeSection === item.id ? 'text-white' : 'text-gray-300 group-hover:text-white'
+                    }`}>
                       {item.title}
                     </span>
                     {item.subtitle && (
-                      <span className="block text-xs text-gray-400 mt-1">
+                      <span className={`block text-xs mt-1 transition-colors duration-200 ${
+                        activeSection === item.id ? 'text-blue-100' : 'text-gray-500 group-hover:text-gray-300'
+                      }`}>
                         {item.subtitle}
                       </span>
                     )}
                   </div>
+                )}
+                {activeSection === item.id && (
+                  <div className="absolute right-0 w-1 h-8 bg-gradient-to-b from-blue-400 to-purple-400 rounded-l-full"></div>
                 )}
               </button>
             </li>
           ))}
         </ul>
       </nav>
-
-
     </div>
   );
 };
