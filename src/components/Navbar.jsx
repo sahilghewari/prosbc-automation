@@ -1,8 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getDBHealth } from '../database/client-api.js';
 import './Navbar.css';
 
 const Navbar = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [dbStatus, setDbStatus] = useState('connecting');
+
+  useEffect(() => {
+    const checkDbStatus = async () => {
+      try {
+        const health = await getDBHealth();
+        setDbStatus(health.status === 'healthy' ? 'connected' : 'error');
+      } catch (error) {
+        setDbStatus('disconnected');
+      }
+    };
+
+    checkDbStatus();
+    const interval = setInterval(checkDbStatus, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  const getDbStatusColor = () => {
+    switch (dbStatus) {
+      case 'connected': return 'bg-green-500';
+      case 'connecting': return 'bg-yellow-500 animate-pulse';
+      case 'error': return 'bg-orange-500';
+      case 'disconnected': return 'bg-red-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 shadow-xl border-b border-gray-700 z-50 backdrop-blur-sm">
@@ -15,25 +42,35 @@ const Navbar = () => {
             </h1>
           </div>
 
-          {/* Profile Icon with Dropdown */}
-          <div className="relative profile-menu">
-            <button 
-              onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center text-gray-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-gray-800 rounded-full p-2 transition-all duration-200 hover:bg-gray-700"
-            >
-              <svg 
-                className="w-7 h-7" 
-                fill="currentColor" 
-                viewBox="0 0 20 20" 
-                xmlns="http://www.w3.org/2000/svg"
+          {/* Database Status & Profile */}
+          <div className="flex items-center space-x-4">
+            {/* Database Status Indicator */}
+            <div className="flex items-center space-x-2 px-3 py-1 bg-gray-800 rounded-full border border-gray-600">
+              <div className={`w-2 h-2 rounded-full ${getDbStatusColor()}`}></div>
+              <span className="text-xs text-gray-300 hidden sm:block">
+                Database {dbStatus === 'connected' ? 'Connected' : dbStatus === 'connecting' ? 'Connecting...' : 'Offline'}
+              </span>
+            </div>
+
+            {/* Profile Icon with Dropdown */}
+            <div className="relative profile-menu">
+              <button 
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                className="flex items-center text-gray-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-gray-800 rounded-full p-2 transition-all duration-200 hover:bg-gray-700"
               >
-                <path 
-                  fillRule="evenodd" 
-                  d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" 
-                  clipRule="evenodd" 
-                />
-              </svg>
-            </button>
+                <svg 
+                  className="w-7 h-7" 
+                  fill="currentColor" 
+                  viewBox="0 0 20 20" 
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path 
+                    fillRule="evenodd" 
+                    d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" 
+                    clipRule="evenodd" 
+                  />
+                </svg>
+              </button>
 
             {/* Dropdown Menu */}
             {isProfileOpen && (
@@ -62,6 +99,7 @@ const Navbar = () => {
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Click outside to close dropdown */}

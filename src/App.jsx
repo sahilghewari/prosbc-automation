@@ -9,6 +9,9 @@ import FileUploader from './components/FileUploader';
 import FileManagement from './components/FileManagement';
 import RoutesetMapping from './components/RoutesetMapping';
 import ActivationGeneration from './components/ActivationGeneration';
+import DatabaseDashboard from './components/DatabaseDashboard';
+import DatabaseStatus from './components/DatabaseStatus';
+import DatabaseWidget from './components/DatabaseWidget';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import './App.css';
@@ -18,6 +21,7 @@ function App() {
   const [isReady, setIsReady] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showDatabaseDashboard, setShowDatabaseDashboard] = useState(false);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -76,6 +80,8 @@ function App() {
   // Render different content based on active section
   const renderContent = () => {
     switch (activeSection) {
+      case 'database-status':
+        return <DatabaseStatus showDetails={true} />;
       case 'nap-creation':
         return <NapCreatorEnhanced onAuthError={handleAuthError} />;
       case 'nap-management':
@@ -88,6 +94,8 @@ function App() {
         return <RoutesetMapping onAuthError={handleAuthError} />;
       case 'activation-generation':
         return <ActivationGeneration onAuthError={handleAuthError} />;
+      case 'database-dashboard':
+        return <DatabaseDashboard onClose={() => setActiveSection('nap-creation')} />;
       default:
         return <NapCreatorEnhanced onAuthError={handleAuthError} />;
     }
@@ -101,6 +109,30 @@ function App() {
         onSectionChange={setActiveSection} 
         onCollapseChange={setSidebarCollapsed}
       />
+      
+      {/* Database Widget - Fixed position */}
+     
+      
+      {/* Quick Database Dashboard Button */}
+      <button
+        onClick={() => setActiveSection('database-dashboard')}
+        className="fixed bottom-6 left-6 w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-2xl z-40 transition-all duration-200 hover:scale-110 backdrop-blur-sm"
+        title="Open Database Dashboard"
+      >
+        <svg className="w-6 h-6 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      </button>
+      
+      {/* Database Dashboard Modal */}
+      {showDatabaseDashboard && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden mx-4">
+            <DatabaseDashboard onClose={() => setShowDatabaseDashboard(false)} />
+          </div>
+        </div>
+      )}
+      
       <main className={`${sidebarCollapsed ? 'ml-16' : 'ml-64'} bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-[calc(100vh-4rem)] transition-all duration-300 pt-16`}>
         <div className="p-6">
           {renderContent()}

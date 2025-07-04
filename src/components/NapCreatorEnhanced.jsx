@@ -4,6 +4,8 @@ import {
   checkNapExists, 
   validateNapConfig 
 } from '../utils/napApiProSBCWorkflow';
+import { ClientDatabaseService } from '../database/client-api.js';
+import DatabaseStatus from './DatabaseStatus';
 import './NapCreatorEnhanced.css';
 
 const NapCreatorEnhanced = ({ onAuthError }) => {
@@ -250,6 +252,27 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
           : `✅ ${result.message}`;
         setMessage(successMsg);
         
+        // Record NAP creation in database
+        try {
+          const dbService = new ClientDatabaseService();
+          await dbService.createNap({
+            napName: napName,
+            napId: result.napId,
+            enabled: enabled,
+            defaultProfile: defaultProfile,
+            proxyAddress: proxyAddress,
+            proxyPort: proxyPort,
+            useProxy: useProxy,
+            registerToProxy: registerToProxy,
+            config: napConfig,
+            prosbc_result: result
+          });
+          console.log('✅ NAP recorded in database');
+        } catch (dbError) {
+          console.error('Database recording error:', dbError);
+          // Don't fail the whole process if database recording fails
+        }
+        
         // Reset form after successful creation
         setTimeout(() => {
           resetForm();
@@ -294,8 +317,13 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
   return (
     <div className="nap-creator-enhanced">
       <div className="nap-creator-header">
-        <h2>Create New NAP</h2>
-        <p>Create a Network Access Point with full ProSBC configuration</p>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2>Create New NAP</h2>
+            <p>Create a Network Access Point with full ProSBC configuration</p>
+          </div>
+          <DatabaseStatus showDetails={false} />
+        </div>
         {currentStep > 1 && (
           <div className="creation-progress">
             <span>Step {currentStep} of 5</span>

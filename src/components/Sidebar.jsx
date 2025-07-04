@@ -29,7 +29,6 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
         </svg>
       )
     },
-    
     {
       id: 'dm-df-upload',
       title: 'Combined File Upload',
@@ -40,7 +39,6 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
       ),
       subtitle: 'DF & DM Files in one interface'
     },
-   
     {
       id: 'dm-df-management',
       title: '🗂️ File Management Center',
@@ -52,11 +50,21 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
       subtitle: 'Comprehensive DM & DF file management'
     },
     {
+      id: 'database-dashboard',
+      title: '📊 Database Dashboard',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      ),
+      subtitle: 'Analytics, audit logs & database management'
+    },
+    {
       id: 'routeset-mapping',
       title: 'Routeset Mapping',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 113 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       ),
       subtitle: 'Mapping of Routeset files and NAP'
@@ -69,6 +77,16 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       )
+    },
+    {
+      id: 'database-status',
+      title: '🔍 Database Status',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      subtitle: 'Check database connectivity & data'
     }
   ];
 

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
+import { ClientDatabaseService } from '../database/client-api.js';
+import DatabaseStatus from './DatabaseStatus';
 
 function FileUploader({ onAuthError }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -49,6 +51,23 @@ function FileUploader({ onAuthError }) {
 
       if (result.success) {
         setMessage(`✅ DF file "${dfFileName}" uploaded successfully!`);
+        
+        // Record file upload in database
+        try {
+          const dbService = new ClientDatabaseService();
+          await dbService.saveFile({
+            name: dfFileName,
+            type: 'DF',
+            size: dfFile.size,
+            originalFile: dfFile.name,
+            prosbc_result: result
+          });
+          console.log('✅ DF file recorded in database');
+        } catch (dbError) {
+          console.error('Database recording error:', dbError);
+          // Don't fail the whole process if database recording fails
+        }
+        
         setDfFile(null);
         setDfFileName("");
         // Reset file input
@@ -87,6 +106,23 @@ function FileUploader({ onAuthError }) {
 
       if (result.success) {
         setMessage(`✅ DM file "${dmFileName}" uploaded successfully!`);
+        
+        // Record file upload in database
+        try {
+          const dbService = new ClientDatabaseService();
+          await dbService.saveFile({
+            name: dmFileName,
+            type: 'DM',
+            size: dmFile.size,
+            originalFile: dmFile.name,
+            prosbc_result: result
+          });
+          console.log('✅ DM file recorded in database');
+        } catch (dbError) {
+          console.error('Database recording error:', dbError);
+          // Don't fail the whole process if database recording fails
+        }
+        
         setDmFile(null);
         setDmFileName("");
         // Reset file input
@@ -129,9 +165,14 @@ function FileUploader({ onAuthError }) {
           <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent mb-4">
             📁 ProSBC File Manager
           </h1>
-          <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto mb-6">
             Upload and manage DF (Definition Files) and DM (Digit Map) files to ProSBC
           </p>
+          
+          {/* Database Status */}
+          <div className="flex justify-center">
+            <DatabaseStatus showDetails={false} className="inline-flex" />
+          </div>
         </div>
 
         {/* File Upload Info */}

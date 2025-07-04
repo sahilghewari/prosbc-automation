@@ -2,7 +2,35 @@ class NapEditService {
   constructor(baseUrl = '/api', sessionCookie = '') {
     this.baseUrl = baseUrl;
     this.sessionCookie = sessionCookie;
+    this.lastAuthTime = null;
+    this.authTimeout = 30 * 60 * 1000; // 30 minutes
     console.log('NapEditService initialized:', { baseUrl: this.baseUrl, sessionCookieAvailable: !!this.sessionCookie });
+  }
+
+  // Get Basic Auth credentials
+  getBasicAuthHeader() {
+    const username = import.meta.env.VITE_PROSBC_USERNAME || 'admin';
+    const password = import.meta.env.VITE_PROSBC_PASSWORD || 'admin';
+    
+    if (!username || !password) {
+      throw new Error('ProSBC credentials not found. Please set VITE_PROSBC_USERNAME and VITE_PROSBC_PASSWORD in your .env file');
+    }
+    
+    const credentials = btoa(`${username}:${password}`);
+    return `Basic ${credentials}`;
+  }
+
+  // Check if authentication might be expired
+  isAuthExpired() {
+    if (!this.lastAuthTime) {
+      return true;
+    }
+    return (Date.now() - this.lastAuthTime) > this.authTimeout;
+  }
+
+  // Update auth timestamp
+  updateAuthTime() {
+    this.lastAuthTime = Date.now();
   }
 
   // Helper method to make requests with better error handling
@@ -13,6 +41,8 @@ class NapEditService {
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.7',
+        'Authorization': this.getBasicAuthHeader(),
+        'Cache-Control': 'no-cache',
         ...options.headers
       }
     };
@@ -28,6 +58,11 @@ class NapEditService {
 
     try {
       const response = await fetch(url, requestOptions);
+      
+      // Update auth time on successful request
+      if (response.ok) {
+        this.updateAuthTime();
+      }
       
       console.log('Response status:', response.status);
       console.log('Response type:', response.type);
@@ -95,6 +130,12 @@ class NapEditService {
     } catch (error) {
       console.error('Fetch error:', error);
       
+      // Handle authentication errors
+      if (error.message.includes('401') || error.message.includes('403') || error.message.includes('Unauthorized')) {
+        console.log('Authentication error detected, clearing auth state');
+        this.lastAuthTime = null;
+      }
+      
       // Check if this is a TypeError related to CORS/Opaque redirects
       if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
         // This could be due to an opaque redirect being blocked
@@ -116,6 +157,15 @@ class NapEditService {
       console.log('getNapForEdit called with napId:', napId);
       console.log('Base URL:', this.baseUrl);
       
+      // Check if authentication might be expired and test connection
+      if (this.isAuthExpired()) {
+        console.log('Authentication may be expired, testing connection...');
+        const connectionOk = await this.testConnection();
+        if (!connectionOk) {
+          throw new Error('Authentication failed. Please check your credentials and try again.');
+        }
+      }
+      
       const editUrl = `${this.baseUrl}/naps/${napId}/edit`;
       console.log('Making GET request to:', editUrl);
       
@@ -133,10 +183,24 @@ class NapEditService {
       if (!response.ok) {
         const responseText = await response.text().catch(() => 'Unable to read response text');
         console.error('GET Response details:', { status: response.status, statusText: response.statusText, responseText });
+        
+        // Handle authentication errors specifically
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Authentication failed. Please check your credentials and try again.');
+        }
+        
         throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
       }
 
       const htmlText = await response.text();
+      
+      // Check for login redirect in response
+      if (htmlText.includes('login') || htmlText.includes('Login') || htmlText.includes('authentication')) {
+        console.log('Login page detected, session may have expired');
+        this.lastAuthTime = null;
+        throw new Error('Session expired. Please refresh the page and try again.');
+      }
+      
       console.log('Successfully retrieved HTML, length:', htmlText.length);
       return this.parseNapEditForm(htmlText);
     } catch (error) {
@@ -362,6 +426,15 @@ class NapEditService {
         throw new Error('Missing CSRF token. Please refresh and try again.');
       }
       
+      // Check if authentication might be expired
+      if (this.isAuthExpired()) {
+        console.log('Authentication may be expired, testing connection...');
+        const connectionOk = await this.testConnection();
+        if (!connectionOk) {
+          throw new Error('Authentication failed. Please check your credentials and try again.');
+        }
+      }
+      
       const formDataToSend = new FormData();
       
       // Add required fields
@@ -493,6 +566,20 @@ class NapEditService {
         };
       }
       
+      // Handle authentication errors
+      if (error.message.includes('401') || error.message.includes('403') || error.message.includes('Authentication failed')) {
+        console.log('Authentication error detected during update');
+        this.lastAuthTime = null;
+        throw new Error('Authentication failed. Please refresh the page and try again.');
+      }
+      
+      // Handle session expiration
+      if (error.message.includes('Session expired') || error.message.includes('login')) {
+        console.log('Session expiration detected during update');
+        this.lastAuthTime = null;
+        throw new Error('Session expired. Please refresh the page and try again.');
+      }
+      
       // Provide more specific error messages for other cases
       if (error.message.includes('Failed to fetch')) {
         throw new Error('Network error: Request failed. Please check your internet connection.');
@@ -502,15 +589,24 @@ class NapEditService {
     }
   }
 
-  // Test network connectivity
+  // Test network connectivity and authentication
   async testConnection() {
     try {
       console.log('Testing connection to:', this.baseUrl);
-      const response = await this.makeRequest(`${this.baseUrl}/health`, {
+      
+      // Try to access a simple endpoint that requires authentication
+      const response = await this.makeRequest(`${this.baseUrl}/configurations/config_1/naps.json`, {
         method: 'GET'
       });
+      
       console.log('Connection test response:', response.status);
-      return true;
+      
+      if (response.ok || response.status === 200) {
+        this.updateAuthTime();
+        return true;
+      }
+      
+      return false;
     } catch (error) {
       console.error('Connection test failed:', error);
       return false;

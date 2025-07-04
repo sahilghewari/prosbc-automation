@@ -24,6 +24,13 @@ export class ProSBCFileAPI {
     };
   }
 
+  // Login method (no-op since we use basic auth)
+  async login() {
+    // This method does nothing since we use basic authentication
+    // But it's here to prevent "this.login is not a function" errors
+    return { success: true, message: 'Using basic authentication' };
+  }
+
   // Upload DF (Definition) file
   async uploadDfFile(file, onProgress) {
     try {
@@ -526,10 +533,41 @@ export class ProSBCFileAPI {
     }
   }
 
-  // Get file content for update
+  // Get file content for update - handles CSV files properly
   async getFileContent(fileType, fileId) {
     try {
       console.log(`Getting ${fileType} file content for ID: ${fileId}`);
+      
+      // For CSV files, we need to get the actual file content via export endpoint
+      // since the edit page doesn't show the CSV data in textareas
+      try {
+        console.log('Attempting to fetch CSV file content via export endpoint...');
+        
+        const exportResponse = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/export`, {
+          method: 'GET',
+          headers: this.getCommonHeaders()
+        });
+
+        if (exportResponse.ok) {
+          const csvContent = await exportResponse.text();
+          console.log('Successfully fetched CSV content, length:', csvContent.length);
+          console.log('CSV content preview:', csvContent.substring(0, 200));
+          
+          return { 
+            success: true, 
+            content: csvContent,
+            isCsvFile: true,
+            found: true
+          };
+        } else {
+          console.warn('Export endpoint failed with status:', exportResponse.status);
+        }
+      } catch (exportError) {
+        console.warn('Failed to fetch via export endpoint:', exportError.message);
+      }
+      
+      // Fallback: Try to get content from edit form (for non-CSV files)
+      console.log('Falling back to edit form content extraction...');
       
       const response = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/edit`, {
         method: 'GET',
@@ -541,24 +579,74 @@ export class ProSBCFileAPI {
       }
 
       const html = await response.text();
+      console.log('Edit form HTML length:', html.length);
       
-      // Extract file content from textarea or other form elements
-      const textareaMatch = html.match(/<textarea[^>]*name="[^"]*\[uploaded_data\]"[^>]*>([\s\S]*?)<\/textarea>/);
+      // Try multiple patterns to extract content from HTML form
+      let content = '';
+      let found = false;
+      
+      // Pattern 1: textarea with uploaded_data name
+      let textareaMatch = html.match(/<textarea[^>]*name="[^"]*\[uploaded_data\]"[^>]*>([\s\S]*?)<\/textarea>/);
       
       if (textareaMatch) {
-        return { 
-          success: true, 
-          content: textareaMatch[1],
-          html: html // For extracting form fields if needed
-        };
-      } else {
-        return { 
-          success: true, 
-          content: '', 
-          html: html,
-          message: 'File content not found in textarea - file may be binary or use different format'
-        };
+        content = textareaMatch[1];
+        found = true;
+        console.log('Found content in uploaded_data textarea, length:', content.length);
       }
+      
+      // Pattern 2: any textarea (fallback)
+      if (!found) {
+        textareaMatch = html.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/);
+        if (textareaMatch) {
+          content = textareaMatch[1];
+          found = true;
+          console.log('Found content in generic textarea, length:', content.length);
+        }
+      }
+      
+      // Pattern 3: input field with uploaded_data
+      if (!found) {
+        const inputMatch = html.match(/<input[^>]*name="[^"]*\[uploaded_data\]"[^>]*value="([^"]*)"[^>]*>/);
+        if (inputMatch) {
+          content = inputMatch[1];
+          found = true;
+          console.log('Found content in input field, length:', content.length);
+        }
+      }
+      
+      // Pattern 4: Look for pre-filled content in any form field
+      if (!found) {
+        const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/);
+        if (preMatch) {
+          content = preMatch[1];
+          found = true;
+          console.log('Found content in pre tag, length:', content.length);
+        }
+      }
+      
+      // Clean up content (remove HTML entities, etc.)
+      if (content) {
+        // Decode HTML entities
+        content = content
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'");
+      }
+      
+      console.log('Final content length:', content.length);
+      if (content.length > 0) {
+        console.log('Content preview:', content.substring(0, 200));
+      }
+      
+      return { 
+        success: true, 
+        content: content,
+        html: html, // For debugging if needed
+        found: found,
+        isCsvFile: false
+      };
       
     } catch (error) {
       console.error('Get file content error:', error);
@@ -566,13 +654,15 @@ export class ProSBCFileAPI {
     }
   }
 
-  // Update file content
-  async updateFile(fileType, fileId, newContent, fileName) {
+  // Update file on ProSBC
+  async updateFile(fileType, fileId, updatedFile, onProgress = null) {
     try {
       console.log(`Updating ${fileType} file ID: ${fileId}`);
-      
-      // First get the edit form to extract CSRF token and form structure
-      const editResponse = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/edit`, {
+      onProgress?.(10, 'Getting edit form...');
+
+      // Get the edit form to extract authenticity token
+      const editUrl = `/file_dbs/1/${fileType}/${fileId}/edit`;
+      const editResponse = await fetch(`${this.baseURL}${editUrl}`, {
         method: 'GET',
         headers: this.getCommonHeaders()
       });
@@ -582,66 +672,86 @@ export class ProSBCFileAPI {
       }
 
       const editHtml = await editResponse.text();
-      console.log('Edit form HTML length:', editHtml.length);
       
-      // Extract CSRF token
-      const csrfMatch = editHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
-      
-      if (!csrfMatch) {
-        console.error('CSRF token not found in edit form');
-        console.log('Edit form HTML preview:', editHtml.substring(0, 1000));
-        throw new Error('Could not find CSRF token for update operation');
+      // Extract authenticity token
+      const tokenMatch = editHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
+      if (!tokenMatch) {
+        throw new Error('Could not find authenticity token in edit form');
       }
 
-      const csrfToken = csrfMatch[1];
-      console.log('Update CSRF token extracted:', csrfToken.substring(0, 20) + '...');
+      const csrfToken = tokenMatch[1];
+      console.log('CSRF token extracted for update:', csrfToken.substring(0, 20) + '...');
+
+      onProgress?.(30, 'Preparing update request...');
 
       // Prepare form data for update
       const formData = new FormData();
+      formData.append('_method', 'put');
       formData.append('authenticity_token', csrfToken);
-      formData.append('_method', 'patch');
       
-      // Determine the correct field name based on file type
-      const fieldName = fileType === 'routesets_definitions' 
-        ? 'tbgw_routesets_definition[uploaded_data]'
-        : 'routesets_digitmap[uploaded_data]';
-      
-      formData.append(fieldName, newContent);
+      // Use the correct field name based on file type
+      if (fileType === 'routesets_digitmaps') {
+        formData.append('tbgw_routesets_digitmap[file]', updatedFile);
+      } else {
+        formData.append('tbgw_routesets_definition[file]', updatedFile);
+      }
       formData.append('commit', 'Update');
 
-      console.log('Update FormData prepared');
+      onProgress?.(50, 'Sending update to ProSBC...');
 
+      // Send the update request
       const updateHeaders = {
         ...this.getCommonHeaders(),
-        'Referer': `${this.baseURL}/file_dbs/1/${fileType}/${fileId}/edit`
+        'Referer': `${this.baseURL}${editUrl}`,
+        'X-Requested-With': 'XMLHttpRequest'
       };
       
       // Remove Content-Type to let browser set it for FormData
       delete updateHeaders['Content-Type'];
 
-      const response = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}`, {
+      const updateResponse = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}`, {
         method: 'POST',
         headers: updateHeaders,
         body: formData
       });
 
-      console.log('Update response status:', response.status);
+      console.log('Update response status:', updateResponse.status);
 
-      if (response.ok || response.status === 302) {
-        const responseText = await response.text();
+      onProgress?.(80, 'Processing update response...');
+
+      if (updateResponse.ok || updateResponse.status === 302) {
+        const responseText = await updateResponse.text();
         console.log('Update response preview:', responseText.substring(0, 500));
-        return { success: true, message: `File "${fileName}" updated successfully!` };
+        
+        onProgress?.(100, 'File updated successfully!');
+        
+        // Check for success indicators
+        const isSuccess = updateResponse.status === 302 || 
+                         responseText.includes('successfully') ||
+                         responseText.includes('updated') ||
+                         responseText.includes('imported');
+        
+        return {
+          success: true,
+          message: isSuccess ? 'File updated successfully!' : 'File update completed - please verify in ProSBC',
+          status: updateResponse.status,
+          response: responseText.substring(0, 1000)
+        };
       } else {
-        const errorText = await response.text();
-        console.error('Update failed response:', errorText.substring(0, 1000));
-        throw new Error(`Update failed: ${response.status} - ${errorText.substring(0, 200)}`);
+        const errorText = await updateResponse.text();
+        console.error('Update failed:', errorText.substring(0, 1000));
+        throw new Error(`Update failed: ${updateResponse.status} - ${errorText.substring(0, 200)}`);
       }
-      
+
     } catch (error) {
       console.error('Update file error:', error);
       throw error;
     }
   }
+
+
+
+
 }
 
 // Export singleton instance
