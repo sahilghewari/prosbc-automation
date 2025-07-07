@@ -205,46 +205,75 @@ const CSVEditorTable = ({
     setIsUpdating(true);
     
     try {
+      console.log('🚀 Starting CSV save operation for file:', fileInfo);
+      console.log('📋 File info detailed breakdown:', {
+        id: fileInfo.id,
+        name: fileInfo.name,
+        type: fileInfo.type,
+        fileType: fileInfo.fileType,
+        prosbcId: fileInfo.prosbcId,
+        routesetId: fileInfo.routesetId,
+        fileDbId: fileInfo.fileDbId,
+        source: fileInfo.source,
+        isDigitMap: fileInfo.fileType === 'routesets_digitmaps'
+      });
+      
       onProgress?.(10, 'Converting table to CSV...');
       const csvString = convertToCSV();
       
+      // IMPORTANT: Always update ProSBC first, then update local database
+      console.log('🎯 Updating ProSBC system first...');
+      onProgress?.(30, 'Updating file on ProSBC...');
+      
+      // Update the file using the CSV file update service
+      const prosbcResult = await csvFileUpdateService.updateCSVFile(
+        csvString,
+        fileInfo,
+        (progress, message) => onProgress?.(30 + (progress * 0.4), message) // Scale progress 30-70%
+      );
+      
+      console.log('ProSBC update result:', prosbcResult);
+      
+      if (!prosbcResult.success) {
+        throw new Error(prosbcResult.message || 'Failed to update file on ProSBC');
+      }
+      
+      // Only update local database AFTER ProSBC update succeeds
       if (dbIntegration && fileInfo?.id) {
-        // Update existing file with database integration
-        onProgress?.(30, 'Analyzing changes...');
+        console.log('📚 Updating local database for audit trail...');
+        onProgress?.(70, 'Updating local database...');
         
         const changes = analyzeChanges();
         
-        onProgress?.(50, 'Updating file with database...');
-        
-        const result = await dbIntegration.updateFileWithDatabase(
+        const dbResult = await dbIntegration.updateFileWithDatabase(
           fileInfo.id,
           csvString,
           changes,
           'current_user' // You should get this from your auth system
         );
         
-        if (result.success) {
-          onProgress?.(80, 'Refreshing history...');
+        if (dbResult.success) {
+          onProgress?.(90, 'Refreshing history...');
           
           // Reload file history
           await loadFileHistory();
-          
-          onProgress?.(100, 'File updated successfully!');
-          
-          // Update original data to reflect saved state
-          setOriginalData({ headers, rows });
-          setHasChanges(false);
           setCurrentFileId(fileInfo.id);
-          
-          // Call parent callback
-          onSave?.(csvString, result);
-          
-          alert('File updated successfully with full audit trail!');
+        } else {
+          console.warn('Database update failed but ProSBC update succeeded:', dbResult);
         }
-      } else {
-        // Fallback to original save method
-        await handleSave();
       }
+      
+      onProgress?.(100, 'File updated successfully!');
+      
+      // Update original data to reflect saved state
+      setOriginalData({ headers, rows });
+      setHasChanges(false);
+      
+      // Call parent callback
+      onSave?.(csvString, prosbcResult);
+      
+      alert('File updated successfully on ProSBC!');
+      console.log('CSV file update completed successfully');
       
     } catch (error) {
       console.error('Error saving file with database:', error);
@@ -430,6 +459,32 @@ const CSVEditorTable = ({
     setIsUpdating(true);
     
     try {
+      console.log('🚀 Starting CSV save operation for file:', fileInfo);
+      console.log('📋 File info detailed breakdown:', {
+        id: fileInfo.id,
+        name: fileInfo.name,
+        type: fileInfo.type,
+        fileType: fileInfo.fileType,
+        prosbcId: fileInfo.prosbcId,
+        routesetId: fileInfo.routesetId,
+        fileDbId: fileInfo.fileDbId,
+        source: fileInfo.source,
+        isDigitMap: fileInfo.fileType === 'routesets_digitmaps'
+      });
+      
+      // Validate critical properties for DM files
+      if (fileInfo.fileType === 'routesets_digitmaps') {
+        console.log('🎯 DM File Update - Validation Check:', {
+          hasFileType: !!fileInfo.fileType,
+          hasProsbcId: !!fileInfo.prosbcId,
+          hasRoutesetId: !!fileInfo.routesetId,
+          hasFileDbId: !!fileInfo.fileDbId,
+          fileTypeValue: fileInfo.fileType,
+          routesetIdValue: fileInfo.routesetId,
+          prosbcIdValue: fileInfo.prosbcId
+        });
+      }
+      
       // Create backup before saving
       await createBackup();
       
@@ -437,6 +492,8 @@ const CSVEditorTable = ({
       
       // Convert table data to CSV
       const csvString = convertToCSV();
+      console.log('Generated CSV content length:', csvString.length);
+      console.log('CSV content preview:', csvString.substring(0, 200));
       
       onProgress?.(30, 'Preparing file update...');
       
@@ -448,6 +505,8 @@ const CSVEditorTable = ({
         fileInfo,
         onProgress
       );
+      
+      console.log('CSV update result:', result);
       
       if (result.success) {
         onProgress?.(100, 'File updated successfully!');
@@ -461,12 +520,24 @@ const CSVEditorTable = ({
         
         // Show success message
         alert('File updated successfully on ProSBC!');
+        
+        console.log('CSV file update completed successfully');
       } else {
         throw new Error(result.message || 'Failed to update file');
       }
       
     } catch (error) {
       console.error('Error saving file:', error);
+      
+      // Log detailed error information for debugging
+      console.group('CSV Save Error Details');
+      console.log('Error object:', error);
+      console.log('File info:', fileInfo);
+      console.log('Has changes:', hasChanges);
+      console.log('Table data - headers:', headers);
+      console.log('Table data - rows count:', rows.length);
+      console.groupEnd();
+      
       alert(`Failed to save file: ${error.message}`);
     } finally {
       setIsUpdating(false);

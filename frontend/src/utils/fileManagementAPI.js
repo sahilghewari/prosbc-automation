@@ -172,14 +172,26 @@ export class FileManagementAPI {
   // Update file with multipart/form-data
   async updateFile(file, fileDbId = 1, routesetId = 1, fileType = 'routesets_definitions', onProgress = null) {
     try {
-      console.log(`Starting file update for: ${file.name}, fileType: ${fileType}`);
+      console.log('🚀 fileManagementAPI.updateFile called with:');
+      console.log('📋 Parameters:', {
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: fileType,
+        fileDbId: fileDbId,
+        routesetId: routesetId,
+        isDigitMap: fileType === 'routesets_digitmaps'
+      });
+      
       onProgress?.(10, 'Preparing update request...');
 
       // First, get the edit form data
+      console.log('🔍 Getting edit form data...');
       const editData = await this.getEditFormData(fileDbId, routesetId, fileType);
       if (!editData.success) {
         throw new Error('Failed to get edit form data');
       }
+      
+      console.log('✅ Edit form data retrieved successfully');
 
       onProgress?.(30, 'Preparing multipart form data...');
 
@@ -190,26 +202,34 @@ export class FileManagementAPI {
       
       // Use the correct field name based on file type
       if (fileType === 'routesets_digitmaps') {
+        console.log('🎯 Preparing DM file form data');
         formData.append('tbgw_routesets_digitmap[file]', file);
         formData.append('tbgw_routesets_digitmap[id]', this.recordId);
+        formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', fileDbId.toString());
       } else {
+        console.log('📄 Preparing DF file form data');
         formData.append('tbgw_routesets_definition[file]', file);
         formData.append('tbgw_routesets_definition[id]', this.recordId);
+        formData.append('tbgw_routesets_definition[tbgw_files_db_id]', fileDbId.toString());
       }
       formData.append('commit', 'Update');
 
-      console.log('FormData prepared:');
+      console.log('📋 FormData prepared:');
       console.log('- _method: put');
       console.log('- authenticity_token:', this.authenticityToken.substring(0, 20) + '...');
       console.log('- file:', file.name, 'size:', file.size);
       console.log('- record id:', this.recordId);
       console.log('- file type:', fileType);
+      console.log('- file db id:', fileDbId);
 
       onProgress?.(50, 'Submitting update request...');
 
       // Submit the update request to the correct endpoint
       const endpoint = editData.endpoint;
       const updateUrl = `/file_dbs/${fileDbId}/${endpoint}/${routesetId}`;
+      
+      console.log('🌐 Submitting to URL:', updateUrl);
+      console.log('🔗 Endpoint details:', { endpoint, fileType, updateUrl });
       
       const updateResponse = await this.client.post(updateUrl, formData, {
         headers: {
@@ -224,23 +244,27 @@ export class FileManagementAPI {
         }
       });
 
-      console.log('Update response status:', updateResponse.status);
-      console.log('Update response headers:', updateResponse.headers);
+      console.log('📡 Update response status:', updateResponse.status);
+      console.log('📋 Update response headers:', updateResponse.headers);
 
       onProgress?.(75, 'Processing response...');
 
       // Handle different response types
       let result = await this.processUpdateResponse(updateResponse, fileDbId, routesetId);
 
+      console.log('✅ Update completed, result:', result);
+
       onProgress?.(100, 'Update completed successfully');
 
       return {
         success: true,
         status: updateResponse.status,
-        message: 'File updated successfully',
+        message: 'File updated successfully on ProSBC',
         data: result,
         redirectUrl: updateResponse.headers.location,
-        fileType: fileType
+        fileType: fileType,
+        fileName: file.name,
+        fileId: routesetId
       };
 
     } catch (error) {
@@ -250,6 +274,8 @@ export class FileManagementAPI {
       if (error.response) {
         const status = error.response.status;
         const statusText = error.response.statusText;
+        
+        console.log('Error response data:', error.response.data?.substring(0, 500));
         
         switch (status) {
           case 401:
@@ -262,11 +288,12 @@ export class FileManagementAPI {
             };
           
           case 422:
+            const validationErrors = await this.extractValidationErrors(error.response.data);
             return {
               success: false,
               error: 'File validation failed - invalid format or size',
               status: status,
-              details: await this.extractValidationErrors(error.response.data)
+              details: validationErrors
             };
           
           case 500:
@@ -296,7 +323,9 @@ export class FileManagementAPI {
             error: null,
             message: 'File upload likely successful (CORS prevented redirect confirmation)',
             status: 200,
-            note: 'Upload completed but confirmation blocked by CORS policy'
+            note: 'Upload completed but confirmation blocked by CORS policy',
+            fileName: file.name,
+            fileType: fileType
           };
         }
       }

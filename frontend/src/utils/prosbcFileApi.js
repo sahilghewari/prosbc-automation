@@ -657,30 +657,48 @@ export class ProSBCFileAPI {
   // Update file on ProSBC
   async updateFile(fileType, fileId, updatedFile, onProgress = null) {
     try {
-      console.log(`Updating ${fileType} file ID: ${fileId}`);
+      console.log(`Updating ${fileType} file ID: ${fileId} with file: ${updatedFile.name}`);
       onProgress?.(10, 'Getting edit form...');
 
-      // Get the edit form to extract authenticity token
+      // Get the edit form to extract authenticity token and record ID
       const editUrl = `/file_dbs/1/${fileType}/${fileId}/edit`;
+      console.log('Fetching edit form from:', editUrl);
+      
       const editResponse = await fetch(`${this.baseURL}${editUrl}`, {
         method: 'GET',
         headers: this.getCommonHeaders()
       });
 
       if (!editResponse.ok) {
-        throw new Error(`Failed to get edit form: ${editResponse.status}`);
+        const errorText = await editResponse.text();
+        console.error('Edit form fetch failed:', errorText.substring(0, 500));
+        throw new Error(`Failed to get edit form: ${editResponse.status} - ${errorText.substring(0, 200)}`);
       }
 
       const editHtml = await editResponse.text();
+      console.log('Edit form HTML length:', editHtml.length);
       
       // Extract authenticity token
       const tokenMatch = editHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
       if (!tokenMatch) {
+        console.error('Authenticity token not found in edit form');
+        console.log('Edit form HTML preview:', editHtml.substring(0, 1000));
         throw new Error('Could not find authenticity token in edit form');
       }
 
       const csrfToken = tokenMatch[1];
       console.log('CSRF token extracted for update:', csrfToken.substring(0, 20) + '...');
+
+      // Extract record ID from the form - important for DM files
+      let recordId = fileId;
+      const fieldName = fileType === 'routesets_digitmaps' ? 'tbgw_routesets_digitmap' : 'tbgw_routesets_definition';
+      const idMatch = editHtml.match(new RegExp(`name="${fieldName}\\[id\\]"[^>]*value="([^"]+)"`));
+      if (idMatch) {
+        recordId = idMatch[1];
+        console.log('Record ID extracted from form:', recordId);
+      } else {
+        console.log('Record ID not found in form, using fileId:', recordId);
+      }
 
       onProgress?.(30, 'Preparing update request...');
 
@@ -689,13 +707,24 @@ export class ProSBCFileAPI {
       formData.append('_method', 'put');
       formData.append('authenticity_token', csrfToken);
       
-      // Use the correct field name based on file type
+      // Use the correct field name based on file type - critical for DM files
       if (fileType === 'routesets_digitmaps') {
         formData.append('tbgw_routesets_digitmap[file]', updatedFile);
+        formData.append('tbgw_routesets_digitmap[id]', recordId);
+        formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', '1');
       } else {
         formData.append('tbgw_routesets_definition[file]', updatedFile);
+        formData.append('tbgw_routesets_definition[id]', recordId);
+        formData.append('tbgw_routesets_definition[tbgw_files_db_id]', '1');
       }
       formData.append('commit', 'Update');
+
+      console.log('FormData prepared for update:');
+      console.log('- File type:', fileType);
+      console.log('- File name:', updatedFile.name);
+      console.log('- File size:', updatedFile.size);
+      console.log('- Record ID:', recordId);
+      console.log('- Field name:', fieldName);
 
       onProgress?.(50, 'Sending update to ProSBC...');
 
@@ -716,6 +745,7 @@ export class ProSBCFileAPI {
       });
 
       console.log('Update response status:', updateResponse.status);
+      console.log('Update response headers:', Object.fromEntries(updateResponse.headers.entries()));
 
       onProgress?.(80, 'Processing update response...');
 
@@ -725,26 +755,53 @@ export class ProSBCFileAPI {
         
         onProgress?.(100, 'File updated successfully!');
         
-        // Check for success indicators
+        // Check for success indicators - more comprehensive check
         const isSuccess = updateResponse.status === 302 || 
+                         updateResponse.status === 200 ||
                          responseText.includes('successfully') ||
                          responseText.includes('updated') ||
-                         responseText.includes('imported');
+                         responseText.includes('imported') ||
+                         responseText.includes('Upload successful');
+        
+        console.log(`Update ${isSuccess ? 'successful' : 'completed'} for ${fileType} file ${fileId}`);
         
         return {
           success: true,
-          message: isSuccess ? 'File updated successfully!' : 'File update completed - please verify in ProSBC',
+          message: isSuccess ? 'File updated successfully on ProSBC!' : 'File update completed - please verify in ProSBC',
           status: updateResponse.status,
-          response: responseText.substring(0, 1000)
+          response: responseText.substring(0, 1000),
+          fileType: fileType,
+          fileId: fileId,
+          fileName: updatedFile.name
         };
       } else {
         const errorText = await updateResponse.text();
-        console.error('Update failed:', errorText.substring(0, 1000));
-        throw new Error(`Update failed: ${updateResponse.status} - ${errorText.substring(0, 200)}`);
+        console.error('Update failed response:', errorText.substring(0, 1000));
+        
+        // Try to extract specific error messages
+        let errorMessage = `Update failed: ${updateResponse.status}`;
+        
+        // Look for specific error patterns
+        const errorPatterns = [
+          /<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/,
+          /<span[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/,
+          /error['"]\s*:\s*['"]([^'"]+)/i
+        ];
+        
+        for (const pattern of errorPatterns) {
+          const match = errorText.match(pattern);
+          if (match) {
+            errorMessage += ` - ${match[1]}`;
+            break;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
     } catch (error) {
       console.error('Update file error:', error);
+      onProgress?.(100, `Update failed: ${error.message}`);
       throw error;
     }
   }

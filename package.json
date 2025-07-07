@@ -1,34 +1,23 @@
 {
-  "name": "prosbc-nap-ui",
+  "name": "prosbc-automation",
+  "version": "1.0.0",
+  "description": "ProSBC Automation System with Frontend and Backend",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "db:init": "node scripts/init-database.js",
-    "db:setup": "npm run db:init && echo Database setup complete!"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "install:all": "npm install && npm run install:frontend && npm run install:backend",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && npm install",
+    "setup": "npm run install:all && cd backend && npm run setup"
   },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.1.11",
-    "axios": "^1.10.0",
-    "jszip": "^3.10.1",
-    "mongoose": "^8.16.1",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "tailwindcss": "^4.1.11"
-  },
+  "keywords": ["prosbc", "automation", "nap", "frontend", "backend"],
+  "author": "ProSBC Team",
+  "license": "MIT",
   "devDependencies": {
-    "@eslint/js": "^9.29.0",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.5.2",
-    "eslint": "^9.29.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.20",
-    "globals": "^16.2.0",
-    "vite": "^7.0.0"
+    "concurrently": "^8.2.2"
   }
 }

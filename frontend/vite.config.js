@@ -9,6 +9,11 @@ export default defineConfig({
 ],
   server: {
     proxy: {
+      '/backend': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/backend/, ''),
+      },
       '/api': {
         target: process.env.PROSBC_URL || 'https://prosbc2tpa2.dipvtel.com:12358',
         changeOrigin: true,

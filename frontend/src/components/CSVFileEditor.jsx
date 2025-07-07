@@ -34,6 +34,20 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       setIsLoading(true);
       setMessage('Loading selected file...');
       
+      console.log('🎯 Processing pre-selected file:', file);
+      console.log('📋 Original file properties:', {
+        id: file.id,
+        prosbcId: file.prosbcId,
+        name: file.name,
+        fileName: file.fileName,
+        type: file.type,
+        fileType: file.fileType,
+        source: file.source,
+        hasContent: file.hasContent,
+        fileDbId: file.fileDbId,
+        routesetId: file.routesetId
+      });
+      
       // Convert the file to the format expected by the editor
       const fileForEditor = {
         id: file.id || file.prosbcId,
@@ -41,10 +55,22 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
         type: file.type || file.fileType,
         fileType: file.fileType || file.type,
         prosbcId: file.prosbcId || file.id,
+        fileDbId: file.fileDbId || 1,
+        routesetId: file.routesetId || file.prosbcId || file.id,
         source: file.source || (file.prosbcId ? 'database' : 'prosbc'),
         hasContent: file.hasContent || file.content,
-        // Add other properties as needed
+        // Preserve all original properties for debugging
+        ...file
       };
+      
+      console.log('🔄 Converted file for editor:', fileForEditor);
+      console.log('🧩 Key properties check:', {
+        fileType: fileForEditor.fileType,
+        isDigitMap: fileForEditor.fileType === 'routesets_digitmaps',
+        routesetId: fileForEditor.routesetId,
+        prosbcId: fileForEditor.prosbcId,
+        id: fileForEditor.id
+      });
       
       // Use the existing file selection logic
       await handleFileSelect(fileForEditor);

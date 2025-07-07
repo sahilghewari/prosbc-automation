@@ -26,7 +26,18 @@ export class CSVFileUpdateService {
     let updateResult = null;
 
     try {
-      console.log('Starting CSV file update:', fileInfo);
+      console.log('🚀 Starting CSV file update for DM file:', fileInfo);
+      console.log('📋 File info detailed breakdown:', {
+        id: fileInfo.id,
+        name: fileInfo.name,
+        type: fileInfo.type,
+        fileType: fileInfo.fileType,
+        prosbcId: fileInfo.prosbcId,
+        routesetId: fileInfo.routesetId,
+        fileDbId: fileInfo.fileDbId,
+        source: fileInfo.source
+      });
+      
       onProgress?.(5, 'Preparing CSV file update...');
 
       // Validate input
@@ -48,23 +59,41 @@ export class CSVFileUpdateService {
       
       onProgress?.(25, 'Preparing file for upload...');
 
-      // Determine file type and endpoint details
-      const fileType = fileInfo.fileType || fileInfo.type || 'routesets_definitions';
+      // Determine file type and endpoint details with enhanced logic for DM files
+      let fileType = fileInfo.fileType || fileInfo.type;
+      
+      // Special handling for DM files
+      if (!fileType && fileInfo.name && fileInfo.name.toLowerCase().includes('digitmap')) {
+        fileType = 'routesets_digitmaps';
+      }
+      
+      // Default to DF if still not determined
+      if (!fileType) {
+        fileType = 'routesets_definitions';
+      }
+      
       const fileDbId = fileInfo.fileDbId || 1;
-      const routesetId = fileInfo.routesetId || fileInfo.id;
+      const routesetId = fileInfo.routesetId || fileInfo.prosbcId || fileInfo.id;
 
-      console.log('Update parameters:', {
+      console.log('🎯 Update parameters determined:', {
         fileType,
         fileDbId,
         routesetId,
         fileName,
-        contentLength: csvContent.length
+        contentLength: csvContent.length,
+        isDigitMap: fileType === 'routesets_digitmaps'
       });
 
       onProgress?.(35, 'Getting authentication token...');
 
       // Get edit form data first to extract authenticity token
       const editFormData = await this.getEditFormData(fileDbId, routesetId, fileType);
+      
+      if (!editFormData.success) {
+        throw new Error(`Failed to get edit form data: ${editFormData.error}`);
+      }
+      
+      console.log('🔐 Authentication data retrieved for', fileType);
       
       onProgress?.(50, 'Uploading CSV file to ProSBC...');
 
@@ -190,11 +219,27 @@ export class CSVFileUpdateService {
    */
   async performCSVUpdate(csvFile, editFormData, fileType, fileDbId, routesetId, onProgress) {
     try {
-      console.log('Performing CSV update with multipart/form-data');
+      console.log('🔥 Performing CSV update with multipart/form-data');
+      console.log('📋 Update parameters:', {
+        fileName: csvFile.name,
+        fileSize: csvFile.size,
+        fileType: fileType,
+        fileDbId: fileDbId,
+        routesetId: routesetId,
+        isDigitMap: fileType === 'routesets_digitmaps'
+      });
       
       onProgress?.(60, 'Sending update request to ProSBC...');
 
       // Use fileManagementAPI for better session handling
+      console.log('🌐 Calling fileManagementAPI.updateFile with params:', {
+        file: csvFile.name,
+        fileDbId,
+        routesetId,
+        fileType,
+        hasProgress: !!onProgress
+      });
+      
       const updateResult = await fileManagementAPI.updateFile(
         csvFile,
         fileDbId,
@@ -203,9 +248,12 @@ export class CSVFileUpdateService {
         onProgress
       );
 
+      console.log('📝 fileManagementAPI.updateFile result:', updateResult);
+      
       onProgress?.(80, 'Processing update response...');
 
       if (updateResult.success) {
+        console.log('✅ CSV update successful via fileManagementAPI');
         return {
           success: true,
           message: 'CSV file updated successfully on ProSBC',
@@ -213,15 +261,16 @@ export class CSVFileUpdateService {
           response: updateResult.message || 'File updated successfully'
         };
       } else {
+        console.error('❌ CSV update failed via fileManagementAPI:', updateResult);
         throw new Error(updateResult.error || 'Update failed');
       }
 
     } catch (error) {
-      console.error('Error performing CSV update:', error);
+      console.error('💥 Error performing CSV update:', error);
       
       // Handle session expiration by attempting to retry
       if (error.message.includes('Session expired') || error.message.includes('401') || error.message.includes('403')) {
-        console.log('Session expired during update, attempting to retry...');
+        console.log('🔄 Session expired during update, attempting to retry...');
         try {
           // Clear any existing session data
           fileManagementAPI.sessionCookies = null;
@@ -237,7 +286,7 @@ export class CSVFileUpdateService {
           );
           
           if (retryResult.success) {
-            console.log('Retry successful after session refresh');
+            console.log('✅ Retry successful after session refresh');
             return {
               success: true,
               message: 'CSV file updated successfully on ProSBC (after retry)',
@@ -246,7 +295,7 @@ export class CSVFileUpdateService {
             };
           }
         } catch (retryError) {
-          console.error('Retry failed:', retryError);
+          console.error('💥 Retry failed:', retryError);
         }
       }
       
