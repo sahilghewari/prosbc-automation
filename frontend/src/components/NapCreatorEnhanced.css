@@ -31,6 +31,30 @@
   font-size: 1rem;
 }
 
+.header-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.metrics-toggle-button {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+  border: 1px solid rgba(23, 162, 184, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.metrics-toggle-button:hover {
+  background: #138496;
+  border-color: rgba(19, 132, 150, 0.4);
+}
+
 .creation-progress {
   display: inline-flex;
   align-items: center;
@@ -295,7 +319,8 @@
 }
 
 .create-button,
-.reset-button {
+.reset-button,
+.clear-cache-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -350,6 +375,45 @@
   transform: none;
 }
 
+.clear-cache-button {
+  background: rgba(234, 88, 12, 0.6);
+  color: #fed7aa;
+  border: 1px solid rgba(234, 88, 12, 0.6);
+  min-width: 120px;
+}
+
+.clear-cache-button:hover:not(:disabled) {
+  background: rgba(234, 88, 12, 0.8);
+  border-color: rgba(251, 146, 60, 0.6);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.clear-cache-button:disabled {
+  background: rgba(75, 85, 99, 0.4);
+  color: #6b7280;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.debug-button {
+  background: #6f42c1;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+  border: 1px solid rgba(111, 66, 193, 0.3);
+  backdrop-filter: blur(4px);
+}
+
+.debug-button:hover {
+  background: #5a2a9a;
+  border-color: rgba(90, 42, 154, 0.4);
+}
+
 /* Spinner Animation */
 .spinner {
   width: 1rem;
@@ -386,7 +450,8 @@
   }
 
   .create-button,
-  .reset-button {
+  .reset-button,
+  .clear-cache-button {
     width: 100%;
   }
 

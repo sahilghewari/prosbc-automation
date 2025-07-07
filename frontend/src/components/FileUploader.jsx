@@ -50,7 +50,14 @@ function FileUploader({ onAuthError }) {
       });
 
       if (result.success) {
-        setMessage(`✅ DF file "${dfFileName}" uploaded successfully!`);
+        let successMessage = `✅ DF file "${dfFileName}" uploaded successfully!`;
+        
+        // Add note if upload succeeded but confirmation was blocked by CORS
+        if (result.note && result.note.includes('CORS')) {
+          successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
+        }
+        
+        setMessage(successMessage);
         
         // Record file upload in database
         try {
@@ -105,7 +112,14 @@ function FileUploader({ onAuthError }) {
       });
 
       if (result.success) {
-        setMessage(`✅ DM file "${dmFileName}" uploaded successfully!`);
+        let successMessage = `✅ DM file "${dmFileName}" uploaded successfully!`;
+        
+        // Add note if upload succeeded but confirmation was blocked by CORS
+        if (result.note && result.note.includes('CORS')) {
+          successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
+        }
+        
+        setMessage(successMessage);
         
         // Record file upload in database
         try {
@@ -344,7 +358,11 @@ function FileUploader({ onAuthError }) {
         {message && (
           <div className="bg-gray-800 rounded-2xl p-8 shadow-lg border border-gray-700">
             <div className={`p-6 rounded-xl border font-mono text-sm leading-relaxed ${getMessageClasses()}`}>
-              {message}
+              {message.split('\n').map((line, index) => (
+                <div key={index} className={index > 0 ? 'mt-2' : ''}>
+                  {line}
+                </div>
+              ))}
             </div>
           </div>
         )}

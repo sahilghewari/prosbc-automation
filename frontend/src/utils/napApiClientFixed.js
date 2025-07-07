@@ -236,13 +236,41 @@ export const fetchExistingNaps = async () => {
               }
               
               if (napName && napName.length > 0 && !napName.includes('No NAPs') && !napName.includes('Name')) {
+                // Parse status/enabled field more intelligently
+                let enabled = false;
+                let status = 'inactive';
+                
+                if (cells.length > 1) {
+                  const statusText = cells[1].textContent?.trim().toLowerCase();
+                  if (statusText) {
+                    // Check for various status indicators
+                    if (statusText.includes('active') || 
+                        statusText.includes('enabled') || 
+                        statusText.includes('on') ||
+                        statusText.includes('yes') ||
+                        statusText === 'true') {
+                      enabled = true;
+                      status = 'active';
+                    } else if (statusText.includes('inactive') || 
+                               statusText.includes('disabled') || 
+                               statusText.includes('off') ||
+                               statusText.includes('no') ||
+                               statusText === 'false') {
+                      enabled = false;
+                      status = 'inactive';
+                    }
+                  }
+                }
+                
                 naps[napName] = {
                   name: napName,
+                  enabled: enabled,
+                  status: status,
                   // Add other properties if available from other cells
-                  enabled: cells.length > 1 ? cells[1].textContent?.trim() : undefined,
                   description: cells.length > 2 ? cells[2].textContent?.trim() : undefined,
+                  raw_status: cells.length > 1 ? cells[1].textContent?.trim() : undefined, // Keep original for debugging
                 };
-                console.log(`Found NAP: ${napName}`);
+                console.log(`Found NAP: ${napName}, enabled: ${enabled}, raw_status: "${cells.length > 1 ? cells[1].textContent?.trim() : 'N/A'}"`);
               }
             }
           }

@@ -264,7 +264,8 @@
   color: #2c3e50;
 }
 
-/* Status Badges */
+/* Status Badges - Removed as status is no longer displayed in UI */
+/* 
 .status-badge {
   display: inline-block;
   padding: 4px 8px;
@@ -278,6 +279,7 @@
   background-color: #f8d7da;
   color: #721c24;
 }
+*/
 
 .protocol-badge {
   display: inline-block;
@@ -289,6 +291,8 @@
   font-weight: 500;
 }
 
+/* Status Indicators - Removed as status is no longer displayed in UI */
+/*
 .status-indicator {
   display: inline-flex;
   align-items: center;
@@ -311,6 +315,7 @@
 .status-indicator.disabled::before {
   background-color: #dc3545;
 }
+*/
 
 /* Action Buttons */
 .actions-cell {

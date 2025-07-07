@@ -10,7 +10,7 @@ import {
 function NapCreator({ onAuthError }) {
   // Basic NAP configuration (Main form)
   const [napName, setNapName] = useState("VEN_ATX_66");
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(true); // Always enabled, not shown in UI
   const [defaultProfile, setDefaultProfile] = useState("default");
   
   // Proxy Configuration
@@ -354,21 +354,6 @@ function NapCreator({ onAuthError }) {
               />
             </div>
 
-            {/* Enabled */}
-            <div className="flex items-center space-x-3">
-              <input
-                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-              />
-              <label className="text-sm font-semibold text-gray-700 cursor-pointer">
-                Enabled
-              </label>
-              <span className="text-xs text-gray-500">
-                (Enable this NAP. If disabled, the system will behave like if this NAP was not in the configuration)
-              </span>
-            </div>
 
             {/* Default Profile */}
             <div className="space-y-2">

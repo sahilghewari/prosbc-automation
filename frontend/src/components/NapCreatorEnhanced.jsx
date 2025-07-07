@@ -2,16 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { 
   createNapWithProSBCWorkflow as createNapAPI, 
   checkNapExists, 
-  validateNapConfig 
-} from '../utils/napApiProSBCWorkflow';
+  clearSessionCache,
+  debugNapExistence
+} from '../utils/napApiProSBCWorkflowOptimized';
+import { validateNapConfig } from '../utils/napApiProSBCWorkflow';
 import { ClientDatabaseService } from '../database/client-api.js';
 import DatabaseStatus from './DatabaseStatus';
+import PerformanceMetrics from './PerformanceMetrics';
 import './NapCreatorEnhanced.css';
 
 const NapCreatorEnhanced = ({ onAuthError }) => {
   // Basic NAP Configuration
   const [napName, setNapName] = useState('');
-  const [enabled, setEnabled] = useState(true);
+  const [enabled, setEnabled] = useState(true); // Always enabled, not shown in UI
   const [defaultProfile, setDefaultProfile] = useState('1');
   
   // SIP Proxy Configuration
@@ -104,6 +107,7 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [currentStep, setCurrentStep] = useState(1);
+  const [showPerformanceMetrics, setShowPerformanceMetrics] = useState(false);
   
   // Section visibility
   const [showRegistrationParams, setShowRegistrationParams] = useState(false);
@@ -124,14 +128,22 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
     
     setLoading(true);
     setCurrentStep(1);
-    setMessage('Checking for duplicate NAP names...');
+    const startTime = Date.now();
     
     try {
-      // Step 1: Check if NAP already exists
+      // Step 1: Check if NAP already exists (optimized)
       setMessage('Step 1: Checking for duplicate NAP names...');
-      const napExists = await checkNapExists(napName);
+      console.log(`Checking if NAP "${napName}" already exists...`);
       
-      if (napExists) {
+      const napExistsResult = await checkNapExists(napName);
+      console.log('NAP existence check result:', napExistsResult);
+      
+      if (napExistsResult.exists) {
+        // If we get a false positive, run debug check
+        console.log('⚠️ NAP appears to exist, running debug check...');
+        const debugResult = await debugNapExistence(napName);
+        console.log('Debug result:', debugResult);
+        
         setMessage(`❌ Error: A NAP with the name "${napName}" already exists in ProSBC. Please choose a different name.`);
         setLoading(false);
         setCurrentStep(1);
@@ -245,11 +257,15 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
       
       console.log('NAP Creation Result:', result);
       
+      const totalTime = Date.now() - startTime;
+      console.log(`⏱️ Total NAP creation time: ${totalTime}ms`);
+      
       if (result.success) {
         setCurrentStep(5);
+        const executionTime = result.executionTime || totalTime;
         const successMsg = result.napId 
-          ? `✅ ${result.message} (ID: ${result.napId})`
-          : `✅ ${result.message}`;
+          ? `✅ ${result.message} (ID: ${result.napId}) - Created in ${executionTime}ms`
+          : `✅ ${result.message} - Created in ${executionTime}ms`;
         setMessage(successMsg);
         
         // Record NAP creation in database
@@ -265,7 +281,8 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             useProxy: useProxy,
             registerToProxy: registerToProxy,
             config: napConfig,
-            prosbc_result: result
+            prosbc_result: result,
+            executionTimeMs: executionTime
           });
           console.log('✅ NAP recorded in database');
         } catch (dbError) {
@@ -288,8 +305,12 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
       console.error('NAP creation error:', error);
       
       if (error.message.includes('Authentication') || error.message.includes('credentials')) {
-        setMessage('❌ Authentication failed. Please check your .env file credentials.');
+        setMessage('❌ Authentication failed. Clearing session cache and retrying...');
+        clearSessionCache(); // Clear the cached session
         if (onAuthError) onAuthError();
+      } else if (error.message.includes('timeout') || error.message.includes('network')) {
+        setMessage('❌ Network error. Please check your connection and try again.');
+        clearSessionCache(); // Clear cache on network issues
       } else {
         setMessage(`❌ Error: ${error.message}`);
       }
@@ -322,7 +343,16 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             <h2>Create New NAP</h2>
             <p>Create a Network Access Point with full ProSBC configuration</p>
           </div>
-          <DatabaseStatus showDetails={false} />
+          <div className="header-controls">
+            <button 
+              className="metrics-toggle-button"
+              onClick={() => setShowPerformanceMetrics(!showPerformanceMetrics)}
+              title="Toggle performance metrics"
+            >
+              📊 {showPerformanceMetrics ? 'Hide' : 'Show'} Metrics
+            </button>
+            <DatabaseStatus showDetails={false} />
+          </div>
         </div>
         {currentStep > 1 && (
           <div className="creation-progress">
@@ -330,6 +360,15 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
           </div>
         )}
       </div>
+
+      {/* Performance Metrics */}
+      {showPerformanceMetrics && (
+        <PerformanceMetrics 
+          showDetails={true}
+          autoRefresh={true}
+          refreshInterval={5000}
+        />
+      )}
 
       {/* Status Message */}
       {message && (
@@ -354,18 +393,6 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
               required
               disabled={loading}
             />
-          </div>
-          
-          <div className="form-group">
-            <label>
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-                disabled={loading}
-              />
-              Enabled
-            </label>
           </div>
           
           <div className="form-group">
@@ -661,6 +688,48 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             disabled={loading}
           >
             Reset Form
+          </button>
+          
+          <button
+            type="button"
+            className="clear-cache-button"
+            onClick={() => {
+              clearSessionCache();
+              setMessage('🔄 Session cache cleared. Next NAP creation will establish a fresh session.');
+              setTimeout(() => setMessage(''), 3000);
+            }}
+            disabled={loading}
+            title="Clear cached session and authentication tokens"
+          >
+            Clear Cache
+          </button>
+          
+          <button
+            type="button"
+            className="debug-button"
+            onClick={async () => {
+              if (!napName.trim()) {
+                setMessage('❌ Please enter a NAP name to debug');
+                return;
+              }
+              
+              setMessage('🔍 Running debug check...');
+              console.log('=== DEBUG NAP EXISTENCE CHECK ===');
+              const debugResult = await debugNapExistence(napName);
+              console.log('Debug completed:', debugResult);
+              
+              if (debugResult.error) {
+                setMessage(`❌ Debug error: ${debugResult.error}`);
+              } else {
+                setMessage(`🔍 Debug completed. Check console for detailed results.`);
+              }
+              
+              setTimeout(() => setMessage(''), 5000);
+            }}
+            disabled={loading}
+            title="Debug NAP existence check"
+          >
+            Debug Check
           </button>
         </div>
       </form>

@@ -120,7 +120,14 @@ function FileManagement({ onAuthError }) {
     try {
       const result = await prosbcFileAPI.deleteFile(fileType, fileId, fileName);
       if (result.success) {
-        setMessage(`✅ ${result.message}`);
+        let successMessage = `✅ ${result.message}`;
+        
+        // Add note if delete succeeded but confirmation was blocked by CORS
+        if (result.note && result.note.includes('CORS')) {
+          successMessage += '\n📌 Note: Delete completed but redirect confirmation was blocked by browser security.';
+        }
+        
+        setMessage(successMessage);
         // Refresh file lists after successful deletion
         setTimeout(() => loadFiles(), 1000);
       }

@@ -155,19 +155,6 @@ const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessio
                         </select>
                       </div>
                     </div>
-
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="enabled"
-                        checked={formData.enabled || false}
-                        onChange={(e) => handleInputChange('enabled', e.target.checked)}
-                        className="h-4 w-4 text-blue-500 focus:ring-blue-500 bg-gray-700 border-gray-600 rounded"
-                      />
-                      <label htmlFor="enabled" className="ml-2 text-sm text-gray-300">
-                        Enable this NAP
-                      </label>
-                    </div>
                   </div>
                 )}
 

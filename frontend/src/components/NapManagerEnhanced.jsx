@@ -121,22 +121,6 @@ const NapManagerEnhanced = ({ onAuthError }) => {
     nap.sip_destination_ip?.toLowerCase().includes(filterTerm.toLowerCase())
   );
 
-  const getStatusBadge = (status) => {
-    const isEnabled = status === true || status === 'enabled' || status === 'active';
-    return (
-      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-        isEnabled 
-          ? 'bg-green-900/50 text-green-400 border border-green-700' 
-          : 'bg-red-900/50 text-red-400 border border-red-700'
-      }`}>
-        <span className={`w-2 h-2 rounded-full mr-2 ${
-          isEnabled ? 'bg-green-400' : 'bg-red-400'
-        }`}></span>
-        {isEnabled ? 'Active' : 'Inactive'}
-      </span>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
       {/* Enhanced Header */}
@@ -235,15 +219,13 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                 <thead className="bg-gray-700/50 border-b border-gray-600">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider">NAP Details</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300 uppercase tracking-wider">Configuration</th>
                     <th className="px-6 py-4 text-center text-sm font-semibold text-gray-300 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-700/50">
                   {filteredNaps.length === 0 ? (
                     <tr>
-                      <td colSpan="4" className="px-6 py-12 text-center">
+                      <td colSpan="2" className="px-6 py-12 text-center">
                         <div className="flex flex-col items-center">
                           <svg className="w-16 h-16 text-gray-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -267,28 +249,6 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                               <div className="text-sm font-medium text-white">{nap.name || 'Unnamed NAP'}</div>
                               <div className="text-sm text-gray-400">ID: {nap.id}</div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {getStatusBadge(nap.enabled)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="space-y-1">
-                            {nap.profile_name && (
-                              <div className="text-sm text-gray-300">
-                                <span className="text-gray-500">Profile:</span> {nap.profile_name}
-                              </div>
-                            )}
-                            {nap.sip_destination_ip && (
-                              <div className="text-sm text-gray-300">
-                                <span className="text-gray-500">Destination:</span> {nap.sip_destination_ip}
-                              </div>
-                            )}
-                            {nap.max_calls && (
-                              <div className="text-sm text-gray-300">
-                                <span className="text-gray-500">Max Calls:</span> {nap.max_calls}
-                              </div>
-                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -324,7 +284,7 @@ const NapManagerEnhanced = ({ onAuthError }) => {
 
         {/* Statistics Cards */}
         {!loading && !error && naps.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
             <div className="bg-gradient-to-br from-blue-900/50 to-blue-800/50 border border-blue-700/50 rounded-xl p-6 backdrop-blur-sm">
               <div className="flex items-center">
                 <div className="bg-blue-600/20 p-3 rounded-lg">
@@ -335,22 +295,6 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                 <div className="ml-4">
                   <p className="text-sm text-blue-300">Total NAPs</p>
                   <p className="text-2xl font-bold text-white">{naps.length}</p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-gradient-to-br from-green-900/50 to-green-800/50 border border-green-700/50 rounded-xl p-6 backdrop-blur-sm">
-              <div className="flex items-center">
-                <div className="bg-green-600/20 p-3 rounded-lg">
-                  <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm text-green-300">Active NAPs</p>
-                  <p className="text-2xl font-bold text-white">
-                    {naps.filter(nap => nap.enabled === true || nap.enabled === 'enabled' || nap.enabled === 'active').length}
-                  </p>
                 </div>
               </div>
             </div>
