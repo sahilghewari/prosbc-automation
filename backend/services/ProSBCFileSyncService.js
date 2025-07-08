@@ -13,6 +13,132 @@ export class ProSBCFileSyncService {
   }
 
   /**
+   * Fetch files from ProSBC system
+   * @param {Object} options - Fetch options
+   * @param {string} options.fileType - Type of files to fetch ('dm', 'df', 'all')
+   * @param {string} options.routesetId - Optional routeset ID to filter
+   * @param {number} options.limit - Max number of files to fetch
+   * @returns {Promise<Array>} - List of fetched files
+   */
+  async fetchProSBCFiles(options = {}) {
+    const {
+      fileType = 'all',
+      routesetId,
+      limit = 100
+    } = options;
+
+    try {
+      console.log(`Fetching ProSBC files: type=${fileType}, routesetId=${routesetId || 'all'}, limit=${limit}`);
+      this.isProcessing = true;
+      
+      // Get connection details from environment or config
+      const prosbcHost = process.env.PROSBC_HOST || 'localhost';
+      const prosbcPort = process.env.PROSBC_PORT || '8080';
+      const prosbcAuth = process.env.PROSBC_AUTH || 'Basic YWRtaW46YWRtaW4='; // admin:admin in Base64
+      const prosbcApiPath = process.env.PROSBC_API_PATH || '/api';
+      
+      console.log(`Connecting to ProSBC at ${prosbcHost}:${prosbcPort}`);
+      
+      // Setup axios or another HTTP client to connect to ProSBC
+      const axios = await import('axios');
+      
+      // Create base URL for ProSBC API
+      const baseURL = `http://${prosbcHost}:${prosbcPort}${prosbcApiPath}`;
+      
+      // Create axios instance with authentication
+      const prosbcClient = axios.default.create({
+        baseURL,
+        headers: {
+          'Authorization': prosbcAuth,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        timeout: 10000 // 10 seconds timeout
+      });
+      
+      // Initialize files array
+      let files = [];
+      
+      // Fetch digit map files if requested
+      if (fileType === 'all' || fileType === 'dm') {
+        try {
+          // Path to digit map files API endpoint - adjust based on actual ProSBC API
+          const dmEndpoint = '/configuration/digit-maps';
+          const dmParams = routesetId ? { routeset: routesetId } : {};
+          
+          const dmResponse = await prosbcClient.get(dmEndpoint, { params: dmParams });
+          
+          if (dmResponse.data && Array.isArray(dmResponse.data.files)) {
+            const dmFiles = await Promise.all(dmResponse.data.files.map(async (file) => {
+              // Fetch file content
+              const contentResponse = await prosbcClient.get(`${dmEndpoint}/${file.id}/content`);
+              
+              return {
+                type: 'dm',
+                filename: file.name,
+                prosbc_id: file.id,
+                routeset_id: file.routeset || '',
+                content: contentResponse.data,
+                last_modified: file.modified_date || new Date().toISOString()
+              };
+            }));
+            
+            files = [...files, ...dmFiles];
+          }
+        } catch (error) {
+          console.error('Error fetching digit map files from ProSBC:', error);
+          // Continue with other file types despite error
+        }
+      }
+      
+      // Fetch dial format files if requested
+      if (fileType === 'all' || fileType === 'df') {
+        try {
+          // Path to dial format files API endpoint - adjust based on actual ProSBC API
+          const dfEndpoint = '/configuration/dial-formats';
+          const dfParams = routesetId ? { routeset: routesetId } : {};
+          
+          const dfResponse = await prosbcClient.get(dfEndpoint, { params: dfParams });
+          
+          if (dfResponse.data && Array.isArray(dfResponse.data.files)) {
+            const dfFiles = await Promise.all(dfResponse.data.files.map(async (file) => {
+              // Fetch file content
+              const contentResponse = await prosbcClient.get(`${dfEndpoint}/${file.id}/content`);
+              
+              return {
+                type: 'df',
+                filename: file.name,
+                prosbc_id: file.id,
+                routeset_id: file.routeset || '',
+                content: contentResponse.data,
+                last_modified: file.modified_date || new Date().toISOString()
+              };
+            }));
+            
+            files = [...files, ...dfFiles];
+          }
+        } catch (error) {
+          console.error('Error fetching dial format files from ProSBC:', error);
+          // Continue despite error
+        }
+      }
+      
+      // Apply limit
+      const limitedFiles = files.slice(0, limit);
+      
+      console.log(`Fetched ${limitedFiles.length} ProSBC files`);
+      
+      // Return fetched files
+      return limitedFiles;
+    } catch (error) {
+      console.error('Error fetching ProSBC files:', error);
+      throw error;
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
    * Record a fetched DM file from ProSBC into database
    * @param {Object} fileData - File data from ProSBC fetch
    * @param {string} fileData.filename - Original filename

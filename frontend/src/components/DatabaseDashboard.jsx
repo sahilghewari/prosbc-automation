@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClientDatabaseService } from '../database/client-api.js';
-import DMDFFileService from '../services/DMDFFileService.js';
+import { napService, fileService, mappingService, configService, auditService, dashboardService } from '../services/apiClient.js';
 
 const DatabaseDashboard = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState('naps');
@@ -17,9 +16,6 @@ const DatabaseDashboard = ({ onClose }) => {
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [error, setError] = useState(null);
-
-  const dbService = new ClientDatabaseService();
-  const fileService = new DMDFFileService(dbService);
 
   useEffect(() => {
     loadData();
@@ -61,14 +57,11 @@ const DatabaseDashboard = ({ onClose }) => {
     setError(null);
     try {
       // Get all NAPs from the database
-      const napsResult = await dbService.listNaps(
-        statusFilter !== 'all' ? { status: statusFilter } : {}, 
-        1, 
-        100 // Load more NAPs to display
-      );
+      const params = statusFilter !== 'all' ? { status: statusFilter } : {};
+      const napsResult = await napService.getAll(params);
 
       if (napsResult.success) {
-        setNaps(napsResult.naps || []);
+        setNaps(napsResult.data || []);
       } else {
         setError('Failed to load NAP data');
       }
@@ -84,14 +77,11 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await dbService.listDigitMaps(
-        statusFilter !== 'all' ? { status: statusFilter } : {},
-        1,
-        100
-      );
+      const params = statusFilter !== 'all' ? { status: statusFilter } : {};
+      const result = await fileService.getDigitMaps(params);
 
       if (result.success) {
-        setDigitMaps(result.digitMaps || []);
+        setDigitMaps(result.data || []);
       } else {
         setError('Failed to load Digit Map data');
       }
@@ -107,14 +97,11 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await dbService.listDialFormats(
-        statusFilter !== 'all' ? { status: statusFilter } : {},
-        1,
-        100
-      );
+      const params = statusFilter !== 'all' ? { status: statusFilter } : {};
+      const result = await fileService.getDialFormats(params);
 
       if (result.success) {
-        setDialFormats(result.dialFormats || []);
+        setDialFormats(result.data || []);
       } else {
         setError('Failed to load Dial Format data');
       }
@@ -130,14 +117,11 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await dbService.listFileMappings(
-        statusFilter !== 'all' ? { status: statusFilter } : {},
-        1,
-        100
-      );
+      const params = statusFilter !== 'all' ? { status: statusFilter } : {};
+      const result = await mappingService.getAll(params);
 
       if (result.success) {
-        setFileMappings(result.mappings || []);
+        setFileMappings(result.data || []);
       } else {
         setError('Failed to load File Mapping data');
       }
@@ -153,13 +137,28 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      // Simulate fetching ProSBC files - this would normally call a real ProSBC API
-      const result = await dbService.fetchProsbcFiles();
+      // Build parameters for the request
+      let params = {};
       
+      // Handle status filter for ProSBC files
+      if (statusFilter !== 'all') {
+        // Map some common filters to file type filters
+        if (statusFilter === 'digitMaps' || statusFilter === 'dm') {
+          params.fileType = 'dm';
+        } else if (statusFilter === 'dialFormats' || statusFilter === 'df') {
+          params.fileType = 'df';
+        } else {
+          // For other statuses, pass as is
+          params.status = statusFilter;
+        }
+      }
+      
+      const result = await dashboardService.getProSBCFiles(params);
+
       if (result.success) {
-        setProsbcFiles(result.files || []);
+        setProsbcFiles(result.data || []);
       } else {
-        setError('Failed to fetch ProSBC files');
+        setError('Failed to load ProSBC files');
       }
     } catch (error) {
       console.error('Error fetching ProSBC files:', error);
@@ -173,20 +172,26 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      // Sync all ProSBC files to local database
-      const result = await dbService.syncProsbcFiles();
+      // Fetch files from ProSBC
+      const fetchResult = await fileService.fetchProSBCFiles({
+        fileType: 'all'
+      });
       
-      if (result.success) {
-        setError(null);
-        // Show success message
-        const successMessage = `Successfully synced ${result.synced || 0} files from ProSBC`;
-        setError(successMessage); // Using error state to show success message
-        setTimeout(() => setError(null), 5000); // Clear message after 5 seconds
+      if (fetchResult && Array.isArray(fetchResult)) {
+        // Import the fetched files
+        const importResult = await fileService.importProSBCFiles(fetchResult);
         
-        // Reload ProSBC files to show updated data
-        await loadProsbcFiles();
+        if (importResult.success) {
+          setError(`Sync completed successfully: ${importResult.results.imported} imported, ${importResult.results.updated} updated, ${importResult.results.skipped} skipped`);
+          setTimeout(() => setError(null), 5000); // Clear message after 5 seconds
+          
+          // Reload ProSBC files to show updated data
+          await loadProsbcFiles();
+        } else {
+          setError('Import failed: ' + importResult.message);
+        }
       } else {
-        setError('Failed to sync ProSBC files: ' + (result.error || 'Unknown error'));
+        setError('No files fetched from ProSBC');
       }
     } catch (error) {
       console.error('Error syncing ProSBC files:', error);
@@ -205,49 +210,45 @@ const DatabaseDashboard = ({ onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      const results = await dbService.search(searchQuery, { type: getSearchType() });
+      let results = [];
       
-      if (results.success && results.results) {
-        switch (activeTab) {
-          case 'naps':
-            setNaps(results.results.naps || []);
-            break;
-          case 'digitMaps':
-            setDigitMaps(results.results.digitMaps || []);
-            break;
-          case 'dialFormats':
-            setDialFormats(results.results.dialFormats || []);
-            break;
-          case 'mappings':
-            setFileMappings(results.results.mappings || []);
-            break;
-          case 'prosbcFiles':
-            setProsbcFiles(results.results.prosbcFiles || []);
-            break;
-        }
-      } else {
+      switch (activeTab) {
+        case 'naps':
+          const napResults = await napService.getAll({ search: searchQuery });
+          results = napResults.data || [];
+          setNaps(results);
+          break;
+        case 'digitMaps':
+          const dmResults = await fileService.getDigitMaps({ search: searchQuery });
+          results = dmResults.data || [];
+          setDigitMaps(results);
+          break;
+        case 'dialFormats':
+          const dfResults = await fileService.getDialFormats({ search: searchQuery });
+          results = dfResults.data || [];
+          setDialFormats(results);
+          break;
+        case 'mappings':
+          const mappingResults = await mappingService.getAll({ search: searchQuery });
+          results = mappingResults.data || [];
+          setFileMappings(results);
+          break;
+        case 'prosbcFiles':
+          // Search in ProSBC files
+          const prosbcResults = await dashboardService.getProSBCFiles({ 
+            search: searchQuery 
+          });
+          results = prosbcResults.data || [];
+          setProsbcFiles(results);
+          break;
+      }
+      
+      if (results.length === 0 && activeTab !== 'prosbcFiles') {
         setError('No search results found');
-        switch (activeTab) {
-          case 'naps':
-            setNaps([]);
-            break;
-          case 'digitMaps':
-            setDigitMaps([]);
-            break;
-          case 'dialFormats':
-            setDialFormats([]);
-            break;
-          case 'mappings':
-            setFileMappings([]);
-            break;
-          case 'prosbcFiles':
-            setProsbcFiles([]);
-            break;
-        }
       }
     } catch (error) {
-      console.error('Search error:', error);
-      setError('Search error: ' + error.message);
+      console.error('Error searching:', error);
+      setError('Error searching: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -481,11 +482,17 @@ const DatabaseDashboard = ({ onClose }) => {
       
       try {
         const fileType = activeTab === 'digitMaps' ? 'dm' : 'df';
-        const result = await fileService.uploadFile(selectedFile, fileType, {
-          ...uploadData,
-          uploaded_by: 'admin',
-          source: 'gui'
-        });
+        
+        // Create FormData for file upload
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('nap_id', uploadData.nap_id);
+        formData.append('routeset_name', uploadData.routeset_name);
+        formData.append('comments', uploadData.comments);
+        formData.append('uploaded_by', 'admin');
+        formData.append('source', 'gui');
+        
+        const result = await fileService.upload(formData, fileType);
 
         if (result.success) {
           setUploadProgress('success');
@@ -769,7 +776,7 @@ const DatabaseDashboard = ({ onClose }) => {
       }
 
       try {
-        const result = await dbService.createFileMapping(mappingData);
+        const result = await mappingService.create(mappingData);
         if (result.success) {
           closeMappingModal();
           loadData();
@@ -1253,16 +1260,13 @@ const DatabaseDashboard = ({ onClose }) => {
                 File Type
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                NAP ID
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                 Status
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                 File Size
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                Last Modified
+                Imported Date
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
                 Source
@@ -1274,22 +1278,23 @@ const DatabaseDashboard = ({ onClose }) => {
           </thead>
           <tbody className="divide-y divide-gray-600">
             {filteredData.map((file, index) => (
-              <tr key={file.id || index} className="hover:bg-gray-600 transition-colors">
+              <tr key={file._id || file.id || index} className="hover:bg-gray-600 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex flex-col">
-                    <div className="text-sm font-medium text-white">{file.filename}</div>
-                    <div className="text-xs text-gray-400">{file.original_filename}</div>
+                    <div className="text-sm font-medium text-white">
+                      {file.original_filename || file.filename || file.name}
+                    </div>
+                    {file.prosbc_id && (
+                      <div className="text-xs text-gray-400">ProSBC ID: {file.prosbc_id}</div>
+                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${
-                    file.file_type === 'dm' ? 'bg-blue-600' : 'bg-purple-600'
+                    file.fileType === 'dm' ? 'bg-blue-600' : 'bg-purple-600'
                   }`}>
-                    {file.file_type === 'dm' ? '📊 DM' : '📞 DF'}
+                    {file.fileType === 'dm' ? '📊 Digit Map' : '📞 Dial Format'}
                   </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                  {file.nap_id || 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${getStatusColor(file.status)}`}>
@@ -1301,13 +1306,13 @@ const DatabaseDashboard = ({ onClose }) => {
                   {file.file_size ? `${(file.file_size / 1024).toFixed(1)} KB` : 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                  {formatDate(file.last_modified || file.upload_time)}
+                  {formatDate(file.uploaded_at || file.created_at)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${
-                    file.source === 'prosbc' ? 'bg-orange-600' : 'bg-green-600'
+                    file.metadata?.upload_source === 'prosbc_fetch' ? 'bg-orange-600' : 'bg-green-600'
                   }`}>
-                    {file.source === 'prosbc' ? '🏭 ProSBC' : '📱 GUI'}
+                    {file.metadata?.upload_source === 'prosbc_fetch' ? '🏭 ProSBC' : '📱 Manual'}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
@@ -1318,14 +1323,12 @@ const DatabaseDashboard = ({ onClose }) => {
                     >
                       View Details
                     </button>
-                    {file.source === 'prosbc' && (
-                      <button
-                        onClick={() => handleImportProsbcFile(file)}
-                        className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-green-400 hover:text-green-300 hover:bg-green-400 hover:bg-opacity-10 transition-colors"
-                      >
-                        Import
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleDownloadProsbcFile(file)}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-green-400 hover:text-green-300 hover:bg-green-400 hover:bg-opacity-10 transition-colors"
+                    >
+                      📥 Download
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -1336,23 +1339,59 @@ const DatabaseDashboard = ({ onClose }) => {
     </div>
   );
 
-  const handleImportProsbcFile = async (file) => {
+  const handleDownloadProsbcFile = async (file) => {
+    try {
+      const response = await dashboardService.downloadProSBCFile(file._id || file.id, file.fileType);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(response.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', response.filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setError(`Downloaded ${response.filename} successfully`);
+      setTimeout(() => setError(null), 3000);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      setError('Failed to download file: ' + error.message);
+    }
+  };
+
+  const handleImportFromProSBC = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await dbService.importProsbcFile(file.id);
+      // Determine file type based on active tab
+      const fileType = activeTab === 'digitMaps' ? 'dm' : 'df';
       
-      if (result.success) {
-        setError(`Successfully imported ${file.filename} to local database`);
-        setTimeout(() => setError(null), 5000);
-        // Refresh the current tab to show imported file
-        loadData();
+      // Fetch files from ProSBC
+      const fetchResult = await fileService.fetchProSBCFiles({
+        fileType: fileType
+      });
+      
+      if (fetchResult && Array.isArray(fetchResult) && fetchResult.length > 0) {
+        // Import the fetched files
+        const importResult = await fileService.importProSBCFiles(fetchResult);
+        
+        if (importResult.success) {
+          setError(`Import completed successfully: ${importResult.results.imported} imported, ${importResult.results.updated} updated, ${importResult.results.skipped} skipped`);
+          setTimeout(() => setError(null), 5000); // Clear message after 5 seconds
+          
+          // Reload current data to show imported files
+          await loadData();
+        } else {
+          setError('Import failed: ' + importResult.message);
+        }
       } else {
-        setError('Failed to import file: ' + (result.error || 'Unknown error'));
+        setError(`No ${fileType === 'dm' ? 'digit map' : 'dial format'} files found in ProSBC`);
       }
     } catch (error) {
-      console.error('Error importing ProSBC file:', error);
-      setError('Error importing file: ' + error.message);
+      console.error('Error importing from ProSBC:', error);
+      setError('Error importing from ProSBC: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -1377,16 +1416,28 @@ const DatabaseDashboard = ({ onClose }) => {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Status</option>
-              <option value="created">Created</option>
-              <option value="mapped">Mapped</option>
-              <option value="activated">Activated</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="uploaded">Uploaded</option>
-              <option value="validated">Validated</option>
-              <option value="pending">Pending</option>
-              <option value="error">Error</option>
+              <option value="all">All {activeTab === 'prosbcFiles' ? 'Files' : 'Status'}</option>
+              {activeTab === 'prosbcFiles' ? (
+                <>
+                  <option value="dm">Digit Maps Only</option>
+                  <option value="df">Dial Formats Only</option>
+                  <option value="validated">Validated</option>
+                  <option value="uploaded">Uploaded</option>
+                  <option value="error">Error</option>
+                </>
+              ) : (
+                <>
+                  <option value="created">Created</option>
+                  <option value="mapped">Mapped</option>
+                  <option value="activated">Activated</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="uploaded">Uploaded</option>
+                  <option value="validated">Validated</option>
+                  <option value="pending">Pending</option>
+                  <option value="error">Error</option>
+                </>
+              )}
             </select>
             
             {/* Search */}
@@ -1409,12 +1460,28 @@ const DatabaseDashboard = ({ onClose }) => {
             
             {/* Upload Button for DM/DF tabs */}
             {(activeTab === 'digitMaps' || activeTab === 'dialFormats') && (
-              <button
-                onClick={handleUpload}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                Upload {activeTab === 'digitMaps' ? 'DM' : 'DF'} File
-              </button>
+              <>
+                <button
+                  onClick={handleUpload}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  <span>Upload {activeTab === 'digitMaps' ? 'DM' : 'DF'} File</span>
+                </button>
+                <button
+                  onClick={handleImportFromProSBC}
+                  disabled={loading}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                  title={`Import ${activeTab === 'digitMaps' ? 'digit map' : 'dial format'} files from ProSBC system`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                  </svg>
+                  <span>Import from ProSBC</span>
+                </button>
+              </>
             )}
             
             {/* Create Mapping Button */}
@@ -1524,9 +1591,20 @@ const DatabaseDashboard = ({ onClose }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <h3 className="text-lg font-medium text-gray-300 mb-2">No {activeTab} Found</h3>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mb-4">
                 {searchQuery ? `No ${activeTab} match your search criteria.` : `No ${activeTab} have been created yet.`}
               </p>
+              {(activeTab === 'digitMaps' || activeTab === 'dialFormats') && !searchQuery && (
+                <div className="max-w-md mx-auto">
+                  <div className="bg-blue-900 bg-opacity-30 border border-blue-600 rounded-lg p-4 text-left">
+                    <h4 className="text-blue-400 font-medium mb-2">💡 Get Started:</h4>
+                    <ul className="text-sm text-blue-300 space-y-1">
+                      <li>• <strong>Upload:</strong> Upload CSV files from your computer</li>
+                      <li>• <strong>Import from ProSBC:</strong> Fetch existing files from ProSBC system</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           

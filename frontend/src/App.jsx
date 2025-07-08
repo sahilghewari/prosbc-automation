@@ -12,6 +12,7 @@ import ActivationGeneration from './components/ActivationGeneration';
 import DatabaseStatus from './components/DatabaseStatus';
 import DatabaseWidget from './components/DatabaseWidget';
 import DatabaseDashboard from './components/DatabaseDashboard';
+import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import './App.css';
@@ -96,6 +97,8 @@ function App() {
         return <ActivationGeneration onAuthError={handleAuthError} />;
       case 'database-dashboard':
         return <DatabaseDashboard onClose={() => setActiveSection('nap-creation')} />;
+      case 'system-dashboard':
+        return <EnhancedDatabaseDashboard />;
       default:
         return <NapCreatorEnhanced onAuthError={handleAuthError} />;
     }

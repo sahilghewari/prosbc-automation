@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClientDatabaseService } from '../database/client-api.js';
+import { ClientDatabaseService } from '../services/apiClient.js';
 import { config, getEnvironmentInfo, getStorageType } from '../config/environment.js';
 
 const DatabaseStatus = ({ showDetails = false, className = '' }) => {
@@ -22,11 +22,8 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
       // Check database status
       const dbService = new ClientDatabaseService();
       
-      // Get analytics and health
-      const [analytics, ubuntuHealth] = await Promise.all([
-        dbService.getAnalytics(),
-        dbService.getUbuntuStatus()
-      ]);
+      // Get analytics to check client-side storage
+      const analytics = await dbService.getAnalytics();
       
       if (analytics.success) {
         setDbStatus('connected');
@@ -43,13 +40,21 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
         setDbData({ error: analytics.error });
       }
 
-      // Set Ubuntu backend status
-      if (ubuntuHealth.status === 'healthy') {
-        setServerDbStatus('connected');
-        setServerDbData(ubuntuHealth);
-      } else {
+      // Check Ubuntu backend health through API endpoint
+      try {
+        const response = await fetch('/api/dashboard/system-status');
+        const data = await response.json();
+        if (data.success) {
+          setServerDbStatus('connected');
+          setServerDbData(data.data);
+        } else {
+          setServerDbStatus('disconnected');
+          setServerDbData({ message: 'Ubuntu backend not available' });
+        }
+      } catch (error) {
+        console.log('Ubuntu backend not available (expected in development)');
         setServerDbStatus('disconnected');
-        setServerDbData(ubuntuHealth);
+        setServerDbData({ message: 'Ubuntu backend not available' });
       }
       
     } catch (error) {
@@ -115,7 +120,7 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
       case 'disconnected':
         return (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.664-.833-2.464 0L3.35 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
           </svg>
         );
       default:
@@ -175,10 +180,19 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
       <div className="bg-gray-700 rounded-lg p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">Client Database (localStorage)</h3>
-          <span className={`flex items-center space-x-2 px-3 py-1 rounded border ${getStatusColor(dbStatus)}`}>
-            {getStatusIcon(dbStatus)}
-            <span className="capitalize text-sm">{dbStatus}</span>
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className={`flex items-center space-x-2 px-3 py-1 rounded border ${getStatusColor(dbStatus)}`}>
+              {getStatusIcon(dbStatus)}
+              <span className="capitalize text-sm">{dbStatus}</span>
+            </span>
+            <button
+              onClick={clearLocalStorageData}
+              className="px-2 py-1 text-xs text-red-400 hover:text-red-300 border border-red-400 hover:border-red-300 rounded"
+              title="Clear localStorage data"
+            >
+              Clear Data
+            </button>
+          </div>
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -197,7 +211,7 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
           <div className="bg-gray-800 p-3 rounded">
             <p className="text-sm text-gray-400">Storage</p>
             <p className="text-xl font-bold text-white">
-              {clientDbData.storageSize ? `${(clientDbData.storageSize / 1024).toFixed(1)}KB` : '0KB'}
+              {dbData.storageSize ? `${(dbData.storageSize / 1024).toFixed(1)}KB` : '0KB'}
             </p>
           </div>
         </div>
@@ -221,27 +235,18 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
             <div className="space-y-1">
               {localData.files.slice(-3).map((file, idx) => (
                 <div key={idx} className="text-sm text-gray-400 bg-gray-800 p-2 rounded">
-                  {file.name} ({file.type}) - {(file.size / 1024).toFixed(1)}KB
+                  {file.name || file.fileName} ({file.type || file.fileType})
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        <div className="flex space-x-2">
-          <button
-            onClick={clearLocalStorageData}
-            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
-          >
-            Clear LocalStorage Data
-          </button>
-        </div>
       </div>
 
-      {/* Server Database (MongoDB/Backend) */}
+      {/* Ubuntu Backend Status */}
       <div className="bg-gray-700 rounded-lg p-4">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">Server Database (Backend)</h3>
+          <h3 className="text-lg font-semibold text-white">Ubuntu Backend</h3>
           <span className={`flex items-center space-x-2 px-3 py-1 rounded border ${getStatusColor(serverDbStatus)}`}>
             {getStatusIcon(serverDbStatus)}
             <span className="capitalize text-sm">{serverDbStatus}</span>
@@ -250,10 +255,11 @@ const DatabaseStatus = ({ showDetails = false, className = '' }) => {
         
         {serverDbStatus === 'connected' ? (
           <div className="space-y-2">
-            <p className="text-sm text-gray-300">Storage: {serverDbData.storage?.basePath || 'File system'}</p>
-            <p className="text-sm text-gray-300">Directories: {Object.keys(serverDbData.storage?.directories || {}).length}</p>
-            <p className="text-sm text-gray-300">Message: {serverDbData.message}</p>
-            <p className="text-sm text-gray-300">Last Checked: {new Date(serverDbData.timestamp).toLocaleString()}</p>
+            <p className="text-sm text-gray-300">System: {serverDbData.system}</p>
+            <p className="text-sm text-gray-300">Uptime: {serverDbData.uptime}</p>
+            <p className="text-sm text-gray-300">Memory Usage: {serverDbData.memory_usage}</p>
+            <p className="text-sm text-gray-300">Environment: {serverDbData.environment}</p>
+            <p className="text-sm text-gray-300">Last Checked: {new Date(serverDbData.last_updated).toLocaleString()}</p>
           </div>
         ) : (
           <div className="space-y-2">

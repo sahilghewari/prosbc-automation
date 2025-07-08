@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
-import { ClientDatabaseService } from '../database/client-api.js';
+import { ClientDatabaseService } from '../services/apiClient.js';
 import DatabaseStatus from './DatabaseStatus';
 
 function FileUploader({ onAuthError }) {
@@ -52,7 +52,6 @@ function FileUploader({ onAuthError }) {
       if (result.success) {
         let successMessage = `✅ DF file "${dfFileName}" uploaded successfully!`;
         
-        // Add note if upload succeeded but confirmation was blocked by CORS
         if (result.note && result.note.includes('CORS')) {
           successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
         }
@@ -66,26 +65,44 @@ function FileUploader({ onAuthError }) {
             name: dfFileName,
             type: 'DF',
             size: dfFile.size,
-            originalFile: dfFile.name,
+            file: dfFile,
+            originalFile: dfFile,
             prosbc_result: result
           });
           console.log('✅ DF file recorded in database');
+          
+          setDfFile(null);
+          setDfFileName("");
+          // Reset file input
+          const fileInput = document.getElementById('df-file-input');
+          if (fileInput) fileInput.value = '';
         } catch (dbError) {
-          console.error('Database recording error:', dbError);
-          // Don't fail the whole process if database recording fails
+          // Check if this is a duplicate file error
+          if (dbError.response && dbError.response.status === 409) {
+            setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
+          } else {
+            console.error('Database recording error:', dbError);
+            setMessage('⚠️ File uploaded but there was an issue recording it in the database.');
+          }
         }
-        
-        setDfFile(null);
-        setDfFileName("");
-        // Reset file input
-        const fileInput = document.getElementById('df-file-input');
-        if (fileInput) fileInput.value = '';
       } else {
         throw new Error(result.message || 'Upload failed');
       }
 
     } catch (error) {
       console.error('DF Upload error:', error);
+      // Check if this is a duplicate file error from the initial upload
+      if (error.response && error.response.status === 409) {
+        const existingFile = error.response.data.existing_file;
+        setMessage(`ℹ️ A file with identical content already exists (${existingFile}). No need to upload again.`);
+        // Reset file input and state since we don't need to retry
+        setDfFile(null);
+        setDfFileName("");
+        const fileInput = document.getElementById('df-file-input');
+        if (fileInput) fileInput.value = '';
+        return;
+      }
+      
       setMessage(`❌ Failed to upload DF file: ${error.message}`);
       
       if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('login')) {
@@ -114,7 +131,6 @@ function FileUploader({ onAuthError }) {
       if (result.success) {
         let successMessage = `✅ DM file "${dmFileName}" uploaded successfully!`;
         
-        // Add note if upload succeeded but confirmation was blocked by CORS
         if (result.note && result.note.includes('CORS')) {
           successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
         }
@@ -128,13 +144,19 @@ function FileUploader({ onAuthError }) {
             name: dmFileName,
             type: 'DM',
             size: dmFile.size,
-            originalFile: dmFile.name,
+            file: dmFile,
+            originalFile: dmFile,
             prosbc_result: result
           });
           console.log('✅ DM file recorded in database');
         } catch (dbError) {
-          console.error('Database recording error:', dbError);
-          // Don't fail the whole process if database recording fails
+          // Check if this is a duplicate file error
+          if (dbError.response && dbError.response.status === 409) {
+            setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
+          } else {
+            console.error('Database recording error:', dbError);
+            setMessage('⚠️ File uploaded but there was an issue recording it in the database.');
+          }
         }
         
         setDmFile(null);
@@ -148,7 +170,12 @@ function FileUploader({ onAuthError }) {
 
     } catch (error) {
       console.error('DM Upload error:', error);
-      setMessage(`❌ Failed to upload DM file: ${error.message}`);
+      // Check if this is a duplicate file error
+      if (error.response && error.response.status === 409) {
+        setMessage(`ℹ️ A file with identical content already exists (${error.response.data.existing_file}). No need to upload again.`);
+      } else {
+        setMessage(`❌ Failed to upload DM file: ${error.message}`);
+      }
       
       if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('login')) {
         onAuthError?.();

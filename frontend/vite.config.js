@@ -13,6 +13,7 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/backend/, ''),
+        secure: false
       },
       '/api': {
         target: process.env.PROSBC_URL || 'https://prosbc2tpa2.dipvtel.com:12358',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClientDatabaseService } from '../database/client-api.js';
+import { ClientDatabaseService } from '../services/apiClient.js';
 
 const DatabaseStatus = ({ showDetails = false, className = '' }) => {
   const [clientDbStatus, setClientDbStatus] = useState('checking');

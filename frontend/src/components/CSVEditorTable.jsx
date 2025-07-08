@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { csvFileUpdateService } from '../utils/csvFileUpdateService';
-import CSVEditorDatabaseIntegration from '../database/clientIntegration.js';
+import { fileService } from '../services/apiClient.js';
 
 const CSVEditorTable = ({ 
   csvData, 
@@ -19,7 +19,7 @@ const CSVEditorTable = ({
   const [errors, setErrors] = useState({});
   const [isUpdating, setIsUpdating] = useState(false);
   const [backupCreated, setBackupCreated] = useState(false);
-  const [dbIntegration, setDbIntegration] = useState(null);
+  const [apiClient, setApiClient] = useState(null);
   const [fileHistory, setFileHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [currentFileId, setCurrentFileId] = useState(null);
@@ -27,21 +27,19 @@ const CSVEditorTable = ({
   const tableRef = useRef(null);
   const cellRefs = useRef({});
 
-  // Initialize database integration
+  // Initialize API client
   useEffect(() => {
-    const initializeDatabase = async () => {
+    const initializeApi = async () => {
       try {
-        const integration = new CSVEditorDatabaseIntegration();
-        await integration.initialize();
-        setDbIntegration(integration);
-        console.log('✅ Database integration initialized');
+        setApiClient(fileService);
+        console.log('✅ API client initialized');
       } catch (error) {
-        console.error('❌ Database integration failed:', error);
-        // Continue without database - graceful degradation
+        console.error('❌ API client initialization failed:', error);
+        // Continue without API - graceful degradation
       }
     };
     
-    initializeDatabase();
+    initializeApi();
   }, []);
 
   // Initialize table data from CSV
@@ -50,11 +48,11 @@ const CSVEditorTable = ({
       parseCSVData(csvData);
       
       // Load file history if fileInfo is available
-      if (fileInfo?.id && dbIntegration) {
+      if (fileInfo?.id && apiClient) {
         loadFileHistory();
       }
     }
-  }, [csvData, fileInfo, dbIntegration]);
+  }, [csvData, fileInfo, apiClient]);
 
   // Parse CSV data into table structure
   const parseCSVData = (csvString) => {
@@ -136,22 +134,28 @@ const CSVEditorTable = ({
 
   // Load file history from database
   const loadFileHistory = async () => {
-    if (!dbIntegration || !fileInfo?.id) return;
+    if (!apiClient || !fileInfo?.id) return;
     
     try {
-      const historyResult = await dbIntegration.getFileHistory(fileInfo.id, { limit: 20 });
-      if (historyResult.success) {
-        setFileHistory(historyResult.history);
+      // Get file history from backend
+      const response = await apiClient.getHistory(fileInfo.type, fileInfo.id);
+      if (response.success) {
+        setFileHistory(response.data.history || []);
+        console.log('✅ File history loaded:', response.data.history.length, 'entries');
+      } else {
+        console.error('Failed to load file history:', response.error);
+        setFileHistory([]);
       }
     } catch (error) {
       console.error('Error loading file history:', error);
+      setFileHistory([]);
     }
   };
 
   // Rollback to previous version
   const handleRollback = async (historyId, reason) => {
-    if (!dbIntegration || !fileInfo?.id) {
-      alert('Database integration not available');
+    if (!apiClient || !fileInfo?.id) {
+      alert('API client not available');
       return;
     }
 
@@ -164,29 +168,37 @@ const CSVEditorTable = ({
     try {
       onProgress?.(10, 'Preparing rollback...');
       
-      const rollbackResult = await dbIntegration.rollbackFile(
-        fileInfo.id,
-        historyId,
-        'current_user', // You should get this from your auth system
-        reason || 'Manual rollback from CSV Editor'
-      );
-
+      // Perform rollback via backend API
+      const rollbackResult = await apiClient.rollback(fileInfo.type, fileInfo.id, historyId, reason);
+      
       if (rollbackResult.success) {
-        onProgress?.(70, 'Updating table...');
+        onProgress?.(50, 'Getting updated content...');
         
-        // Update the CSV data and table
-        parseCSVData(rollbackResult.csv_content);
+        // Fetch the updated file content
+        const updatedFileResponse = await apiClient.getById(fileInfo.type, fileInfo.id);
         
-        onProgress?.(90, 'Refreshing history...');
-        
-        // Reload history
-        await loadFileHistory();
-        
-        onProgress?.(100, 'Rollback completed!');
-        
-        alert('File successfully rolled back to previous version!');
-        setShowHistory(false);
+        if (updatedFileResponse.success) {
+          onProgress?.(70, 'Updating table...');
+          
+          // Update the CSV data and table
+          parseCSVData(updatedFileResponse.data.content);
+          
+          onProgress?.(90, 'Refreshing history...');
+          
+          // Reload history
+          await loadFileHistory();
+          
+          onProgress?.(100, 'Rollback completed!');
+          
+          alert('File successfully rolled back to previous version!');
+          setShowHistory(false);
+        } else {
+          throw new Error('Failed to fetch updated content after rollback');
+        }
+      } else {
+        throw new Error(rollbackResult.error || 'Rollback operation failed');
       }
+      
     } catch (error) {
       console.error('Error during rollback:', error);
       alert(`Rollback failed: ${error.message}`);
@@ -238,30 +250,9 @@ const CSVEditorTable = ({
         throw new Error(prosbcResult.message || 'Failed to update file on ProSBC');
       }
       
-      // Only update local database AFTER ProSBC update succeeds
-      if (dbIntegration && fileInfo?.id) {
-        console.log('📚 Updating local database for audit trail...');
-        onProgress?.(70, 'Updating local database...');
-        
-        const changes = analyzeChanges();
-        
-        const dbResult = await dbIntegration.updateFileWithDatabase(
-          fileInfo.id,
-          csvString,
-          changes,
-          'current_user' // You should get this from your auth system
-        );
-        
-        if (dbResult.success) {
-          onProgress?.(90, 'Refreshing history...');
-          
-          // Reload file history
-          await loadFileHistory();
-          setCurrentFileId(fileInfo.id);
-        } else {
-          console.warn('Database update failed but ProSBC update succeeded:', dbResult);
-        }
-      }
+      // Database integration removed - using backend API instead
+      console.log('Database audit trail would be handled by backend API');
+      onProgress?.(70, 'File updated on ProSBC...');
       
       onProgress?.(100, 'File updated successfully!');
       
@@ -277,6 +268,82 @@ const CSVEditorTable = ({
       
     } catch (error) {
       console.error('Error saving file with database:', error);
+      alert(`Failed to save file: ${error.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Save with backend versioning (enhanced version)
+  const handleSaveWithVersioning = async () => {
+    if (!hasChanges) {
+      alert('No changes to save');
+      return;
+    }
+
+    if (!fileInfo?.id || !fileInfo?.type) {
+      alert('File information not available for versioning');
+      return;
+    }
+
+    setIsUpdating(true);
+    
+    try {
+      console.log('🚀 Starting versioned CSV save operation for file:', fileInfo);
+      
+      onProgress?.(10, 'Converting table to CSV...');
+      const csvString = convertToCSV();
+      
+      // First update backend database for versioning
+      onProgress?.(30, 'Updating database with versioning...');
+      const dbResult = await apiClient.updateContent(
+        fileInfo.type, 
+        fileInfo.id, 
+        csvString, 
+        'Updated via CSV editor'
+      );
+      
+      if (!dbResult.success) {
+        throw new Error(dbResult.error || 'Failed to update database');
+      }
+      
+      // Then update ProSBC system
+      onProgress?.(60, 'Updating file on ProSBC...');
+      const prosbcResult = await csvFileUpdateService.updateCSVFile(
+        csvString,
+        fileInfo,
+        (progress, message) => onProgress?.(60 + (progress * 0.3), message) // Scale progress 60-90%
+      );
+      
+      console.log('ProSBC update result:', prosbcResult);
+      
+      if (!prosbcResult.success) {
+        console.warn('ProSBC update failed, but database was updated:', prosbcResult.message);
+        // Could implement rollback logic here if needed
+      }
+      
+      onProgress?.(95, 'Refreshing history...');
+      
+      // Reload file history to show new version
+      await loadFileHistory();
+      
+      onProgress?.(100, 'File updated successfully!');
+      
+      // Update original data to reflect saved state
+      setOriginalData({ headers, rows });
+      setHasChanges(false);
+      
+      // Call parent callback
+      onSave?.(csvString, { 
+        database: dbResult, 
+        prosbc: prosbcResult 
+      });
+      
+      alert('File updated successfully with version tracking!');
+      console.log('CSV file update completed with versioning');
+      
+    } catch (error) {
+      console.error('Error saving file with versioning:', error);
       alert(`Failed to save file: ${error.message}`);
     } finally {
       setIsUpdating(false);
@@ -653,7 +720,7 @@ const CSVEditorTable = ({
           </button>
           
           {/* History Button */}
-          {dbIntegration && fileInfo?.id && (
+          {fileInfo?.id && fileInfo?.type && (
             <button
               onClick={() => setShowHistory(!showHistory)}
               className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 disabled:opacity-50"
@@ -666,13 +733,13 @@ const CSVEditorTable = ({
             </button>
           )}
           
-          {/* Database Status Indicator */}
-          {dbIntegration && (
-            <span className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded-full">
+          {/* Backend API Status Indicator */}
+          {apiClient && (
+            <span className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-full">
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 1.79 4 4 4h8c0 1.1.9 2 2 2s2-.9 2-2V11c0-1.1-.9-2-2-2h-8C8.79 9 7 7.21 7 5s1.79-4 4-4h8c1.1 0 2 .9 2 2s-.9 2-2 2" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
               </svg>
-              Database Connected
+              Backend API Connected
             </span>
           )}
         </div>
@@ -784,7 +851,7 @@ const CSVEditorTable = ({
               Cancel
             </button>
             <button
-              onClick={handleSaveWithDatabase}
+              onClick={fileInfo?.id && fileInfo?.type ? handleSaveWithVersioning : handleSaveWithDatabase}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
               disabled={isUpdating || !hasChanges}
             >
@@ -801,7 +868,7 @@ const CSVEditorTable = ({
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-                  Save and Upload to ProSBC
+                  {fileInfo?.id && fileInfo?.type ? 'Save with Version History' : 'Save and Upload to ProSBC'}
                 </>
               )}
             </button>
@@ -848,12 +915,13 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
     return new Date(timestamp).toLocaleString();
   };
 
-  const getMagnitudeColor = (magnitude) => {
-    switch (magnitude) {
-      case 'large': return 'text-red-400';
-      case 'medium': return 'text-yellow-400';
-      case 'small': return 'text-blue-400';
-      default: return 'text-gray-400';
+  const getActionColor = (action) => {
+    switch (action.toLowerCase()) {
+      case 'create': return 'text-green-400 bg-green-600';
+      case 'upload': return 'text-blue-400 bg-blue-600';
+      case 'update': return 'text-yellow-400 bg-yellow-600';
+      case 'current': return 'text-purple-400 bg-purple-600';
+      default: return 'text-gray-400 bg-gray-600';
     }
   };
 
@@ -868,7 +936,7 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-white">File Edit History</h3>
+          <h3 className="text-xl font-bold text-white">File Version History</h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
@@ -880,52 +948,73 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="space-y-4">
-            {history.map((entry) => (
-              <div
-                key={entry.id}
-                className="bg-gray-700 rounded-lg p-4 border border-gray-600 hover:border-gray-500 transition-colors"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${getMagnitudeColor(entry.magnitude)}`}></div>
-                    <span className="text-sm font-medium text-gray-300">
-                      {formatTimestamp(entry.timestamp)}
-                    </span>
-                    <span className="text-xs bg-gray-600 px-2 py-1 rounded text-gray-300">
-                      {entry.action}
-                    </span>
-                    <span className={`text-xs px-2 py-1 rounded ${getMagnitudeColor(entry.magnitude)}`}>
-                      {entry.magnitude} change
-                    </span>
+          {history.length === 0 ? (
+            <div className="text-center py-8">
+              <svg className="w-16 h-16 text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-gray-400">No version history available</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {history.map((entry) => (
+                <div
+                  key={entry.id}
+                  className={`bg-gray-700 rounded-lg p-4 border transition-colors ${
+                    entry.action === 'current' 
+                      ? 'border-purple-500 bg-purple-900/20' 
+                      : 'border-gray-600 hover:border-gray-500'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm font-medium text-gray-300">
+                          {formatTimestamp(entry.timestamp)}
+                        </span>
+                        <span className={`text-xs px-2 py-1 rounded ${getActionColor(entry.action)}`}>
+                          {entry.action === 'current' ? 'CURRENT' : entry.action.toUpperCase()}
+                        </span>
+                        {entry.version && entry.version !== 'current' && (
+                          <span className="text-xs bg-gray-600 px-2 py-1 rounded text-gray-300">
+                            v{entry.version}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm text-gray-400">{entry.user || 'system'}</span>
+                      {entry.can_rollback && (
+                        <button
+                          onClick={() => setSelectedHistory(entry)}
+                          className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
+                          disabled={isUpdating}
+                        >
+                          Rollback
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-400">{entry.editor}</span>
-                    {entry.can_rollback && (
-                      <button
-                        onClick={() => setSelectedHistory(entry)}
-                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
-                        disabled={isUpdating}
-                      >
-                        Rollback
-                      </button>
+                  
+                  <p className="text-gray-300 text-sm mb-2">
+                    {entry.description || `${entry.action} operation`}
+                  </p>
+                  
+                  <div className="flex items-center space-x-4 text-xs text-gray-400">
+                    {entry.size && (
+                      <span>Size: {(entry.size / 1024).toFixed(1)} KB</span>
+                    )}
+                    {entry.checksum && (
+                      <span>Checksum: {entry.checksum.substring(0, 8)}...</span>
+                    )}
+                    {entry.changes && Object.keys(entry.changes).length > 0 && (
+                      <span>Changes: {Object.keys(entry.changes).length} items</span>
                     )}
                   </div>
                 </div>
-                
-                <p className="text-gray-300 text-sm mb-2">{entry.summary}</p>
-                
-                <div className="flex items-center space-x-4 text-xs text-gray-400">
-                  {entry.changes.rows_changed > 0 && (
-                    <span>{entry.changes.rows_changed} rows changed</span>
-                  )}
-                  {entry.changes.columns_changed > 0 && (
-                    <span>{entry.changes.columns_changed} columns changed</span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Rollback Confirmation Modal */}
@@ -937,12 +1026,12 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
                 Are you sure you want to rollback to this version from {formatTimestamp(selectedHistory.timestamp)}?
               </p>
               <p className="text-sm text-gray-400 mb-4">
-                {selectedHistory.summary}
+                {selectedHistory.description}
               </p>
               
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Reason for rollback (optional):
+                  Reason for rollback:
                 </label>
                 <textarea
                   value={rollbackReason}
@@ -950,6 +1039,7 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows="3"
                   placeholder="Enter reason for rollback..."
+                  required
                 />
               </div>
 
@@ -962,8 +1052,8 @@ const FileHistoryPanel = ({ history, onRollback, onClose, isUpdating }) => {
                 </button>
                 <button
                   onClick={handleRollback}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                  disabled={isUpdating}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
+                  disabled={isUpdating || !rollbackReason.trim()}
                 >
                   {isUpdating ? 'Rolling back...' : 'Confirm Rollback'}
                 </button>

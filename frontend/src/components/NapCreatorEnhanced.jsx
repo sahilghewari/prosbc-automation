@@ -6,7 +6,7 @@ import {
   debugNapExistence
 } from '../utils/napApiProSBCWorkflowOptimized';
 import { validateNapConfig } from '../utils/napApiProSBCWorkflow';
-import { ClientDatabaseService } from '../database/client-api.js';
+import { ClientDatabaseService } from '../services/apiClient.js';
 import DatabaseStatus from './DatabaseStatus';
 import PerformanceMetrics from './PerformanceMetrics';
 import './NapCreatorEnhanced.css';
@@ -272,7 +272,7 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
         try {
           const dbService = new ClientDatabaseService();
           await dbService.createNap({
-            napName: napName,
+            name: napName,  // Changed from napName
             napId: result.napId,
             enabled: enabled,
             defaultProfile: defaultProfile,
@@ -280,7 +280,7 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             proxyPort: proxyPort,
             useProxy: useProxy,
             registerToProxy: registerToProxy,
-            config: napConfig,
+            config_data: napConfig,  // Changed from config
             prosbc_result: result,
             executionTimeMs: executionTime
           });

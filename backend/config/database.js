@@ -22,8 +22,7 @@ class Database {
       console.log('Connecting to MongoDB...');
       
       const options = {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
+        
         maxPoolSize: 10,
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
@@ -110,8 +109,8 @@ class Database {
     try {
       console.log('🔍 Initializing database indexes...');
       
-      // Import models to ensure indexes are created
-      const { NAP, DigitMap, DialFormat, RoutesetMapping, ConfigAction, AuditLog } = await import('./models/index.js');
+      // Import models to ensure indexes are created - FIXED IMPORT PATH
+      const { NAP, DigitMap, DialFormat, RoutesetMapping, ConfigAction, AuditLog } = await import('../models/index.js');
       
       // Create indexes for each model
       await NAP.createIndexes();

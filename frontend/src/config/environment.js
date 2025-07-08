@@ -47,12 +47,11 @@ export const config = {
     host: '0.0.0.0'
   },
   
-  database: {
-    connectionString: isProduction() 
-      ? 'filesystem://local'
-      : 'localstorage://browser',
-    backupInterval: 24 * 60 * 60 * 1000, // 24 hours
-    maxBackups: 10
+  api: {
+    backendUrl: isProduction() 
+      ? '/backend'
+      : '/backend',
+    timeout: 30000
   }
 };
 

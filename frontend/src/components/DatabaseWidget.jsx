@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getDBHealth } from '../database/client-api.js';
+import { getDBHealth } from '../services/apiClient.js';
 
 const DatabaseWidget = ({ onOpenDashboard }) => {
   const [dbStatus, setDbStatus] = useState('connecting');
