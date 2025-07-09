@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
+import { ClientDatabaseService } from '../services/apiClient.js';
 import './NapManager.css';
 import EditNapModal from './NapEditor';
 import NetworkTest from './NetworkTest';
@@ -25,19 +26,36 @@ const NapManager = ({ onAuthError }) => {
   useEffect(() => {
     loadNaps();
   }, []);
-
   const loadNaps = async () => {
     try {
       setLoading(true);
       setError(null);
-      
       const napData = await fetchLiveNaps();
       setNaps(napData);
+
+      // Store live NAPs in the database
+      const dbService = new ClientDatabaseService();
+      for (const nap of napData) {
+        try {
+          await dbService.createNap({
+            name: nap.name,
+            config_data: nap,
+            description: nap.description || '',
+            // Add more fields as needed
+          });
+        } catch (dbErr) {
+          // Ignore duplicate errors, log others
+          if (dbErr.message && dbErr.message.includes('already exists')) {
+            // Optionally log: console.log(`NAP '${nap.name}' already exists in DB.`);
+          } else {
+            console.error(`Failed to store NAP '${nap.name}' in DB:`, dbErr);
+          }
+        }
+      }
     } catch (err) {
       const errorMessage = err.message || 'Unknown error occurred';
       setError(`Failed to load NAPs: ${errorMessage}`);
       console.error('Error loading NAPs:', err);
-      
       // Check for authentication errors and redirect to login
       if (errorMessage.includes('login') || 
           errorMessage.includes('auth') || 
@@ -48,6 +66,8 @@ const NapManager = ({ onAuthError }) => {
       }
     } finally {
       setLoading(false);
+    }
+  };
     }
   };
 

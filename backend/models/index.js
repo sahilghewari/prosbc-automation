@@ -3,12 +3,12 @@
  * Central export for all database models
  */
 
-import { NAP } from './NAP.js';
-import { DigitMap } from './DigitMap.js';
-import { DialFormat } from './DialFormat.js';
-import { RoutesetMapping } from './RoutesetMapping.js';
-import { ConfigAction } from './ConfigAction.js';
-import { AuditLog } from './AuditLog.js';
+import NAP from './NAP.js';
+import DigitMap from './DigitMap.js';
+import DialFormat from './DialFormat.js';
+import RoutesetMapping from './RoutesetMapping.js';
+import ConfigAction from './ConfigAction.js';
+import AuditLog from './AuditLog.js';
 
 export {
   NAP,
@@ -19,7 +19,6 @@ export {
   AuditLog
 };
 
-// Export for convenience
 export default {
   NAP,
   DigitMap,

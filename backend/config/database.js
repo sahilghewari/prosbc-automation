@@ -2,158 +2,71 @@
  * Database Configuration and Connection
  */
 
-import mongoose from 'mongoose';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/prosbc-automation';
+import { Sequelize } from 'sequelize';
 
-class Database {
-  constructor() {
-    this.connection = null;
-    this.isConnected = false;
-  }
+// MariaDB connection details (update as needed or use environment variables)
+const DB_NAME = process.env.DB_NAME || 'yourdatabase';
+const DB_USER = process.env.DB_USER || 'prosbc';
+const DB_PASSWORD = process.env.DB_PASSWORD || 'sahil';
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = process.env.DB_PORT || 3306;
 
+const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
+  host: DB_HOST,
+  port: DB_PORT,
+  dialect: 'mariadb',
+  logging: false,
+});
+
+
+// Sequelize connection utility
+const database = {
+  sequelize,
+  Sequelize,
   async connect() {
     try {
-      if (this.isConnected) {
-        console.log('Database already connected');
-        return this.connection;
-      }
-
-      console.log('Connecting to MongoDB...');
-      
-      const options = {
-        
-        maxPoolSize: 10,
-        serverSelectionTimeoutMS: 5000,
-        socketTimeoutMS: 45000,
-        family: 4
-      };
-
-      this.connection = await mongoose.connect(MONGODB_URI, options);
-      this.isConnected = true;
-
-      console.log(`✅ MongoDB connected: ${this.connection.connection.host}:${this.connection.connection.port}`);
-      console.log(`📊 Database: ${this.connection.connection.name}`);
-
-      // Handle connection events
-      mongoose.connection.on('error', (error) => {
-        console.error('❌ MongoDB connection error:', error);
-        this.isConnected = false;
-      });
-
-      mongoose.connection.on('disconnected', () => {
-        console.log('📡 MongoDB disconnected');
-        this.isConnected = false;
-      });
-
-      mongoose.connection.on('reconnected', () => {
-        console.log('🔄 MongoDB reconnected');
-        this.isConnected = true;
-      });
-
-      return this.connection;
+      await sequelize.authenticate();
+      console.log('✅ MariaDB connection established.');
     } catch (error) {
-      console.error('❌ MongoDB connection failed:', error);
-      this.isConnected = false;
+      console.error('❌ Unable to connect to MariaDB:', error);
       throw error;
     }
-  }
-
+  },
   async disconnect() {
     try {
-      if (this.connection) {
-        await mongoose.disconnect();
-        this.isConnected = false;
-        console.log('📡 MongoDB disconnected');
-      }
+      await sequelize.close();
+      console.log('� MariaDB connection closed.');
     } catch (error) {
-      console.error('❌ Error disconnecting from MongoDB:', error);
+      console.error('❌ Error disconnecting from MariaDB:', error);
       throw error;
     }
-  }
-
-  getConnectionStatus() {
-    return {
-      isConnected: this.isConnected,
-      readyState: mongoose.connection.readyState,
-      host: mongoose.connection.host,
-      port: mongoose.connection.port,
-      name: mongoose.connection.name
-    };
-  }
-
-  async getStats() {
-    if (!this.isConnected) {
-      throw new Error('Database not connected');
-    }
-
-    try {
-      const admin = mongoose.connection.db.admin();
-      const stats = await admin.serverStatus();
-      
-      return {
-        version: stats.version,
-        uptime: stats.uptime,
-        connections: stats.connections,
-        memory: stats.mem,
-        network: stats.network,
-        opcounters: stats.opcounters
-      };
-    } catch (error) {
-      console.error('Error getting database stats:', error);
-      throw error;
-    }
-  }
-
-  async initializeIndexes() {
-    try {
-      console.log('🔍 Initializing database indexes...');
-      
-      // Import models to ensure indexes are created - FIXED IMPORT PATH
-      const { NAP, DigitMap, DialFormat, RoutesetMapping, ConfigAction, AuditLog } = await import('../models/index.js');
-      
-      // Create indexes for each model
-      await NAP.createIndexes();
-      await DigitMap.createIndexes();
-      await DialFormat.createIndexes();
-      await RoutesetMapping.createIndexes();
-      await ConfigAction.createIndexes();
-      await AuditLog.createIndexes();
-      
-      console.log('✅ Database indexes initialized');
-    } catch (error) {
-      console.error('❌ Error initializing indexes:', error);
-      throw error;
-    }
-  }
-
+  },
   async healthCheck() {
     try {
-      if (!this.isConnected) {
-        return { status: 'disconnected', message: 'Database not connected' };
-      }
-
-      // Simple ping to check connection
-      await mongoose.connection.db.admin().ping();
-      
-      const stats = this.getConnectionStatus();
-      
-      return {
-        status: 'healthy',
-        message: 'Database connection is healthy',
-        details: stats
-      };
+      await sequelize.authenticate();
+      return { status: 'healthy', message: 'Database connection is healthy' };
     } catch (error) {
-      return {
-        status: 'error',
-        message: error.message,
-        error: error
-      };
+      return { status: 'error', message: error.message, error };
     }
   }
-}
-
-// Create singleton instance
-const database = new Database();
+  ,
+  // Dummy initializeIndexes function for compatibility
+  async initializeIndexes() {
+    // In Sequelize with MariaDB, indexes are usually defined in model definitions.
+    // If you need to ensure indexes, sync models here or leave as a no-op.
+    // Example: await sequelize.sync();
+    // For now, this is a no-op for compatibility.
+    return;
+  }
+  ,
+  // Returns connection status for compatibility with server.js
+  getConnectionStatus() {
+    // Sequelize does not expose a direct isConnected property, so we check connection manager state
+    // This is a best-effort check
+    const isConnectedd = !!(sequelize && sequelize.connectionManager && sequelize.connectionManager.pool && !sequelize.connectionManager.pool._closed);
+    return { isConnectedd };
+  }
+};
 
 export default database;

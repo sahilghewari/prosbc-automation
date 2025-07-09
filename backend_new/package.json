@@ -1,0 +1,15 @@
+{
+  "name": "prosbc-backend",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "init-db": "node scripts/init-database.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "sequelize": "^6.37.1",
+    "mariadb": "^3.3.3"
+  }
+}

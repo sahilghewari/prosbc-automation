@@ -198,7 +198,9 @@ router.post('/prosbc/import', async (req, res) => {
   }
 });
 
-// GET /api/files/digit-maps - Get all digit maps
+
+// GET /api/files/digit-maps - Get all digit maps (Sequelize)
+import { Op } from 'sequelize';
 router.get('/digit-maps', async (req, res) => {
   try {
     const {
@@ -210,25 +212,31 @@ router.get('/digit-maps', async (req, res) => {
       sort = '-uploaded_at'
     } = req.query;
 
-    const query = {};
-    
-    if (status) query.status = status;
-    if (nap_id) query.nap_id = nap_id;
+    const where = {};
+    if (status) where.status = status;
+    if (nap_id) where.nap_id = nap_id;
     if (search) {
-      query.$or = [
-        { filename: { $regex: search, $options: 'i' } },
-        { original_filename: { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { filename: { [Op.like]: `%${search}%` } },
+        { original_filename: { [Op.like]: `%${search}%` } }
       ];
     }
 
-    const digitMaps = await DigitMap.find(query)
-      .populate('nap_id', 'name status')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
+    // Sequelize uses ASC/DESC, and field name (uploaded_at)
+    let order = [['uploaded_at', 'DESC']];
+    if (sort && typeof sort === 'string') {
+      let field = sort.replace(/^-/, '');
+      let direction = sort.startsWith('-') ? 'DESC' : 'ASC';
+      order = [[field, direction]];
+    }
 
-    const total = await DigitMap.countDocuments(query);
+    const digitMaps = await DigitMap.findAll({
+      where,
+      order,
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
+    const total = await DigitMap.count({ where });
 
     res.json({
       success: true,
@@ -250,7 +258,8 @@ router.get('/digit-maps', async (req, res) => {
   }
 });
 
-// GET /api/files/dial-formats - Get all dial formats
+
+// GET /api/files/dial-formats - Get all dial formats (Sequelize)
 router.get('/dial-formats', async (req, res) => {
   try {
     const {
@@ -262,25 +271,30 @@ router.get('/dial-formats', async (req, res) => {
       sort = '-uploaded_at'
     } = req.query;
 
-    const query = {};
-    
-    if (status) query.status = status;
-    if (nap_id) query.nap_id = nap_id;
+    const where = {};
+    if (status) where.status = status;
+    if (nap_id) where.nap_id = nap_id;
     if (search) {
-      query.$or = [
-        { filename: { $regex: search, $options: 'i' } },
-        { original_filename: { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { filename: { [Op.like]: `%${search}%` } },
+        { original_filename: { [Op.like]: `%${search}%` } }
       ];
     }
 
-    const dialFormats = await DialFormat.find(query)
-      .populate('nap_id', 'name status')
-      .sort(sort)
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .exec();
+    let order = [['uploaded_at', 'DESC']];
+    if (sort && typeof sort === 'string') {
+      let field = sort.replace(/^-/, '');
+      let direction = sort.startsWith('-') ? 'DESC' : 'ASC';
+      order = [[field, direction]];
+    }
 
-    const total = await DialFormat.countDocuments(query);
+    const dialFormats = await DialFormat.findAll({
+      where,
+      order,
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit)
+    });
+    const total = await DialFormat.count({ where });
 
     res.json({
       success: true,
@@ -322,7 +336,7 @@ router.post('/digit-maps/upload', upload.single('file'), async (req, res) => {
     const checksum = generateChecksum(content);
 
     // Check for duplicate file based on checksum
-    const existingFile = await DigitMap.findOne({ checksum });
+    const existingFile = await DigitMap.findOne({ where: { checksum } });
     if (existingFile) {
       return res.status(409).json({
         success: false,
@@ -407,7 +421,7 @@ router.post('/dial-formats/upload', upload.single('file'), async (req, res) => {
     const checksum = generateChecksum(content);
 
     // Check for duplicate file based on checksum
-    const existingFile = await DialFormat.findOne({ checksum });
+    const existingFile = await DialFormat.findOne({ where: { checksum } });
     if (existingFile) {
       return res.status(409).json({
         success: false,
@@ -472,18 +486,17 @@ router.post('/dial-formats/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// GET /api/files/digit-maps/:id - Get single digit map
+
+// GET /api/files/digit-maps/:id - Get single digit map (Sequelize)
 router.get('/digit-maps/:id', async (req, res) => {
   try {
-    const digitMap = await DigitMap.findById(req.params.id).populate('nap_id', 'name status');
-    
+    const digitMap = await DigitMap.findByPk(req.params.id);
     if (!digitMap) {
       return res.status(404).json({
         success: false,
         error: 'Digit map not found'
       });
     }
-
     res.json({
       success: true,
       data: digitMap
@@ -498,18 +511,17 @@ router.get('/digit-maps/:id', async (req, res) => {
   }
 });
 
-// GET /api/files/dial-formats/:id - Get single dial format
+
+// GET /api/files/dial-formats/:id - Get single dial format (Sequelize)
 router.get('/dial-formats/:id', async (req, res) => {
   try {
-    const dialFormat = await DialFormat.findById(req.params.id).populate('nap_id', 'name status');
-    
+    const dialFormat = await DialFormat.findByPk(req.params.id);
     if (!dialFormat) {
       return res.status(404).json({
         success: false,
         error: 'Dial format not found'
       });
     }
-
     res.json({
       success: true,
       data: dialFormat
@@ -524,22 +536,20 @@ router.get('/dial-formats/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/files/digit-maps/:id - Delete digit map
+
+// DELETE /api/files/digit-maps/:id - Delete digit map (Sequelize)
 router.delete('/digit-maps/:id', async (req, res) => {
   try {
-    const digitMap = await DigitMap.findById(req.params.id);
-    
+    const digitMap = await DigitMap.findByPk(req.params.id);
     if (!digitMap) {
       return res.status(404).json({
         success: false,
         error: 'Digit map not found'
       });
     }
-
     // Check if file is mapped to any routesets
     const { RoutesetMapping } = await import('../models/index.js');
-    const mappings = await RoutesetMapping.find({ digit_map_id: req.params.id });
-    
+    const mappings = await RoutesetMapping.findAll({ where: { digit_map_id: req.params.id } });
     if (mappings.length > 0) {
       return res.status(409).json({
         success: false,
@@ -547,11 +557,8 @@ router.delete('/digit-maps/:id', async (req, res) => {
         mappings_count: mappings.length
       });
     }
-
     const deletedBy = req.body.deleted_by || req.query.deleted_by || 'system';
-    
-    await DigitMap.findByIdAndDelete(req.params.id);
-
+    await DigitMap.destroy({ where: { id: req.params.id } });
     // Log audit event
     await logAuditEvent(
       'Digit Map Deleted',
@@ -560,7 +567,6 @@ router.delete('/digit-maps/:id', async (req, res) => {
       { action: 'delete', method: 'DELETE', endpoint: `/api/files/digit-maps/${req.params.id}` },
       true
     );
-
     res.json({
       success: true,
       message: 'Digit map deleted successfully'
@@ -575,22 +581,20 @@ router.delete('/digit-maps/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/files/dial-formats/:id - Delete dial format
+
+// DELETE /api/files/dial-formats/:id - Delete dial format (Sequelize)
 router.delete('/dial-formats/:id', async (req, res) => {
   try {
-    const dialFormat = await DialFormat.findById(req.params.id);
-    
+    const dialFormat = await DialFormat.findByPk(req.params.id);
     if (!dialFormat) {
       return res.status(404).json({
         success: false,
         error: 'Dial format not found'
       });
     }
-
     // Check if file is mapped to any routesets
     const { RoutesetMapping } = await import('../models/index.js');
-    const mappings = await RoutesetMapping.find({ dial_format_id: req.params.id });
-    
+    const mappings = await RoutesetMapping.findAll({ where: { dial_format_id: req.params.id } });
     if (mappings.length > 0) {
       return res.status(409).json({
         success: false,
@@ -598,11 +602,8 @@ router.delete('/dial-formats/:id', async (req, res) => {
         mappings_count: mappings.length
       });
     }
-
     const deletedBy = req.body.deleted_by || req.query.deleted_by || 'system';
-    
-    await DialFormat.findByIdAndDelete(req.params.id);
-
+    await DialFormat.destroy({ where: { id: req.params.id } });
     // Log audit event
     await logAuditEvent(
       'Dial Format Deleted',
@@ -611,7 +612,6 @@ router.delete('/dial-formats/:id', async (req, res) => {
       { action: 'delete', method: 'DELETE', endpoint: `/api/files/dial-formats/${req.params.id}` },
       true
     );
-
     res.json({
       success: true,
       message: 'Dial format deleted successfully'
@@ -679,7 +679,7 @@ router.get('/:type/:id/history', async (req, res) => {
     }
 
     // Get the current file
-    const currentFile = await Model.findById(id);
+    const currentFile = await Model.findByPk(id);
     if (!currentFile) {
       return res.status(404).json({
         success: false,
@@ -688,13 +688,19 @@ router.get('/:type/:id/history', async (req, res) => {
     }
 
     // Get version history from audit logs
-    const auditLogs = await AuditLog.find({
-      entity: id,
-      category: 'file',
-      action: { $in: ['create', 'update', 'upload'] }
-    })
-    .sort({ created_at: -1 })
-    .limit(50);
+    const auditLogs = await AuditLog.findAll({
+      where: {
+        entity: id,
+        event_category: 'file',
+        action_details: { [Op.or]: [
+          { action: 'create' },
+          { action: 'update' },
+          { action: 'upload' }
+        ] }
+      },
+      order: [['timestamp', 'DESC']],
+      limit: 50
+    });
 
     // Build history entries
     const history = auditLogs.map(log => ({
@@ -784,7 +790,7 @@ router.post('/:type/:id/rollback', async (req, res) => {
     }
 
     // Get the current file
-    const currentFile = await Model.findById(id);
+    const currentFile = await Model.findByPk(id);
     if (!currentFile) {
       return res.status(404).json({
         success: false,
@@ -793,7 +799,7 @@ router.post('/:type/:id/rollback', async (req, res) => {
     }
 
     // Get the audit log entry for the target version
-    const targetAuditLog = await AuditLog.findById(history_id);
+    const targetAuditLog = await AuditLog.findByPk(history_id);
     if (!targetAuditLog || targetAuditLog.entity !== id) {
       return res.status(404).json({
         success: false,
@@ -842,7 +848,7 @@ router.post('/:type/:id/rollback', async (req, res) => {
       updated_at: new Date()
     };
 
-    await Model.findByIdAndUpdate(id, rollbackUpdate);
+    await Model.update(rollbackUpdate, { where: { id } });
 
     // Log the rollback operation
     await logAuditEvent(

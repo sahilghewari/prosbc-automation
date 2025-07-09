@@ -3,7 +3,6 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import NapCreator from './components/NapCreator';
 import NapCreatorEnhanced from './components/NapCreatorEnhanced';
-import NapManager from './components/NapManager';
 import NapManagerEnhanced from './components/NapManagerEnhanced';
 import FileUploader from './components/FileUploader';
 import FileManagement from './components/FileManagement';
