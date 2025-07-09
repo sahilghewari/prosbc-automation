@@ -210,10 +210,7 @@ function FileUploader({ onAuthError }) {
             Upload and manage DF (Definition Files) and DM (Digit Map) files to ProSBC
           </p>
           
-          {/* Database Status */}
-          <div className="flex justify-center">
-            <DatabaseStatus showDetails={false} className="inline-flex" />
-          </div>
+          
         </div>
 
         {/* File Upload Info */}

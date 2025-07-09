@@ -343,16 +343,7 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             <h2>Create New NAP</h2>
             <p>Create a Network Access Point with full ProSBC configuration</p>
           </div>
-          <div className="header-controls">
-            <button 
-              className="metrics-toggle-button"
-              onClick={() => setShowPerformanceMetrics(!showPerformanceMetrics)}
-              title="Toggle performance metrics"
-            >
-              📊 {showPerformanceMetrics ? 'Hide' : 'Show'} Metrics
-            </button>
-            <DatabaseStatus showDetails={false} />
-          </div>
+          
         </div>
         {currentStep > 1 && (
           <div className="creation-progress">

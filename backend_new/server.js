@@ -3,11 +3,17 @@ import database from './config/database.js';
 
 import napsRouter from './routes/naps.js';
 
+import filesRouter from './routes/files.js';
+
 const app = express();
 app.use(express.json());
 
+
 // NAP routes
 app.use('/api/naps', napsRouter);
+
+// Files routes
+app.use('/api/files', filesRouter);
 
 app.get('/', (req, res) => {
   res.send('ProSBC Backend API is running.');

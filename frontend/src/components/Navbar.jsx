@@ -4,32 +4,10 @@ import './Navbar.css';
 
 const Navbar = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const [dbStatus, setDbStatus] = useState('connecting');
 
-  useEffect(() => {
-    const checkDbStatus = async () => {
-      try {
-        const health = await getDBHealth();
-        setDbStatus(health.status === 'healthy' ? 'connected' : 'error');
-      } catch (error) {
-        setDbStatus('disconnected');
-      }
-    };
+  
 
-    checkDbStatus();
-    const interval = setInterval(checkDbStatus, 60000); // Check every minute
-    return () => clearInterval(interval);
-  }, []);
-
-  const getDbStatusColor = () => {
-    switch (dbStatus) {
-      case 'connected': return 'bg-green-500';
-      case 'connecting': return 'bg-yellow-500 animate-pulse';
-      case 'error': return 'bg-orange-500';
-      case 'disconnected': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  
 
   return (
     <nav className="fixed top-0 left-0 right-0 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 shadow-xl border-b border-gray-700 z-50 backdrop-blur-sm">
@@ -44,13 +22,7 @@ const Navbar = () => {
 
           {/* Database Status & Profile */}
           <div className="flex items-center space-x-4">
-            {/* Database Status Indicator */}
-            <div className="flex items-center space-x-2 px-3 py-1 bg-gray-800 rounded-full border border-gray-600">
-              <div className={`w-2 h-2 rounded-full ${getDbStatusColor()}`}></div>
-              <span className="text-xs text-gray-300 hidden sm:block">
-                Database {dbStatus === 'connected' ? 'Connected' : dbStatus === 'connecting' ? 'Connecting...' : 'Offline'}
-              </span>
-            </div>
+            
 
             {/* Profile Icon with Dropdown */}
             <div className="relative profile-menu">

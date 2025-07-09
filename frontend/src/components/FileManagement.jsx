@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { fileManagementService } from '../utils/fileManagementService';
-import { fileService } from '../services/apiClient.js';
+import { fileService, ClientDatabaseService } from '../services/apiClient.js';
 //import { fileExportService } from '../utils/fileExportService';
 import { enhancedFileStorageService } from '../utils/enhancedFileStorageServiceNew';
 import { updateFile, updateMultipleFiles, testConnection, getUpdateStatus, getUpdateHistory } from '../utils/fileUpdateService';
 import FileEditor from './FileEditor';
 import CSVFileEditor from './CSVFileEditor';
 import DatabaseStatus from './DatabaseStatus';
+import AddProSBCFilesButton from './AddProSBCFilesButton';
 
 function FileManagement({ onAuthError }) {
-  const [activeTab, setActiveTab] = useState('database');
+  const [activeTab, setActiveTab] = useState('df-files'); // Default to DF files tab
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   
@@ -639,6 +640,15 @@ function FileManagement({ onAuthError }) {
     setSelectedCSVFile(file);
   };
 
+  // Handler to refresh files after adding ProSBC files
+  const handleProSBCFilesAdded = (results) => {
+    loadStoredFiles();
+    loadDatabaseStats();
+    loadFiles();
+    setMessage('✅ ProSBC files added to database!');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
   // Utility functions
   const getFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -772,10 +782,7 @@ function FileManagement({ onAuthError }) {
             Manage, update, export, and delete Definition Files (DF) and Digit Map Files (DM)
           </p>
           
-          {/* Database Status */}
-          <div className="flex justify-center">
-            <DatabaseStatus showDetails={false} className="inline-flex" />
-          </div>
+          
         </div>
 
         {/* Tab Navigation */}
@@ -823,6 +830,12 @@ function FileManagement({ onAuthError }) {
                     {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
                   </button>
                 </div>
+                
+                {/* Add ProSBC Files Button (visible on both tabs) */}
+                <div className="mb-6">
+                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
+                </div>
+                
                 {renderFileTable(dfFiles, 'routesets_definitions', 'Definition', 'purple')}
               </div>
             )}
@@ -844,6 +857,12 @@ function FileManagement({ onAuthError }) {
                     {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
                   </button>
                 </div>
+                
+                {/* Add ProSBC Files Button (visible on both tabs) */}
+                <div className="mb-6">
+                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
+                </div>
+                
                 {renderFileTable(dmFiles, 'routesets_digitmaps', 'Digit Map', 'pink')}
               </div>
             )}

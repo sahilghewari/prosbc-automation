@@ -620,8 +620,46 @@ export class ClientDatabaseService {
     return dashboardService.getProSBCFiles(params);
   }
 
+
   async downloadProSBCFile(fileId, fileType) {
     return dashboardService.downloadProSBCFile(fileId, fileType);
+  }
+
+  /**
+   * Store DM and DF files fetched from ProSBC into the database using the upload endpoints.
+   * @param {Array} files - Array of objects with { file, type, name, nap_id, tags, uploaded_by }
+   *        file: File | Blob | string (CSV content), type: 'dm' | 'df', name: string
+   *        If file is string, it will be converted to a File object.
+   * @returns {Promise<Array>} Array of upload results
+   */
+  async storeFetchedProSBCFiles(files = []) {
+    const results = [];
+    for (const fileObj of files) {
+      let { file, type, name, nap_id, tags, uploaded_by } = fileObj;
+      let fileType = (type && type.toLowerCase() === 'df') ? 'df' : 'dm';
+
+      // If file is a string (CSV content), convert to File object
+      if (typeof file === 'string') {
+        file = new File([file], name || `prosbc_${fileType}_${Date.now()}.csv`, { type: 'text/csv' });
+      }
+
+      // Build FormData
+      const formData = new FormData();
+      formData.append('file', file);
+      if (nap_id) formData.append('nap_id', nap_id);
+      if (tags) formData.append('tags', tags);
+      if (uploaded_by) formData.append('uploaded_by', uploaded_by);
+      formData.append('name', name || file.name);
+
+      // Upload using the correct endpoint
+      try {
+        const uploadResult = await fileService.upload(formData, fileType);
+        results.push({ success: true, file: name || file.name, result: uploadResult });
+      } catch (err) {
+        results.push({ success: false, file: name || file.name, error: err.message });
+      }
+    }
+    return results;
   }
 
   async getProSBCFileStats() {
