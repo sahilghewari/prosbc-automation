@@ -7,7 +7,7 @@ import axios from 'axios';
 
 // Create axios instance for backend API
 const apiClient = axios.create({
-  baseURL: '/backend', // This will proxy to backend via vite.config.js
+  baseURL: '', // Use absolute paths for all backend endpoints
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -15,10 +15,18 @@ const apiClient = axios.create({
   }
 });
 
-// Request interceptor for logging
+// Request interceptor for logging and ProSBC authentication
 apiClient.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    // Add ProSBC auth header for /api requests (not /backend/api)
+    if (config.url && config.url.startsWith('/api')) {
+      // Replace this with your actual token retrieval logic
+      const prosbcToken = localStorage.getItem('prosbc_token');
+      if (prosbcToken) {
+        config.headers['Authorization'] = `Bearer ${prosbcToken}`;
+      }
+    }
     return config;
   },
   (error) => {
@@ -53,13 +61,13 @@ apiClient.interceptors.response.use(
 export const napService = {
   // Get all NAPs
   async getAll(params = {}) {
-    const response = await apiClient.get('/api/naps', { params });
+    const response = await apiClient.get('/backend/api/naps', { params });
     return response.data;
   },
 
   // Get NAP by ID
   async getById(id) {
-    const response = await apiClient.get(`/api/naps/${id}`);
+    const response = await apiClient.get(`/backend/api/naps/${id}`);
     return response.data;
   },
 
@@ -76,7 +84,7 @@ export const napService = {
       };
 
       // Send request to create NAP
-      const response = await apiClient.post('/api/naps', payload);
+      const response = await apiClient.post('/backend/api/naps', payload);
       return response.data;
     } catch (error) {
       if (error.response && error.response.status === 400) {
@@ -142,7 +150,7 @@ export const fileService = {
       // Check what's in the FormData (debugging)
       console.log('FormData fields:', Array.from(formData.keys()));
       
-      const endpoint = fileType === 'dm' ? '/api/files/digit-maps/upload' : '/api/files/dial-formats/upload';
+      const endpoint = fileType === 'dm' ? '/backend/api/files/digit-maps/upload' : '/backend/api/files/dial-formats/upload';
       const response = await apiClient.post(endpoint, formData, {
         headers: {
           // Let the browser set the Content-Type with boundary parameter
@@ -333,7 +341,7 @@ export const fileService = {
   // Import existing ProSBC files to our database
   async importProSBCFiles(filesToImport) {
     try {
-      const response = await apiClient.post('/api/files/prosbc/import', { files: filesToImport });
+      const response = await apiClient.post('/backend/api/files/prosbc/import', { files: filesToImport });
       return response.data;
     } catch (error) {
       console.error('Failed to import ProSBC files:', error);
@@ -348,13 +356,106 @@ export const fileService = {
   },
 
   // Update file content
-  async updateContent(type, id, content, reason = 'Content updated') {
-    const response = await apiClient.put(`/api/files/${type}/${id}`, {
-      content,
-      reason,
-      updated_by: 'user' // This should come from auth context
-    });
-    return response.data;
+  /**
+   * Update file content
+   * @param {string} type
+   * @param {string|number} id
+   * @param {string} content
+   * @param {string} [reason]
+   * @param {string} [filename] - (optional) The filename to use for ProSBC update
+   */
+  async updateContent(type, id, content, reason = 'Content updated', filename = null) {
+    // For ProSBC file types, use legacy update logic (fetch edit form, extract CSRF, POST FormData)
+    if (type === 'routesets_definitions' || type === 'routesets_digitmaps') {
+      // Always use absolute paths so Vite proxy handles CORS
+      const fileType = type;
+      const endpoint = `/file_dbs/1/${fileType}/${id}`;
+      const editUrl = `/file_dbs/1/${fileType}/${id}/edit`;
+      const fieldName = fileType === 'routesets_digitmaps'
+        ? 'tbgw_routesets_digitmap'
+        : 'tbgw_routesets_definition';
+
+      // 1. Fetch the edit form to get CSRF token and record ID
+      const editResp = await fetch(editUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          ...(localStorage.getItem('prosbc_token')
+            ? { 'Authorization': `Bearer ${localStorage.getItem('prosbc_token')}` }
+            : {})
+        },
+        credentials: 'include'
+      });
+      if (!editResp.ok) {
+        const errText = await editResp.text();
+        throw new Error(`Failed to fetch ProSBC edit form: ${editResp.status} - ${errText.substring(0, 200)}`);
+      }
+      const editHtml = await editResp.text();
+      // Extract CSRF token
+      const tokenMatch = editHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
+      if (!tokenMatch) {
+        throw new Error('Could not find authenticity token in ProSBC edit form');
+      }
+      const csrfToken = tokenMatch[1];
+      // Extract record ID (may be different from :id in URL)
+      let recordId = id;
+      const idMatch = editHtml.match(new RegExp(`name=\"${fieldName}\\[id\\]\"[^>]*value=\"([^\"]+)\"`));
+      if (idMatch) {
+        recordId = idMatch[1];
+      }
+      // 2. Build a File object from content string, use correct filename if provided
+      const fileBlob = new Blob([content], { type: 'text/csv' });
+      const fileNameToUse = filename || 'updated.csv';
+      const fileObj = new File([fileBlob], fileNameToUse, { type: 'text/csv' });
+      // 3. Build FormData
+      const formData = new FormData();
+      formData.append('_method', 'put');
+      formData.append('authenticity_token', csrfToken);
+      if (fileType === 'routesets_digitmaps') {
+        formData.append('tbgw_routesets_digitmap[file]', fileObj);
+        formData.append('tbgw_routesets_digitmap[id]', recordId);
+        formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', '1');
+      } else {
+        formData.append('tbgw_routesets_definition[file]', fileObj);
+        formData.append('tbgw_routesets_definition[id]', recordId);
+        formData.append('tbgw_routesets_definition[tbgw_files_db_id]', '1');
+      }
+      formData.append('commit', 'Update');
+      // 4. POST FormData to endpoint (absolute path)
+      const uploadHeaders = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Referer': editUrl,
+        ...(localStorage.getItem('prosbc_token')
+          ? { 'Authorization': `Bearer ${localStorage.getItem('prosbc_token')}` }
+          : {})
+      };
+      const uploadResp = await fetch(endpoint, {
+        method: 'POST',
+        headers: uploadHeaders,
+        body: formData,
+        credentials: 'include',
+        redirect: 'manual' // Prevent browser from following 302 to ProSBC (CORS)
+      });
+      const respText = await uploadResp.text();
+      if (uploadResp.ok || uploadResp.status === 302) {
+        return { success: true, message: 'File updated successfully on ProSBC!', status: uploadResp.status, response: respText };
+      }
+      // Treat status 0 (CORS manual redirect) as success for ProSBC update
+      if (uploadResp.status === 0) {
+        return { success: true, message: 'File updated successfully on ProSBC! (status 0, CORS manual redirect)', status: 0, response: respText };
+      }
+      throw new Error(`ProSBC update failed: ${uploadResp.status} - ${respText.substring(0, 300)}`);
+    } else {
+      // Backend update (JSON)
+      const url = `/backend/api/files/${type}/${id}`;
+      const data = {
+        content,
+        reason,
+        updated_by: 'user' // This should come from auth context
+      };
+      const response = await apiClient.put(url, data);
+      return response.data;
+    }
   },
 
   // Get file history

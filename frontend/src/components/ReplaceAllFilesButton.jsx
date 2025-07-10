@@ -10,12 +10,12 @@ function ReplaceAllFilesButton({ onComplete }) {
     setResult(null);
     try {
       // 1. Delete all files
-      const delRes = await fetch('/api/files/delete-all', { method: 'DELETE' });
+      const delRes = await fetch('/backend/api/files/delete-all', { method: 'DELETE' });
       const delData = await delRes.json();
       if (!delData.success) throw new Error(delData.message || 'Delete failed');
 
       // 2. Add new files (call your import/fetch endpoint)
-      const importRes = await fetch('/api/files/prosbc/import', { method: 'POST' });
+      const importRes = await fetch('/backend/api/files/prosbc/import', { method: 'POST' });
       const importData = await importRes.json();
       setResult(importData);
       if (onComplete) onComplete();

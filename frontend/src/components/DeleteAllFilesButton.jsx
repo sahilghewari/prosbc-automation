@@ -9,7 +9,7 @@ function DeleteAllFilesButton({ onComplete }) {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch('/api/files/delete-all', { method: 'DELETE' });
+      const res = await fetch('/backend/api/files/delete-all', { method: 'DELETE' });
       const data = await res.json();
       setResult(data);
       if (onComplete) onComplete();

@@ -10,10 +10,10 @@ app.use(express.json());
 
 
 // NAP routes
-app.use('/api/naps', napsRouter);
+app.use('/backend/api/naps', napsRouter);
 
 // Files routes
-app.use('/api/files', filesRouter);
+app.use('/backend/api/files', filesRouter);
 
 app.get('/', (req, res) => {
   res.send('ProSBC Backend API is running.');
