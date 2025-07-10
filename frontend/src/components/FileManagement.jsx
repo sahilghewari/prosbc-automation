@@ -7,8 +7,10 @@ import { enhancedFileStorageService } from '../utils/enhancedFileStorageServiceN
 import { updateFile, updateMultipleFiles, testConnection, getUpdateStatus, getUpdateHistory } from '../utils/fileUpdateService';
 import FileEditor from './FileEditor';
 import CSVFileEditor from './CSVFileEditor';
+
 import DatabaseStatus from './DatabaseStatus';
 import AddProSBCFilesButton from './AddProSBCFilesButton';
+import DeleteAllFilesButton from './DeleteAllFilesButton';
 
 function FileManagement({ onAuthError }) {
   const [activeTab, setActiveTab] = useState('df-files'); // Default to DF files tab
@@ -781,7 +783,10 @@ function FileManagement({ onAuthError }) {
           <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-6">
             Manage, update, export, and delete Definition Files (DF) and Digit Map Files (DM)
           </p>
-          
+           <div className="mb-6 flex flex-row items-center">
+                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
+                  <DeleteAllFilesButton onComplete={loadFiles} />
+                </div>
           
         </div>
 
@@ -831,10 +836,8 @@ function FileManagement({ onAuthError }) {
                   </button>
                 </div>
                 
-                {/* Add ProSBC Files Button (visible on both tabs) */}
-                <div className="mb-6">
-                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
-                </div>
+                
+                
                 
                 {renderFileTable(dfFiles, 'routesets_definitions', 'Definition', 'purple')}
               </div>
@@ -858,10 +861,7 @@ function FileManagement({ onAuthError }) {
                   </button>
                 </div>
                 
-                {/* Add ProSBC Files Button (visible on both tabs) */}
-                <div className="mb-6">
-                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
-                </div>
+               
                 
                 {renderFileTable(dmFiles, 'routesets_digitmaps', 'Digit Map', 'pink')}
               </div>
@@ -1024,6 +1024,57 @@ function FileManagement({ onAuthError }) {
                   }`}
                 >
                   {isUpdating ? 'Updating...' : 'Update File'}
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!updateTarget) return;
+                    try {
+                      setUpdateMessage('Updating database...');
+                      setUpdateProgress(10);
+                      let fileType = updateTarget.fileType;
+                      let fileId = updateTarget.routesetId;
+                      // Fetch file content from ProSBC (export)
+                      const contentResult = await prosbcFileAPI.getFileContent(fileType, fileId);
+                      if (!contentResult.success) throw new Error('Failed to fetch file content');
+                      // Create a File object from the content
+                      const fileBlob = new Blob([contentResult.content], { type: 'text/csv' });
+                      const fileName = updateTarget.fileName || `prosbc_update_${Date.now()}.csv`;
+                      const file = new File([fileBlob], fileName, { type: 'text/csv' });
+                      // Prepare FormData for upload
+                      const formData = new FormData();
+                      formData.append('file', file);
+                      formData.append('name', fileName);
+                      formData.append('uploaded_by', 'manual-db-update');
+                      // Use correct endpoint
+                      let uploadEndpoint = fileType === 'routesets_digitmaps'
+                        ? '/api/files/digit-maps/upload'
+                        : '/api/files/dial-formats/upload';
+                      // POST to upload endpoint
+                      const dbRes = await fetch(uploadEndpoint, {
+                        method: 'POST',
+                        body: formData
+                      });
+                      const dbJson = await dbRes.json();
+                      if (dbRes.ok) {
+                        setUpdateMessage('Database updated successfully!');
+                        setUpdateProgress(100);
+                      } else {
+                        throw new Error(dbJson.message || 'Unknown error');
+                      }
+                    } catch (err) {
+                      setUpdateMessage('DB update failed: ' + err.message);
+                      setUpdateProgress(0);
+                    }
+                  }}
+                  disabled={isUpdating}
+                  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+                    isUpdating
+                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                  }`}
+                  title="Update only the database with the current file from ProSBC"
+                >
+                  Update to Database Only
                 </button>
               </div>
             </div>

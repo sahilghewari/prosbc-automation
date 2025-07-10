@@ -803,9 +803,8 @@ export class ProSBCFileAPI {
       if (updateResponse.ok || updateResponse.status === 302) {
         const responseText = await updateResponse.text();
         console.log('Update response preview:', responseText.substring(0, 500));
-        
         onProgress?.(100, 'File updated successfully!');
-        
+
         // Check for success indicators - more comprehensive check
         const isSuccess = updateResponse.status === 302 || 
                          updateResponse.status === 200 ||
@@ -813,32 +812,80 @@ export class ProSBCFileAPI {
                          responseText.includes('updated') ||
                          responseText.includes('imported') ||
                          responseText.includes('Upload successful');
-        
+
         console.log(`Update ${isSuccess ? 'successful' : 'completed'} for ${fileType} file ${fileId}`);
-        
+
+        // --- Update the file in the database as well ---
+        console.log('[DB UPDATE] About to start database update block');
+        // 1. Read the file content as text
+        let fileText = '';
+        try {
+          fileText = await updatedFile.text();
+        } catch (e) {
+          console.error('Failed to read updated file as text:', e);
+        }
+
+        // 2. Determine backend API endpoint
+        let dbApiUrl = '';
+        if (fileType === 'routesets_digitmaps') {
+          dbApiUrl = `/api/files/digit-maps/${fileId}`;
+        } else {
+          dbApiUrl = `/api/files/dial-formats/${fileId}`;
+        }
+
+        // 3. Send PUT request to backend to update DB
+        let dbUpdateResult = null;
+        try {
+          console.log('[DB UPDATE] Attempting to update database file:', {
+            url: dbApiUrl,
+            fileId,
+            fileType,
+            filename: updatedFile.name
+          });
+          const dbRes = await fetch(dbApiUrl, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              // Optionally add auth headers if needed
+            },
+            body: JSON.stringify({
+              content: fileText,
+              updated_by: 'prosbc-automation',
+              reason: 'Updated via ProSBC File Management Center',
+              filename: updatedFile.name
+            })
+          });
+          dbUpdateResult = await dbRes.json();
+          if (dbRes.ok) {
+            console.log('[DB UPDATE] Database file update successful:', dbUpdateResult);
+          } else {
+            console.error('[DB UPDATE] Database file update failed:', dbUpdateResult);
+          }
+        } catch (dbErr) {
+          console.error('[DB UPDATE] Error updating file in database:', dbErr);
+        }
+
         return {
           success: true,
-          message: isSuccess ? 'File updated successfully on ProSBC!' : 'File update completed - please verify in ProSBC',
+          message: isSuccess ? 'File updated successfully on ProSBC and database!' : 'File update completed - please verify in ProSBC',
           status: updateResponse.status,
           response: responseText.substring(0, 1000),
           fileType: fileType,
           fileId: fileId,
-          fileName: updatedFile.name
+          fileName: updatedFile.name,
+          dbUpdate: dbUpdateResult
         };
       } else {
         const errorText = await updateResponse.text();
         console.error('Update failed response:', errorText.substring(0, 1000));
-        
         // Try to extract specific error messages
         let errorMessage = `Update failed: ${updateResponse.status}`;
-        
         // Look for specific error patterns
         const errorPatterns = [
           /<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/,
           /<span[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/,
           /error['"]\s*:\s*['"]([^'"]+)/i
         ];
-        
         for (const pattern of errorPatterns) {
           const match = errorText.match(pattern);
           if (match) {
@@ -846,7 +893,6 @@ export class ProSBCFileAPI {
             break;
           }
         }
-        
         throw new Error(errorMessage);
       }
 

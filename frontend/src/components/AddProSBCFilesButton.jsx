@@ -11,9 +11,49 @@ function AddProSBCFilesButton({ onComplete }) {
 
   // Helper to fetch file content as text from exportUrl
   const fetchFileContent = async (exportUrl) => {
-    const response = await fetch(exportUrl, { method: 'GET', headers: prosbcFileAPI.getCommonHeaders() });
-    if (!response.ok) throw new Error('Failed to fetch file content');
-    return await response.text();
+    // Prompt for credentials if not already set
+    // Use credentials from Vite env variables
+    const username = import.meta.env.VITE_PROSBC_USERNAME;
+    const password = import.meta.env.VITE_PROSBC_PASSWORD;
+    if (!username || !password) {
+      alert('ProSBC credentials are missing in your .env file!');
+      throw new Error('Missing ProSBC credentials');
+    }
+    const basicAuth = 'Basic ' + btoa(username + ':' + password);
+    const response = await fetch(exportUrl, {
+      method: 'GET',
+      headers: {
+        ...prosbcFileAPI.getCommonHeaders(),
+        'Authorization': basicAuth
+      }
+    });
+    if (!response.ok) {
+      // Optionally log to console for debugging
+      console.warn('Fetch failed:', response.status, response.statusText, exportUrl);
+      throw new Error('Failed to fetch file content');
+    }
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.text();
+    // Optionally log debug info
+    console.log('Fetched file debug:', {
+      url: exportUrl,
+      contentType,
+      preview: text.slice(0, 200)
+    });
+    // Frontend validation: block HTML or empty or non-CSV
+    if (!text.trim()) throw new Error('Fetched file is empty');
+    if (text.trim().startsWith('<!DOCTYPE html') || text.trim().startsWith('<html')) {
+      throw new Error('Fetched file is HTML, not CSV');
+    }
+    // Optionally: check for CSV header (basic check)
+    const firstLine = text.split('\n')[0];
+    if (!firstLine.includes(',') && !firstLine.toLowerCase().includes('dm') && !firstLine.toLowerCase().includes('df')) {
+      throw new Error('Fetched file does not appear to be a valid CSV');
+    }
+    if (!contentType.includes('csv') && !contentType.includes('text/plain')) {
+      throw new Error('Fetched file is not a CSV (content-type: ' + contentType + ')');
+    }
+    return text;
   };
 
 

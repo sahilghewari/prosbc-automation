@@ -9,6 +9,7 @@ import {
   Tag, Modal, message, Space, Tooltip, Pagination,
   Tabs, Statistic, Row, Col, Alert, Divider
 } from 'antd';
+import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { 
   ReloadOutlined, DownloadOutlined, ImportOutlined, 
   SearchOutlined, FilterOutlined, FileTextOutlined,
@@ -151,11 +152,11 @@ const ProSBCFilesManagement = () => {
     }
   };
 
+
   // Download file
   const downloadFile = async (file) => {
     try {
       const response = await dashboardService.downloadProSBCFile(file._id, file.fileType);
-      
       // Create download link
       const url = window.URL.createObjectURL(response.blob);
       const link = document.createElement('a');
@@ -164,11 +165,45 @@ const ProSBCFilesManagement = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      
       message.success(`Downloading ${response.filename}`);
     } catch (error) {
       console.error('Error downloading file:', error);
       message.error('Failed to download file: ' + error.message);
+    }
+  };
+
+  // Manual update to database handler
+  const handleManualDbUpdate = async (file) => {
+    try {
+      message.loading({ content: 'Updating database...', key: 'dbupdate' });
+      // Get file content from backend (export endpoint)
+      let fileType = file.fileType === 'dm' ? 'routesets_digitmaps' : 'routesets_definitions';
+      // Try to get fileId (ProSBC id) or fallback to _id
+      let fileId = file.prosbc_id || file._id || file.id;
+      if (!fileId) throw new Error('File ID not found');
+      // Fetch file content from ProSBC (export)
+      const contentResult = await prosbcFileAPI.getFileContent(fileType, fileId);
+      if (!contentResult.success) throw new Error('Failed to fetch file content');
+      // Call backend API to update DB
+      let dbApiUrl = file.fileType === 'dm' ? `/api/files/digit-maps/${file._id}` : `/api/files/dial-formats/${file._id}`;
+      const dbRes = await fetch(dbApiUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: contentResult.content,
+          updated_by: 'manual-db-update',
+          reason: 'Manual update from UI',
+          filename: file.original_filename || file.filename
+        })
+      });
+      const dbJson = await dbRes.json();
+      if (dbRes.ok) {
+        message.success({ content: 'Database updated successfully!', key: 'dbupdate', duration: 2 });
+      } else {
+        throw new Error(dbJson.message || 'Unknown error');
+      }
+    } catch (err) {
+      message.error({ content: 'DB update failed: ' + err.message, key: 'dbupdate', duration: 3 });
     }
   };
 
@@ -306,6 +341,15 @@ const ProSBCFilesManagement = () => {
               icon={<DownloadOutlined />} 
               onClick={() => downloadFile(record)}
             />
+          </Tooltip>
+          <Tooltip title="Update to Database">
+            <Button
+              type="default"
+              size="small"
+              onClick={() => handleManualDbUpdate(record)}
+            >
+              Update to Database
+            </Button>
           </Tooltip>
         </Space>
       )

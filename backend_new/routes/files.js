@@ -133,6 +133,18 @@ router.post('/dial-formats/upload', upload.single('file'), async (req, res) => {
 
 export default router;
 
+// Add this to backend_new/routes/files.js
+
+router.delete('/delete-all', async (req, res) => {
+  try {
+    await DigitMap.destroy({ where: {}, truncate: true });
+    await DialFormat.destroy({ where: {}, truncate: true });
+    res.json({ success: true, message: 'All DM and DF files deleted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete all files', error: error.message });
+  }
+});
+
 
 // Bulk upload endpoint: Accepts an array of files and stores them in uploads/bulk, optionally saving to DB
 router.post('/bulk-upload', async (req, res) => {
@@ -152,10 +164,26 @@ router.post('/bulk-upload', async (req, res) => {
     let errors = [];
     for (const file of files) {
       try {
+        // Validate file content is not empty and not HTML
+        const content = file.content || '';
+        const isHtml = content.trim().startsWith('<!DOCTYPE html') || content.trim().startsWith('<html');
+        if (!content.trim()) {
+          throw new Error('File content is empty');
+        }
+        if (isHtml) {
+          throw new Error('File content appears to be HTML, not CSV');
+        }
+
+        // Optionally: check for CSV header (basic check)
+        const firstLine = content.split('\n')[0];
+        if (!firstLine.includes(',') && !firstLine.toLowerCase().includes('dm') && !firstLine.toLowerCase().includes('df')) {
+          throw new Error('File does not appear to be a valid CSV');
+        }
+
         // Use fileType to optionally save to DB as well
         const fileName = file.fileName || `file_${Date.now() + Math.random()}.txt`;
         const filePath = path.join(bulkDir, fileName);
-        fs.writeFileSync(filePath, file.content || '', 'utf8');
+        fs.writeFileSync(filePath, content, 'utf8');
 
         // Optionally save to DB if fileType is present
         if (file.fileType === 'dm') {

@@ -106,6 +106,19 @@ router.get('/prosbc/fetch', async (req, res) => {
   }
 });
 
+
+// DELETE /api/files/delete-all - Delete all DM and DF files
+router.delete('/delete-all', async (req, res) => {
+  try {
+    await DigitMap.destroy({ where: {}, truncate: true });
+    await DialFormat.destroy({ where: {}, truncate: true });
+    res.json({ success: true, message: 'All DM and DF files deleted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to delete all files', error: error.message });
+  }
+});
+
+
 // POST /api/files/prosbc/import - Import fetched ProSBC files to database
 router.post('/prosbc/import', async (req, res) => {
   try {
@@ -118,6 +131,10 @@ router.post('/prosbc/import', async (req, res) => {
       });
     }
     
+    // Delete all existing DM and DF files before importing new ones
+    await DigitMap.destroy({ where: {}, truncate: true });
+    await DialFormat.destroy({ where: {}, truncate: true });
+
     const results = {
       total: files.length,
       imported: 0,
@@ -126,12 +143,12 @@ router.post('/prosbc/import', async (req, res) => {
       failed: 0,
       details: []
     };
-    
+
     // Process each file
     for (const file of files) {
       try {
         let result;
-        
+
         // Check file type and use appropriate method
         if (file.type === 'df' || file.filename.toLowerCase().includes('dial')) {
           result = await proSBCService.recordDialFormatFile(file, {
@@ -145,12 +162,12 @@ router.post('/prosbc/import', async (req, res) => {
             imported_by: req.user?.username || 'system'
           });
         }
-        
+
         // Update counters based on result
         if (result.status === 'imported') results.imported++;
         else if (result.status === 'updated') results.updated++;
         else if (result.status === 'skipped') results.skipped++;
-        
+
         results.details.push(result);
       } catch (err) {
         console.error(`Failed to import file ${file.filename}:`, err);
@@ -961,7 +978,7 @@ router.get('/:type/:id/versions/:version_id', async (req, res) => {
 router.put('/digit-maps/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { content, updated_by = 'system', reason } = req.body;
+    const { content, updated_by = 'system', reason, filename } = req.body;
 
     if (!content) {
       return res.status(400).json({
@@ -970,7 +987,22 @@ router.put('/digit-maps/:id', async (req, res) => {
       });
     }
 
-    const digitMap = await DigitMap.findById(id);
+    let digitMap = null;
+    // If filename is provided, try to find by filename (case-insensitive)
+    if (filename) {
+      digitMap = await DigitMap.findOne({ where: { filename: filename } });
+      // If not found, try case-insensitive
+      if (!digitMap) {
+        digitMap = await DigitMap.findOne({ where: database.sequelize.where(
+          database.sequelize.fn('LOWER', database.sequelize.col('filename')),
+          filename.toLowerCase()
+        ) });
+      }
+    }
+    // If not found by filename, fallback to ID
+    if (!digitMap) {
+      digitMap = await DigitMap.findById(id);
+    }
     if (!digitMap) {
       return res.status(404).json({
         success: false,
@@ -1006,7 +1038,7 @@ router.put('/digit-maps/:id', async (req, res) => {
     // Log the update with backup
     await logAuditEvent(
       'Digit Map Updated',
-      { type: 'DigitMap', id: digitMap._id.toString(), name: digitMap.filename },
+      { type: 'DigitMap', id: digitMap._id?.toString?.() || digitMap.id, name: digitMap.filename },
       { username: updated_by },
       { action: 'update', method: 'PUT', endpoint: `/api/files/digit-maps/${id}` },
       true,
@@ -1015,7 +1047,7 @@ router.put('/digit-maps/:id', async (req, res) => {
       {
         content_backup: currentBackup,
         new_size: newSize,
-        row_count: digitMap.validation_results.row_count
+        row_count: digitMap.validation_results?.row_count
       }
     );
 
@@ -1049,7 +1081,7 @@ router.put('/digit-maps/:id', async (req, res) => {
 router.put('/dial-formats/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { content, updated_by = 'system', reason } = req.body;
+    const { content, updated_by = 'system', reason, filename } = req.body;
 
     if (!content) {
       return res.status(400).json({
@@ -1058,7 +1090,22 @@ router.put('/dial-formats/:id', async (req, res) => {
       });
     }
 
-    const dialFormat = await DialFormat.findById(id);
+    let dialFormat = null;
+    // If filename is provided, try to find by filename (case-insensitive)
+    if (filename) {
+      dialFormat = await DialFormat.findOne({ where: { filename: filename } });
+      // If not found, try case-insensitive
+      if (!dialFormat) {
+        dialFormat = await DialFormat.findOne({ where: database.sequelize.where(
+          database.sequelize.fn('LOWER', database.sequelize.col('filename')),
+          filename.toLowerCase()
+        ) });
+      }
+    }
+    // If not found by filename, fallback to ID
+    if (!dialFormat) {
+      dialFormat = await DialFormat.findById(id);
+    }
     if (!dialFormat) {
       return res.status(404).json({
         success: false,
@@ -1094,7 +1141,7 @@ router.put('/dial-formats/:id', async (req, res) => {
     // Log the update with backup
     await logAuditEvent(
       'Dial Format Updated',
-      { type: 'DialFormat', id: dialFormat._id.toString(), name: dialFormat.filename },
+      { type: 'DialFormat', id: dialFormat._id?.toString?.() || dialFormat.id, name: dialFormat.filename },
       { username: updated_by },
       { action: 'update', method: 'PUT', endpoint: `/api/files/dial-formats/${id}` },
       true,
@@ -1103,7 +1150,7 @@ router.put('/dial-formats/:id', async (req, res) => {
       {
         content_backup: currentBackup,
         new_size: newSize,
-        row_count: dialFormat.validation_results.row_count
+        row_count: dialFormat.validation_results?.row_count
       }
     );
 

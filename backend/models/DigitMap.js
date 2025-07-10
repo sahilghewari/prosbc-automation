@@ -21,7 +21,7 @@ const DigitMap = database.sequelize.define('DigitMap', {
   uploaded_by: { type: DataTypes.STRING, allowNull: false },
   tags: { type: DataTypes.JSON, allowNull: true },
 }, {
-  tableName: 'digit_maps',
+  tableName: 'digitmaps',
   createdAt: 'uploaded_at',
   updatedAt: 'updated_at',
 });
