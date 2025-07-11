@@ -2,8 +2,10 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+
 import DigitMap from '../models/DigitMap.js';
 import DialFormat from '../models/DialFormat.js';
+import verifyToken from './verifyToken.js';
 
 const router = express.Router();
 
@@ -94,10 +96,11 @@ async function saveFileToDB({ fileType, file, nap_id, tags, uploaded_by, name })
 }
 
 // POST /files/digit-maps/upload
-router.post('/digit-maps/upload', upload.single('file'), async (req, res) => {
+router.post('/digit-maps/upload', verifyToken, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const { nap_id, tags, uploaded_by, name } = req.body;
+    const { nap_id, tags, name } = req.body;
+    const uploaded_by = req.user?.username || 'unknown';
     const result = await saveFileToDB({
       fileType: 'dm',
       file: req.file,
@@ -113,10 +116,11 @@ router.post('/digit-maps/upload', upload.single('file'), async (req, res) => {
 });
 
 // POST /files/dial-formats/upload
-router.post('/dial-formats/upload', upload.single('file'), async (req, res) => {
+router.post('/dial-formats/upload', verifyToken, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const { nap_id, tags, uploaded_by, name } = req.body;
+    const { nap_id, tags, name } = req.body;
+    const uploaded_by = req.user?.username || 'unknown';
     const result = await saveFileToDB({
       fileType: 'df',
       file: req.file,

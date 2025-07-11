@@ -69,7 +69,7 @@ function App() {
   };
 
   const handleLoginSuccess = (token) => {
-    localStorage.setItem('dashboard_token', token);
+    localStorage.setItem('prosbc_token', token);
     setIsDashboardAuth(true);
     setShowLoginModal(false);
     fetchUser(token);

@@ -10,7 +10,7 @@ const apiClient = axios.create({
   baseURL: '', // Use absolute paths for all backend endpoints
   timeout: 30000,
   headers: {
-    'Content-Type': 'application/json',
+    // 'Content-Type': 'application/json', // Removed to allow FormData uploads
     'Accept': 'application/json'
   }
 });
@@ -19,9 +19,11 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    // Add ProSBC auth header for /api requests (not /backend/api)
-    if (config.url && config.url.startsWith('/api')) {
-      // Replace this with your actual token retrieval logic
+    // Add ProSBC auth header for /api and /backend/api requests
+    if (
+      config.url &&
+      (config.url.startsWith('/api') || config.url.startsWith('/backend/api'))
+    ) {
       const prosbcToken = localStorage.getItem('prosbc_token');
       if (prosbcToken) {
         config.headers['Authorization'] = `Bearer ${prosbcToken}`;
@@ -151,12 +153,9 @@ export const fileService = {
       console.log('FormData fields:', Array.from(formData.keys()));
       
       const endpoint = fileType === 'dm' ? '/backend/api/files/digit-maps/upload' : '/backend/api/files/dial-formats/upload';
-      const response = await apiClient.post(endpoint, formData, {
-        headers: {
-          // Let the browser set the Content-Type with boundary parameter
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      // Get JWT token from localStorage (or your auth storage)
+      const jwtToken = localStorage.getItem('prosbc_token');
+      const response = await apiClient.post(endpoint, formData);
       
       console.log(`File upload successful: ${response.status}`);
       return response.data;
@@ -168,21 +167,15 @@ export const fileService = {
 
   // Upload digit map file
   async uploadDigitMap(formData) {
-    const response = await apiClient.post('/api/files/digit-maps/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
+    // Do not set Content-Type header, let Axios handle it
+    const response = await apiClient.post('/api/files/digit-maps/upload', formData);
     return response.data;
   },
 
   // Upload dial format file
   async uploadDialFormat(formData) {
-    const response = await apiClient.post('/api/files/dial-formats/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
+    // Do not set Content-Type header, let Axios handle it
+    const response = await apiClient.post('/api/files/dial-formats/upload', formData);
     return response.data;
   },
 

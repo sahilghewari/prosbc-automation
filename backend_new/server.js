@@ -1,5 +1,8 @@
 import express from 'express';
+import dotenv from 'dotenv';
+
 import database from './config/database.js';
+import auditLogger from './middleware/auditLogger.js';
 
 import napsRouter from './routes/naps.js';
 
@@ -7,9 +10,12 @@ import filesRouter from './routes/files.js';
 
 import authRouter from './routes/auth.js';
 import profileRouter from './routes/profile.js';
+dotenv.config();
 
 const app = express();
 app.use(express.json());
+// Use audit logger middleware for all routes
+app.use(auditLogger);
 
 
 // NAP routes
