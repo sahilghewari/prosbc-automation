@@ -12,6 +12,8 @@ import DatabaseStatus from './components/DatabaseStatus';
 import DatabaseWidget from './components/DatabaseWidget';
 import DatabaseDashboard from './components/DatabaseDashboard';
 import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
+import DashboardLogin from './DashboardLogin';
+import Profile from './components/Profile';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import './App.css';
@@ -22,6 +24,10 @@ function App() {
   const [authError, setAuthError] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showDatabaseDashboard, setShowDatabaseDashboard] = useState(false);
+  const [isDashboardAuth, setIsDashboardAuth] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -38,8 +44,35 @@ function App() {
     initializeAuth();
   }, []);
 
+  // Temporary: check for dashboard auth (replace with real logic)
+  useEffect(() => {
+    // Example: check localStorage for token
+    const token = localStorage.getItem('dashboard_token');
+    setIsDashboardAuth(!!token);
+  }, []);
+
   const handleAuthError = () => {
     setAuthError('Authentication required. Please check your .env file credentials.');
+  };
+
+  // Move fetchUser and handleLoginSuccess above all JSX usage
+  const fetchUser = async (token) => {
+    try {
+      const response = await fetch('/backend/api/auth/profile', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUser(data);
+      }
+    } catch {}
+  };
+
+  const handleLoginSuccess = (token) => {
+    localStorage.setItem('dashboard_token', token);
+    setIsDashboardAuth(true);
+    setShowLoginModal(false);
+    fetchUser(token);
   };
 
   if (!isReady) {
@@ -77,6 +110,26 @@ function App() {
     );
   }
 
+  // Enforce login: if not authenticated, show only login page
+  if (!isDashboardAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+        <div className="bg-gray-900 p-8 rounded-xl shadow-2xl relative">
+          <DashboardLogin onSuccess={handleLoginSuccess} />
+        </div>
+      </div>
+    );
+  }
+
+  // Auth state and handlers
+  const handleLogout = () => {
+    localStorage.removeItem('dashboard_token');
+    setIsDashboardAuth(false);
+    setShowLoginModal(false);
+  };
+
+
+
   // Render different content based on active section
   const renderContent = () => {
     switch (activeSection) {
@@ -105,19 +158,38 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <Navbar />
+      <Navbar 
+        onLoginClick={() => setShowLoginModal(true)} 
+        isDashboardAuth={isDashboardAuth} 
+        onLogout={handleLogout}
+        onShowProfile={() => setShowProfile(true)}
+      />
       <Sidebar 
         activeSection={activeSection} 
         onSectionChange={setActiveSection} 
         onCollapseChange={setSidebarCollapsed}
       />
-      
-     
-      
-     
-      
-     
-      
+      {showLoginModal && !isDashboardAuth && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-gray-900 p-8 rounded-xl shadow-2xl relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-white"
+              onClick={() => setShowLoginModal(false)}
+            >
+              &times;
+            </button>
+            <DashboardLogin onSuccess={handleLoginSuccess} />
+          </div>
+        </div>
+      )}
+      {showProfile && user && (
+        <>
+          {/* Overlay for click-outside-to-close */}
+          <div className="fixed inset-0 z-40" onClick={() => setShowProfile(false)}></div>
+          {/* Profile card at top-right, no modal box */}
+          <Profile user={user} onUpdate={u => { if (!u) setShowProfile(false); else setUser(u); }} />
+        </>
+      )}
       <main className={`${sidebarCollapsed ? 'ml-16' : 'ml-64'} bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-[calc(100vh-4rem)] transition-all duration-300 pt-16`}>
         <div className="p-6">
           {renderContent()}

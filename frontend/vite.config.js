@@ -12,7 +12,6 @@ export default defineConfig({
       '/backend': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/backend/, ''),
         secure: false
       },
       // All /api and /file_dbs requests go to ProSBC

@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import database from '../config/database.js';
 
+
 const User = database.sequelize.define('User', {
   id: {
     type: DataTypes.INTEGER,
@@ -12,9 +13,13 @@ const User = database.sequelize.define('User', {
     allowNull: false,
     unique: true,
   },
-  email: {
+  password: {
     type: DataTypes.STRING,
     allowNull: false,
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true,
     unique: true,
   },
 });

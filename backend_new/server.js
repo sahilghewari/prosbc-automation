@@ -5,6 +5,9 @@ import napsRouter from './routes/naps.js';
 
 import filesRouter from './routes/files.js';
 
+import authRouter from './routes/auth.js';
+import profileRouter from './routes/profile.js';
+
 const app = express();
 app.use(express.json());
 
@@ -14,6 +17,10 @@ app.use('/backend/api/naps', napsRouter);
 
 // Files routes
 app.use('/backend/api/files', filesRouter);
+
+// Auth routes
+app.use('/backend/api/auth', authRouter);
+app.use('/backend/api/auth', profileRouter);
 
 app.get('/', (req, res) => {
   res.send('ProSBC Backend API is running.');

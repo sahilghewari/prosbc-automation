@@ -8,8 +8,11 @@
     "init-db": "node scripts/init-database.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "express": "^4.18.2",
-    "sequelize": "^6.37.1",
-    "mariadb": "^3.3.3"
+    "jsonwebtoken": "^9.0.2",
+    "mariadb": "^3.3.3",
+    "multer": "^2.0.1",
+    "sequelize": "^6.37.1"
   }
 }

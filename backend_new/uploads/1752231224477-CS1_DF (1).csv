@@ -1,0 +1,3 @@
+routeset_name,priority,weight,remapped_called,remapped_calling
+CUST002,10,100,/^1?([0-9]{10})$/\1/,
+uuuu,00,999,&**@(*(!,
