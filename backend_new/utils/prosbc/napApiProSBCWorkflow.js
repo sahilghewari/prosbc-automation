@@ -6,13 +6,18 @@
 // 4. Add SIP Transport Servers via /nap/add_sip_sap/{id}
 // 5. Add Port Ranges via /nap/add_port_range/{id}
 
-import axios from 'axios';
+import fetch from 'node-fetch';
+import fetchCookie from 'fetch-cookie';
+import { CookieJar } from 'tough-cookie';
+import https from 'https';
+import 'dotenv/config';
+
 
 // Get credentials from environment variables
 const getCredentials = () => {
-  const username = import.meta.env.VITE_PROSBC_USERNAME;
-  const password = import.meta.env.VITE_PROSBC_PASSWORD;
-  
+  const username = process.env.PROSBC_USERNAME;
+  const password = process.env.PROSBC_PASSWORD;
+
   if (!username || !password) {
     throw new Error('ProSBC credentials not found. Please set VITE_PROSBC_USERNAME and VITE_PROSBC_PASSWORD in your .env file');
   }
@@ -20,57 +25,37 @@ const getCredentials = () => {
   return { username, password };
 };
 
-// Create axios instance with proper ProSBC configuration
+
+// Create fetch client with cookie jar and custom agent for ProSBC
 const createApiClient = () => {
   const credentials = getCredentials();
-  
-  const client = axios.create({
-    baseURL: '/api', // Use the proxy configured in vite.config.js
-    timeout: 120000, // 2 minutes timeout
-    withCredentials: true,
-    headers: {
+  const jar = new CookieJar();
+  const agent = new https.Agent({ rejectUnauthorized: false });
+  const baseUrl = process.env.PROSBC_BASE_URL;
+  const fetchWithCookies = fetchCookie(fetch, jar);
+
+  // Helper for requests
+  async function request(path, options = {}) {
+    const url = baseUrl.replace(/\/$/, '') + path;
+    const headers = Object.assign({
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.7',
-      'Cache-Control': 'no-cache'
-    }
-  });
-
-  // Add authentication interceptor
-  client.interceptors.request.use((config) => {
-    const authString = btoa(`${credentials.username}:${credentials.password}`);
-    config.headers.Authorization = `Basic ${authString}`;
-    
+      'Cache-Control': 'no-cache',
+      'Authorization': 'Basic ' + Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
+    }, options.headers || {});
+    const opts = Object.assign({}, options, { headers, agent });
     // Log request for debugging
-    console.log(`NAP API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    if (config.data instanceof FormData) {
-      console.log('Request payload (FormData):', Object.fromEntries(config.data.entries()));
+    console.log(`NAP API Request: ${opts.method || 'GET'} ${url}`);
+    if (opts.body && opts.body instanceof URLSearchParams) {
+      console.log('Request payload (FormData):', Object.fromEntries(opts.body.entries()));
     }
-    
-    return config;
-  });
+    const res = await fetchWithCookies(url, opts);
+    // Log response for debugging
+    console.log(`NAP API Response: ${res.status} ${res.statusText}`);
+    return res;
+  }
 
-  // Add response interceptor for error handling
-  client.interceptors.response.use(
-    (response) => {
-      console.log(`NAP API Response: ${response.status} ${response.statusText}`);
-      return response;
-    },
-    (error) => {
-      console.error('NAP API Error:', error.response?.status, error.response?.statusText);
-      
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        throw new Error('Authentication failed. Please check your ProSBC credentials.');
-      }
-      
-      if (error.code === 'ECONNABORTED') {
-        throw new Error('Request timeout. ProSBC is taking too long to respond.');
-      }
-      
-      throw error;
-    }
-  );
-
-  return client;
+  return { request, jar };
 };
 
 // Navigate to SIP configuration section and establish proper session
@@ -82,21 +67,25 @@ const navigateToSipSection = async (client) => {
     await establishProSBCSession(client);
     
     // Then get the main configuration page
-    const mainResponse = await client.get('/configurations', {
+    const mainResponseRes = await client.request('/configurations', {
+      method: 'GET',
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     });
+    const mainResponse = { status: mainResponseRes.status, data: await mainResponseRes.text() };
     
     console.log('Main configuration response status:', mainResponse.status);
     
     // Try to navigate to SIP section specifically
     try {
-      const sipResponse = await client.get('/configurations/1/sip', {
+      const sipRes = await client.request('/configurations/1/sip', {
+        method: 'GET',
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
         }
       });
+      const sipResponse = { status: sipRes.status, data: await sipRes.text() };
       console.log('SIP section navigation successful');
       return sipResponse;
     } catch (sipError) {
@@ -113,7 +102,8 @@ const navigateToSipSection = async (client) => {
       for (const path of altPaths) {
         try {
           console.log(`Trying navigation path: ${path}`);
-          const altResponse = await client.get(path);
+          const altRes = await client.request(path, { method: 'GET' });
+          const altResponse = { status: altRes.status, data: await altRes.text() };
           console.log(`Successfully navigated to: ${path}`);
           return altResponse;
         } catch (altError) {
@@ -138,11 +128,13 @@ const establishProSBCSession = async (client) => {
     console.log('Establishing ProSBC session...');
     
     // First, get the login page to extract CSRF token
-    const loginPageResponse = await client.get('/login', {
+    const loginPageRes = await client.request('/login', {
+      method: 'GET',
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
     });
+    const loginPageResponse = { status: loginPageRes.status, data: await loginPageRes.text() };
     
     console.log('Login page response status:', loginPageResponse.status);
     
@@ -177,14 +169,15 @@ const establishProSBCSession = async (client) => {
     
     console.log('Performing ProSBC login...');
     
-    const loginResponse = await client.post('/login/check', loginPayload.toString(), {
+    const loginRes = await client.request('/login/check', {
+      method: 'POST',
+      body: loginPayload.toString(),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      },
-      maxRedirects: 5, // Allow redirects for successful login
-      validateStatus: (status) => status >= 200 && status < 400
+      }
     });
+    const loginResponse = { status: loginRes.status, data: await loginRes.text() };
     
     console.log('Login response status:', loginResponse.status);
     
@@ -218,11 +211,13 @@ const getCsrfToken = async (client) => {
     for (const url of napListUrls) {
       try {
         console.log(`Trying to access NAP list at: ${url}`);
-        response = await client.get(url, {
+        const res = await client.request(url, {
+          method: 'GET',
           headers: {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           }
         });
+        response = { status: res.status, data: await res.text() };
         
         // Check if this response contains NAP-related content
         const html = response.data;
@@ -245,11 +240,13 @@ const getCsrfToken = async (client) => {
       
       for (const url of newNapUrls) {
         try {
-          response = await client.get(url, {
+          const res = await client.request(url, {
+            method: 'GET',
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             }
           });
+          response = { status: res.status, data: await res.text() };
           console.log(`Successfully accessed new NAP page at: ${url}`);
           break;
         } catch (error) {
@@ -271,7 +268,8 @@ const getCsrfToken = async (client) => {
       console.log('No CSRF token found on /naps page, trying /naps/new...');
       
       try {
-        response = await client.get('/naps/new');
+        const res = await client.request('/naps/new', { method: 'GET' });
+        response = { status: res.status, data: await res.text() };
         html = response.data;
         console.log('Got /naps/new page, length:', html.length);
       } catch (newPageError) {
@@ -280,7 +278,8 @@ const getCsrfToken = async (client) => {
         // Try the main configuration page
         console.log('Trying main configuration page...');
         try {
-          response = await client.get('/');
+          const res = await client.request('/', { method: 'GET' });
+          response = { status: res.status, data: await res.text() };
           html = response.data;
           console.log('Got main page, length:', html.length);
         } catch (mainPageError) {
@@ -412,7 +411,8 @@ const getCsrfToken = async (client) => {
     // If still no token found, try to create a new session
     console.log('No token found on /naps page, trying /naps/new...');
     try {
-      const newResponse = await client.get('/naps/new');
+      const newRes = await client.request('/naps/new', { method: 'GET' });
+      const newResponse = { status: newRes.status, data: await newRes.text() };
       const newHtml = newResponse.data;
       
       for (const pattern of tokenPatterns) {
@@ -491,12 +491,14 @@ const getCsrfToken = async (client) => {
     console.warn('No valid CSRF token found, attempting to generate a new one...');
     try {
       // Try to force a new session by accessing the login page again
-      const freshLoginResponse = await client.get('/login', {
+      const freshLoginRes = await client.request('/login', {
+        method: 'GET',
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Cache-Control': 'no-cache'
         }
       });
+      const freshLoginResponse = { status: freshLoginRes.status, data: await freshLoginRes.text() };
       
       const freshHtml = freshLoginResponse.data;
       const freshTokenMatch = freshHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/i);
@@ -1140,7 +1142,6 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
     initialPayload.append('nap[enabled]', napConfig.enabled !== false ? '1' : '0');
     initialPayload.append('nap[profile_id]', napConfig.profile_id || '1'); // Must be numeric
     initialPayload.append('nap[get_stats_on_leg_termination]', 'true');
-    
     // Rate limiting (default values)
     initialPayload.append('nap[rate_limit_cps]', '0');
     initialPayload.append('nap[rate_limit_cps_in]', '0');
@@ -1154,12 +1155,10 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
     initialPayload.append('nap[rate_limit_delay_high_unit_conversion]', '1000.0');
     initialPayload.append('nap[rate_limit_cpu_usage_low]', '0');
     initialPayload.append('nap[rate_limit_cpu_usage_high]', '0');
-    
     // Congestion threshold (default values)
     initialPayload.append('nap[congestion_threshold_nb_calls]', '1');
     initialPayload.append('nap[congestion_threshold_period_sec]', '1');
     initialPayload.append('nap[congestion_threshold_period_sec_unit_conversion]', '60.0');
-    
     // Configuration and commit
     initialPayload.append('nap[configuration_id]', '1');
     initialPayload.append('commit', 'Create');
@@ -1169,199 +1168,29 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
     for (const [key, value] of initialPayload.entries()) {
       console.log(`  ${key}: ${value.substring ? value.substring(0, 50) + (value.length > 50 ? '...' : '') : value}`);
     }
-    
-    let createResponse;
-    try {
-      createResponse = await client.post('/naps', initialPayload.toString(), {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        },
-        maxRedirects: 0, // Don't auto-follow redirects to avoid CORS issues
-        validateStatus: (status) => status >= 200 && status < 400 // Accept redirects and success
-      });
-      
-      console.log('SUCCESS: NAP creation response received');
-      console.log('Response status:', createResponse.status);
-      
-    } catch (axiosError) {
-      console.log('Axios error caught (checking if it\'s a redirect)...');
-      console.log('Error code:', axiosError.code);
-      console.log('Error message:', axiosError.message);
-      
-      // Handle redirect responses that axios treats as errors due to maxRedirects: 0
-      if (axiosError.response && axiosError.response.status >= 300 && axiosError.response.status < 400) {
-        console.log('✓ This is a redirect response (expected behavior)');
-        console.log('Redirect status:', axiosError.response.status);
-        console.log('Redirect headers:', axiosError.response.headers);
-        
-        createResponse = axiosError.response; // Use the redirect response
-      } else if (axiosError.code === 'ERR_NETWORK' && axiosError.message === 'Network Error') {
-        // This is likely a CORS error from the browser trying to follow a redirect to the real ProSBC server
-        console.log('✓ CORS/Network error detected - likely means NAP was created and ProSBC redirected');
-        console.log('Checking if we can extract NAP ID from the error URL...');
-        
-        // Try to extract NAP ID from the error URL or any available information
-        let napId = null;
-        
-        // Check if the error contains URL information
-        if (axiosError.config && axiosError.config.url) {
-          console.log('Original request URL:', axiosError.config.url);
-        }
-        
-        // Check browser error console for redirect URL
-        if (typeof window !== 'undefined' && window.console) {
-          console.log('Checking for redirect information in error context...');
-        }
-        
-        // The CORS error shows: "Access to XMLHttpRequest at 'https://prosbc2tpa2.dipvtel.com:12358/naps/75/edit'"
-        // This means the NAP was created and ProSBC redirected to edit it
-        console.log('NAP likely created successfully, will attempt to find the new NAP ID...');
-        
-        // Immediately try to get the NAP list to find the newly created NAP
-        console.log('Attempting to fetch NAP list to find the newly created NAP...');
-        
-        try {
-          const napListResponse = await axiosInstance.get('/naps');
-          console.log('NAP list response status:', napListResponse.status);
-          
-          // Extract the newly created NAP ID from the list
-          const newNapId = extractNapIdFromList(napListResponse.data, napName);
-          
-          if (newNapId) {
-            console.log(`✓ Found newly created NAP with ID: ${newNapId}`);
-            
-            // Create a successful response with the NAP ID
-            createResponse = {
-              status: 302,
-              statusText: 'Found (CORS redirected)',
-              headers: {
-                location: `/naps/${newNapId}/edit`
-              },
-              data: napListResponse.data,
-              config: axiosError.config
-            };
-            
-            // Return success with the NAP ID
-            return {
-              success: true,
-              napId: newNapId,
-              message: `NAP '${napName}' created successfully with ID ${newNapId} (recovered from CORS error)`
-            };
-          } else {
-            console.warn('Could not find the newly created NAP in the list');
-            
-            // Create a mock response to continue with other extraction methods
-            createResponse = {
-              status: 302,
-              statusText: 'Found (CORS redirected)',
-              headers: {},
-              data: napListResponse.data,
-              config: axiosError.config
-            };
-          }
-        } catch (listError) {
-          console.error('Failed to fetch NAP list after CORS error:', listError);
-          
-          // Create a mock successful response so we can continue with other NAP ID extraction methods
-          createResponse = {
-            status: 302,
-            statusText: 'Found (CORS redirected)',
-            headers: {},
-            data: '',
-            config: axiosError.config
-          };
-        }
-      } else {
-        console.error('Unexpected axios error:', axiosError);
-        throw axiosError; // Re-throw non-redirect errors
-      }
-    }
 
-    console.log('Initial creation response status:', createResponse.status);
+    let napId;
+    const createRes = await client.request('/naps', {
+      method: 'POST',
+      body: initialPayload.toString(),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+      },
+      redirect: 'manual' // Don't auto-follow redirects
+    });
+    const createResponse = {
+      status: createRes.status,
+      statusText: createRes.statusText,
+      headers: Object.fromEntries(createRes.headers.entries()),
+      data: await createRes.text(),
+      url: createRes.url
+    };
+    console.log('SUCCESS: NAP creation response received');
+    console.log('Response status:', createResponse.status);
     console.log('Response headers:', createResponse.headers);
-    console.log('Response data preview (first 2000 chars):', createResponse.data?.substring(0, 2000));
-    
-    // Check for error messages in the response
-    if (createResponse.data && typeof createResponse.data === 'string') {
-      const responseText = createResponse.data.toLowerCase();
-      
-      console.log('Full response for analysis (first 5000 chars):');
-      console.log(createResponse.data.substring(0, 5000));
-      
-      // Check for common error patterns
-      if (responseText.includes('error') || responseText.includes('failed') || responseText.includes('invalid')) {
-        console.error('Error detected in NAP creation response');
-        
-        // Try to extract specific error messages
-        const errorPatterns = [
-          /error[^:]*:\s*([^<\n]+)/i,
-          /failed[^:]*:\s*([^<\n]+)/i,
-          /invalid[^:]*:\s*([^<\n]+)/i,
-          /<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/i,
-          /<span[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/i,
-          /<p[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)/i
-        ];
-        
-        let errorMessage = 'Unknown error in NAP creation';
-        for (const pattern of errorPatterns) {
-          const match = createResponse.data.match(pattern);
-          if (match && match[1]) {
-            errorMessage = match[1].trim();
-            break;
-          }
-        }
-        
-        throw new Error(`NAP creation failed: ${errorMessage}`);
-      }
-      
-      // Check for validation errors - but be more specific
-      if (responseText.includes('validation') && (responseText.includes('failed') || responseText.includes('error'))) {
-        console.error('Validation error detected in NAP creation response');
-        
-        // Look for specific validation error messages
-        const validationPatterns = [
-          /validation[^:]*:\s*([^<\n]+)/i,
-          /<div[^>]*class="[^"]*validation[^"]*"[^>]*>([^<]+)/i,
-          /<span[^>]*class="[^"]*validation[^"]*"[^>]*>([^<]+)/i,
-          /can't be blank/i,
-          /is required/i,
-          /must be/i,
-          /is invalid/i
-        ];
-        
-        let validationMessage = 'Unknown validation error';
-        for (const pattern of validationPatterns) {
-          const match = createResponse.data.match(pattern);
-          if (match && match[1]) {
-            validationMessage = match[1].trim();
-            break;
-          }
-        }
-        
-        // If no specific validation message found, but it looks like a successful response, continue
-        if (validationMessage === 'Unknown validation error' && 
-            (responseText.includes('prosbc') || responseText.includes('configuration') || responseText.includes('web'))) {
-          console.log('Response contains validation word but appears to be a normal page, continuing...');
-        } else {
-          throw new Error(`NAP creation failed - validation error: ${validationMessage}`);
-        }
-      }
-      
-      // Check if we got redirected to a login page
-      if (responseText.includes('login') || responseText.includes('sign in') || responseText.includes('authentication')) {
-        console.error('Authentication error - redirected to login page');
-        throw new Error('NAP creation failed - authentication required');
-      }
-      
-      // Check if the NAP name already exists
-      if (responseText.includes('already exists') || responseText.includes('duplicate') || responseText.includes('taken')) {
-        throw new Error(`NAP creation failed - NAP name "${napConfig.name}" already exists`);
-      }
-    }
-    
-    // Try to extract NAP ID from the response
-    let napId = extractNapIdFromRedirect(createResponse, napConfig.name);
+    console.log('Response data preview (first 2000 chars):', createResponse.data && createResponse.data.substring ? createResponse.data.substring(0, 2000) : '');
+    napId = extractNapIdFromRedirect(createResponse, napConfig.name);
     
     if (!napId && createResponse.status >= 300 && createResponse.status < 400) {
       console.log('Redirect detected but no NAP ID extracted, checking location header...');
@@ -1482,14 +1311,15 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
       console.log('Update payload keys:', Array.from(updatePayload.keys()));
 
       try {
-        const updateResponse = await client.post(`/naps/${napId}`, updatePayload.toString(), {
+        const updateRes = await client.request(`/naps/${napId}`, {
+          method: 'POST',
+          body: updatePayload.toString(),
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
           }
         });
-
-        console.log('NAP configuration updated, status:', updateResponse.status);
+        console.log('NAP configuration updated, status:', updateRes.status);
       } catch (updateError) {
         console.warn('NAP update failed, but basic NAP was created:', updateError.message);
       }
@@ -1504,16 +1334,18 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
           const sipPayload = new URLSearchParams();
           sipPayload.append('authenticity_token', csrfToken);
           sipPayload.append('sip_sap[][sip_sap]', serverId);
-          
+
           console.log(`Adding SIP server ${serverId}...`);
-          
-          await client.post(`/nap/add_sip_sap/${napId}`, sipPayload.toString(), {
+
+          await client.request(`/nap/add_sip_sap/${napId}`, {
+            method: 'POST',
+            body: sipPayload.toString(),
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             }
           });
-          
+
           console.log(`SIP server ${serverId} added successfully`);
         } catch (error) {
           console.warn(`Failed to add SIP server ${serverId}:`, error.message);
@@ -1535,7 +1367,9 @@ export const createNapWithProSBCWorkflow = async (napConfig) => {
           
           console.log(`Adding port range ${rangeId}...`);
           
-          await client.post(`/nap/add_port_range/${napId}`, portPayload.toString(), {
+          await client.request(`/nap/add_port_range/${napId}`, {
+            method: 'POST',
+            body: portPayload.toString(),
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -1915,16 +1749,17 @@ export const createBasicNap = async (napConfig) => {
     
     console.log('Basic NAP payload:', Object.fromEntries(payload.entries()));
     
-    const response = await client.post('/naps', payload.toString(), {
+    const response = await client.request('/naps', {
+      method: 'POST',
+      body: payload.toString(),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      },
-      validateStatus: (status) => status >= 200 && status < 400 || status === 302 || status === 301
+      }
     });
-    
+
     console.log('Basic NAP created successfully');
-    
+
     return {
       success: true,
       message: `NAP "${napConfig.name}" created successfully (basic configuration)`,

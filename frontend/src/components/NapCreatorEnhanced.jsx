@@ -1,14 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  createNapWithProSBCWorkflow as createNapAPI, 
-  checkNapExists, 
-  clearSessionCache,
-  debugNapExistence
-} from '../utils/napApiProSBCWorkflowOptimized';
-import { validateNapConfig } from '../utils/napApiProSBCWorkflow';
-import { ClientDatabaseService } from '../services/apiClient.js';
-import DatabaseStatus from './DatabaseStatus';
-import PerformanceMetrics from './PerformanceMetrics';
+import axios from 'axios';
+
+
+
 import './NapCreatorEnhanced.css';
 
 const NapCreatorEnhanced = ({ onAuthError }) => {
@@ -118,49 +112,23 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
   const [showCallRateLimit, setShowCallRateLimit] = useState(false);
   const [showCongestionThreshold, setShowCongestionThreshold] = useState(true);
   
-  // Show/hide section toggles
-  // Enhanced NAP creation function that follows ProSBC workflow
+
+  // NAP creation handler: send config to backend
   const createNapWithProSBCWorkflow = async () => {
     if (!napName.trim()) {
       setMessage('❌ Please enter a NAP name');
       return;
     }
-    
     setLoading(true);
     setCurrentStep(1);
     const startTime = Date.now();
-    
     try {
-      // Step 1: Check if NAP already exists (optimized)
-      setMessage('Step 1: Checking for duplicate NAP names...');
-      console.log(`Checking if NAP "${napName}" already exists...`);
-      
-      const napExistsResult = await checkNapExists(napName);
-      console.log('NAP existence check result:', napExistsResult);
-      
-      if (napExistsResult.exists) {
-        // If we get a false positive, run debug check
-        console.log('⚠️ NAP appears to exist, running debug check...');
-        const debugResult = await debugNapExistence(napName);
-        console.log('Debug result:', debugResult);
-        
-        setMessage(`❌ Error: A NAP with the name "${napName}" already exists in ProSBC. Please choose a different name.`);
-        setLoading(false);
-        setCurrentStep(1);
-        return;
-      }
-      
-      // Step 2: Build configuration object
       setCurrentStep(2);
       setMessage('Step 2: Building NAP configuration...');
-      
       const napConfig = {
-        // Basic Configuration
         name: napName,
         enabled: enabled,
         profile_id: defaultProfile,
-        
-        // SIP Proxy Configuration
         sip_destination_ip: useProxy ? proxyAddress : '',
         sip_destination_port: useProxy ? proxyPort : '5060',
         filter_by_proxy_port: filterByProxyPort,
@@ -168,40 +136,28 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
         proxy_polling_interval: proxyPollingInterval,
         proxy_polling_interval_unit: proxyPollingIntervalUnit,
         accept_only_authorized_users: acceptOnlyAuthorizedUsers,
-        
-        // Registration Parameters
         register_to_proxy: registerToProxy,
         aor: addressToRegister,
-        
-        // Authentication Parameters
         sip_auth_ignore_realm: ignoreRealm,
         sip_auth_reuse_challenge: reuseChallenge,
         sip_auth_realm: realm,
         sip_auth_user: authUser,
         sip_auth_pass: authPassword,
-        
-        // NAT Parameters
         remote_nat_rtp: remoteNatRtp,
         remote_nat_sip: remoteNatSip,
         local_nat_rtp: localNatRtp,
         local_nat_sip: localNatSip,
-        
-        // SIP-I Parameters
         sipi_enable: sipiEnable,
         isup_protocol_variant: isupProtocolVariant,
         sipi_version: sipiVersion,
         sipi_use_info_progress: sipiUseInfoProgress,
         append_trailing_f: appendTrailingF,
-        
-        // Advanced Parameters
         poll_proxy_ping_quirk: pollProxyPingQuirk,
         response_timeout: responseTimeout,
         response_timeout_unit: responseTimeoutUnit,
         max_forwards: maxForwards,
         sip_183_call_progress: sip183CallProgress,
         privacy_type: privacyType,
-        
-        // Call Rate Limiting
         rate_limit_cps: rateLimitCps,
         rate_limit_cps_in: rateLimitCpsIn,
         rate_limit_cps_out: rateLimitCpsOut,
@@ -212,115 +168,41 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
         delay_low_unit: delayLowUnit,
         delay_high_threshold: delayHighThreshold,
         delay_high_unit: delayHighUnit,
-        
-        // Congestion Threshold
         congestion_nb_calls: congestionNbCalls,
         congestion_period: congestionPeriod,
         congestion_period_unit: congestionPeriodUnit,
-        
-        // SIP Transport Servers and Port Ranges
         sip_servers: selectedSipServers,
         port_ranges: selectedPortRanges
       };
-      
-      // Step 3: Validate configuration
       setCurrentStep(3);
-      setMessage('Step 3: Validating NAP configuration...');
-      
-      const validation = validateNapConfig(napConfig);
-      if (!validation.isValid) {
-        setMessage(`❌ Validation Error: ${validation.errors.join(', ')}`);
-        setLoading(false);
-        setCurrentStep(1);
-        return;
-      }
-      
-      if (validation.warnings.length > 0) {
-        console.warn('NAP Configuration Warnings:', validation.warnings);
-      }
-      
-      // Step 4: Create NAP using ProSBC workflow
-      setCurrentStep(4);
-      setMessage('Step 4: Creating NAP using ProSBC workflow...');
-      
-      console.log('NAP Configuration being sent:', {
-        name: napConfig.name,
-        enabled: napConfig.enabled,
-        sip_destination_ip: napConfig.sip_destination_ip,
-        sip_destination_port: napConfig.sip_destination_port,
-        sip_servers_count: napConfig.sip_servers?.length || 0,
-        port_ranges_count: napConfig.port_ranges?.length || 0,
-        has_auth: !!(napConfig.sip_auth_user && napConfig.sip_auth_pass)
-      });
-      
-      const result = await createNapAPI(napConfig);
-      
-      console.log('NAP Creation Result:', result);
-      
+      setMessage('Step 3: Sending NAP creation request to backend...');
+      const response = await axios.post('/backend/api/prosbc-nap/create', napConfig);
+      const result = response.data;
       const totalTime = Date.now() - startTime;
-      console.log(`⏱️ Total NAP creation time: ${totalTime}ms`);
-      
       if (result.success) {
-        setCurrentStep(5);
+        setCurrentStep(4);
         const executionTime = result.executionTime || totalTime;
         const successMsg = result.napId 
           ? `✅ ${result.message} (ID: ${result.napId}) - Created in ${executionTime}ms`
           : `✅ ${result.message} - Created in ${executionTime}ms`;
         setMessage(successMsg);
-        
-        // Record NAP creation in database
-        try {
-          const dbService = new ClientDatabaseService();
-          await dbService.createNap({
-            name: napName,  // Changed from napName
-            napId: result.napId,
-            enabled: enabled,
-            defaultProfile: defaultProfile,
-            proxyAddress: proxyAddress,
-            proxyPort: proxyPort,
-            useProxy: useProxy,
-            registerToProxy: registerToProxy,
-            config_data: napConfig,  // Changed from config
-            prosbc_result: result,
-            executionTimeMs: executionTime
-          });
-          console.log('✅ NAP recorded in database');
-        } catch (dbError) {
-          console.error('Database recording error:', dbError);
-          // Don't fail the whole process if database recording fails
-        }
-        
-        // Reset form after successful creation
         setTimeout(() => {
           resetForm();
           setMessage('');
           setCurrentStep(1);
-        }, 8000); // Longer delay to read the success message
+        }, 8000);
       } else {
         setMessage(`❌ ${result.message}`);
         setCurrentStep(1);
       }
-      
     } catch (error) {
-      console.error('NAP creation error:', error);
-      
-      if (error.message.includes('Authentication') || error.message.includes('credentials')) {
-        setMessage('❌ Authentication failed. Clearing session cache and retrying...');
-        clearSessionCache(); // Clear the cached session
-        if (onAuthError) onAuthError();
-      } else if (error.message.includes('timeout') || error.message.includes('network')) {
-        setMessage('❌ Network error. Please check your connection and try again.');
-        clearSessionCache(); // Clear cache on network issues
-      } else {
-        setMessage(`❌ Error: ${error.message}`);
-      }
-      
+      setMessage(`❌ Error: ${error.response?.data?.message || error.message}`);
       setCurrentStep(1);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const resetForm = () => {
     setNapName('');
     setProxyAddress('');
@@ -332,8 +214,6 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
     setSelectedSipServers([]);
     setSelectedPortRanges([]);
   };
-  
-  // These functions are now replaced by direct onChange handlers in the select elements
 
   return (
     <div className="nap-creator-enhanced">
@@ -671,7 +551,6 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
               'Create NAP'
             )}
           </button>
-          
           <button
             type="button"
             className="reset-button"
@@ -679,48 +558,6 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
             disabled={loading}
           >
             Reset Form
-          </button>
-          
-          <button
-            type="button"
-            className="clear-cache-button"
-            onClick={() => {
-              clearSessionCache();
-              setMessage('🔄 Session cache cleared. Next NAP creation will establish a fresh session.');
-              setTimeout(() => setMessage(''), 3000);
-            }}
-            disabled={loading}
-            title="Clear cached session and authentication tokens"
-          >
-            Clear Cache
-          </button>
-          
-          <button
-            type="button"
-            className="debug-button"
-            onClick={async () => {
-              if (!napName.trim()) {
-                setMessage('❌ Please enter a NAP name to debug');
-                return;
-              }
-              
-              setMessage('🔍 Running debug check...');
-              console.log('=== DEBUG NAP EXISTENCE CHECK ===');
-              const debugResult = await debugNapExistence(napName);
-              console.log('Debug completed:', debugResult);
-              
-              if (debugResult.error) {
-                setMessage(`❌ Debug error: ${debugResult.error}`);
-              } else {
-                setMessage(`🔍 Debug completed. Check console for detailed results.`);
-              }
-              
-              setTimeout(() => setMessage(''), 5000);
-            }}
-            disabled={loading}
-            title="Debug NAP existence check"
-          >
-            Debug Check
           </button>
         </div>
       </form>

@@ -1,13 +1,6 @@
-// Optimized NAP API Client - ProSBC Workflow Implementation
-// Performance optimizations:
-// 1. Session reuse across operations
-// 2. Cached CSRF tokens
-// 3. Reduced redundant navigation calls
-// 4. Parallel where possible
 
 import axios from 'axios';
-import { napPerformanceMonitor } from './performanceMonitor.js';
-import { napAnalytics } from './napPerformanceAnalytics.js';
+import 'dotenv/config';
 
 // Global session cache
 let sessionCache = {
@@ -23,9 +16,9 @@ const TOKEN_EXPIRY_MS = 30 * 60 * 1000;
 
 // Get credentials from environment variables
 const getCredentials = () => {
-  const username = import.meta.env.VITE_PROSBC_USERNAME;
-  const password = import.meta.env.VITE_PROSBC_PASSWORD;
-  
+  const username = process.env.PROSBC_USERNAME;
+  const password = process.env.PROSBC_PASSWORD;
+
   if (!username || !password) {
     throw new Error('ProSBC credentials not found. Please set VITE_PROSBC_USERNAME and VITE_PROSBC_PASSWORD in your .env file');
   }
@@ -42,9 +35,8 @@ const getApiClient = () => {
   const credentials = getCredentials();
   
   const client = axios.create({
-    baseURL: '/api',
+    baseURL: process.env.PROSBC_BASE_URL, 
     timeout: 60000, // Reduced from 120s to 60s
-    withCredentials: true,
     headers: {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.7',
@@ -54,9 +46,9 @@ const getApiClient = () => {
 
   // Add authentication interceptor
   client.interceptors.request.use((config) => {
-    const authString = btoa(`${credentials.username}:${credentials.password}`);
+    const authString = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64');
     config.headers.Authorization = `Basic ${authString}`;
-    
+
     console.log(`NAP API Request: ${config.method?.toUpperCase()} ${config.url}`);
     
     return config;

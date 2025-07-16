@@ -7,13 +7,15 @@ import filesRouter from './routes/files.js';
 
 import authRouter from './routes/auth.js';
 import profileRouter from './routes/profile.js';
-
+import prosbcNapRouter from './routes/prosbc-nap.js';
 const app = express();
 app.use(express.json());
 
 
 // NAP routes
 app.use('/backend/api/naps', napsRouter);
+app.use('/backend/api/prosbc-nap', prosbcNapRouter);
+
 
 // Files routes
 app.use('/backend/api/files', filesRouter);
