@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-// Use backend API endpoints for NAP management
+import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
 import EditNapModal from './NapEditor';
 import NetworkTest from './NetworkTest';
 
@@ -13,69 +13,70 @@ const NapManagerEnhanced = ({ onAuthError }) => {
   const [editData, setEditData] = useState({});
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedNapId, setSelectedNapId] = useState(null);
+  const [baseUrl, setBaseUrl] = useState('/api');
+  const [sessionCookie, setSessionCookie] = useState('');
 
   useEffect(() => {
+    // Get session cookie from document.cookie
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {});
+    
+    if (cookies['_prosbc_session']) {
+      setSessionCookie(cookies['_prosbc_session']);
+    }
+    
     loadNaps();
   }, []);
 
-  // Fetch NAPs from backend
   const loadNaps = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/backend/api/prosbc-nap/naps', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch NAPs: ${response.statusText}`);
-      }
-      const napData = await response.json();
-      // Ensure napData is always an array
-      if (Array.isArray(napData)) {
-        setNaps(napData);
-      } else if (napData && typeof napData === 'object') {
-        // If backend returns an object, convert to array
-        setNaps(Object.values(napData));
-      } else {
-        setNaps([]);
-      }
+      
+      const napData = await fetchLiveNaps();
+      setNaps(napData);
     } catch (err) {
       const errorMessage = err.message || 'Unknown error occurred';
       setError(`Failed to load NAPs: ${errorMessage}`);
       console.error('Error loading NAPs:', err);
-      // Only set error, do not trigger login/signup
+      
+      if (errorMessage.includes('login') || 
+          errorMessage.includes('auth') || 
+          errorMessage.includes('session expired')) {
+        if (onAuthError) {
+          onAuthError();
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Delete NAP using backend
   const handleDelete = async (napId, napName) => {
     if (!window.confirm(`Are you sure you want to delete '${napName}'?`)) {
       return;
     }
+
     try {
       setLoading(true);
-      const response = await fetch(`/api/naps/${napId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to delete NAP: ${response.statusText}`);
-      }
+      await deleteNap(napId);
       await loadNaps();
       alert(`NAP '${napName}' was successfully deleted.`);
     } catch (err) {
       setError(`Failed to delete NAP: ${err.message}`);
       console.error('Error deleting NAP:', err);
-      // Only set error, do not trigger login/signup
+      
+      const errorMessage = err.message || '';
+      if (errorMessage.includes('login') || 
+          errorMessage.includes('auth') || 
+          errorMessage.includes('session expired')) {
+        if (onAuthError) {
+          onAuthError();
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -84,10 +85,30 @@ const NapManagerEnhanced = ({ onAuthError }) => {
   const handleEditNap = (napId) => {
     setSelectedNapId(napId);
     setEditModalOpen(true);
+    
+    // Make sure we have the base URL
+    if (!baseUrl) {
+      setBaseUrl('/api');
+    }
+    
+    // Get session cookie if we don't have it yet
+    if (!sessionCookie) {
+      const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+      
+      if (cookies['_prosbc_session']) {
+        setSessionCookie(cookies['_prosbc_session']);
+      }
+    }
+    
     console.log('Editing NAP:', napId);
+    console.log('Base URL:', baseUrl);
+    console.log('Session Cookie Available:', !!sessionCookie);
   };
 
-  // After edit, reload NAPs from backend
   const handleEditSuccess = () => {
     loadNaps();
     setEditModalOpen(false);
@@ -303,11 +324,14 @@ const NapManagerEnhanced = ({ onAuthError }) => {
         <EditNapModal
           isOpen={editModalOpen}
           napId={selectedNapId}
+          baseUrl={baseUrl}
+          sessionCookie={sessionCookie}
           onClose={() => {
             setEditModalOpen(false);
             setSelectedNapId(null);
           }}
           onSuccess={handleEditSuccess}
+          onAuthError={onAuthError}
         />
       )}
     </div>
