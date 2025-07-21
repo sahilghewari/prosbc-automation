@@ -1,112 +1,112 @@
+import dotenv from 'dotenv';
+dotenv.config();
+import fetch from 'node-fetch';
+import { JSDOM } from 'jsdom';
+import FormData from 'form-data';
+import https from 'https';
+
+
 class NapEditService {
-  constructor(baseUrl = '/api', sessionCookie = '') {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl, sessionCookie = '') {
+    this.baseUrl = baseUrl || process.env.PROSBC_BASE_URL;
     this.sessionCookie = sessionCookie;
+    this.isLoggingIn = false;
     console.log('NapEditService initialized:', { baseUrl: this.baseUrl, sessionCookieAvailable: !!this.sessionCookie });
+  }
+
+  // Login to ProSBC and store the session cookie
+  async loginIfNeeded() {
+    if (this.sessionCookie || this.isLoggingIn) return;
+    this.isLoggingIn = true;
+    try {
+      const username = process.env.PROSBC_USERNAME;
+      const password = process.env.PROSBC_PASSWORD;
+      if (!username || !password) throw new Error('Missing ProSBC credentials in .env');
+      const loginUrl = `${this.baseUrl}/login/check`;
+      const formBody = `user%5Bname%5D=${encodeURIComponent(username)}&user%5Bpass%5D=${encodeURIComponent(password)}`;
+      const response = await fetch(loginUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.7'
+        },
+        body: formBody,
+        redirect: 'manual',
+        agent: new https.Agent({ rejectUnauthorized: false })
+      });
+      const setCookie = response.headers.get('set-cookie');
+      if (setCookie) {
+        const match = setCookie.match(/_WebOAMP_session=([^;]+);/);
+        if (match) {
+          this.sessionCookie = `_WebOAMP_session=${match[1]}`;
+          console.log('[ProSBC] Login successful, session cookie set.');
+        } else {
+          throw new Error('Session cookie not found in login response');
+        }
+      } else {
+        throw new Error('No set-cookie header in login response');
+      }
+    } catch (err) {
+      console.error('[ProSBC] Login failed:', err);
+      throw err;
+    } finally {
+      this.isLoggingIn = false;
+    }
   }
 
   // Helper method to make requests with better error handling
   async makeRequest(url, options = {}) {
-    const defaultOptions = {
-      credentials: 'include',
-      redirect: 'follow', // Changed from 'manual' to 'follow' to handle redirects properly
-      headers: {
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.7',
-        ...options.headers
-      }
+    // Ensure logged in before making request
+    await this.loginIfNeeded();
+    // Node.js: no credentials/redirect like browser, but node-fetch supports redirect
+    const defaultHeaders = {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.7',
+      ...options.headers
     };
 
-    const requestOptions = { ...defaultOptions, ...options };
-    
+    // Add HTTP Basic Auth header if credentials are present in .env
+    const username = process.env.PROSBC_USERNAME;
+    const password = process.env.PROSBC_PASSWORD;
+    if (username && password) {
+      const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+      defaultHeaders['Authorization'] = `Basic ${basicAuth}`;
+    }
+
+    // Add session cookie if available
+    if (this.sessionCookie) {
+      defaultHeaders['Cookie'] = this.sessionCookie;
+    }
+    const requestOptions = {
+      ...options,
+      headers: defaultHeaders,
+      redirect: 'follow',
+    };
+    // Remove credentials property for node-fetch
+    delete requestOptions.credentials;
+
+    // If using FormData from form-data, node-fetch needs special handling
+    if (requestOptions.body instanceof FormData) {
+      // Merge FormData headers
+      Object.assign(requestOptions.headers, requestOptions.body.getHeaders());
+    }
+
     console.log('Making request to:', url);
     console.log('Request options:', {
       method: requestOptions.method,
-      headers: requestOptions.headers,
-      credentials: requestOptions.credentials
+      headers: requestOptions.headers
     });
 
     try {
+      // Allow self-signed certificates (for development only)
+      const agent = new https.Agent({ rejectUnauthorized: false });
+      requestOptions.agent = agent;
       const response = await fetch(url, requestOptions);
-      
-      console.log('Response status:', response.status);
-      console.log('Response type:', response.type);
-      console.log('Response ok:', response.ok);
-      console.log('Response URL:', response.url);
-      console.log('Response type check:', response.type === 'opaqueredirect');
-      console.log('Response type typeof:', typeof response.type);
-      console.log('Response type length:', response.type?.length);
-      
-      // Handle opaque redirects - these often indicate success for form submissions
-      if (response.type === 'opaqueredirect') {
-        console.log('Received opaque redirect - likely successful form submission');
-        return { 
-          ok: true, 
-          status: 200, 
-          type: 'opaqueredirect',
-          text: () => Promise.resolve('Success - redirect received')
-        };
-      }
-      
-      // Try alternative check for opaque redirect
-      if (response.type && response.type.includes('opaque')) {
-        console.log('Alternative opaque check triggered - treating as success');
-        return { 
-          ok: true, 
-          status: 200, 
-          type: 'opaque-alternative',
-          text: () => Promise.resolve('Success - opaque response detected')
-        };
-      }
-      
-      // Catch status 0 with any opaque-related response type as success
-      if (response.status === 0 && response.type && (
-          response.type.includes('opaque') || 
-          response.type === 'opaqueredirect' ||
-          response.type === 'opaque'
-      )) {
-        console.log('Status 0 with opaque type detected - treating as success');
-        return { 
-          ok: true, 
-          status: 200, 
-          type: 'opaque-status-0',
-          text: () => Promise.resolve('Success - Status 0 opaque response treated as success')
-        };
-      }
-      
-      // For status 0 with opaque type, this might still be a successful redirect
-      if (response.status === 0 && response.type === 'opaque') {
-        console.log('Received opaque response with status 0 - treating as successful redirect');
-        return { 
-          ok: true, 
-          status: 200, 
-          type: 'opaque',
-          text: () => Promise.resolve('Success - opaque response received')
-        };
-      }
-      
-      // Only throw error for status 0 if it's not an opaque response type
-      if (response.status === 0) {
-        console.log('Status 0 detected, but not opaque type. Response type:', response.type);
-        throw new Error('Network error: Status 0 indicates a CORS or network connectivity issue');
-      }
-      
+      // node-fetch does not have .type or CORS/opaque, so just return response
       return response;
     } catch (error) {
       console.error('Fetch error:', error);
-      
-      // Check if this is a TypeError related to CORS/Opaque redirects
-      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-        // This could be due to an opaque redirect being blocked
-        console.log('TypeError - could be opaque redirect success, treating as success');
-        return { 
-          ok: true, 
-          status: 200, 
-          type: 'opaque-success',
-          text: () => Promise.resolve('Success - operation likely completed despite CORS restriction')
-        };
-      }
-      
       throw error;
     }
   }
@@ -161,12 +161,13 @@ class NapEditService {
   }
 
   parseNapEditForm(htmlText) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(htmlText, 'text/html');
-    
+    // Use jsdom to parse HTML in Node.js
+    const dom = new JSDOM(htmlText);
+    const doc = dom.window.document;
+
     // Extract CSRF token
     const csrfToken = doc.querySelector('input[name="authenticity_token"]')?.value;
-    
+
     // Extract form values
     const formData = {
       csrfToken,
@@ -188,20 +189,20 @@ class NapEditService {
       realm: doc.querySelector('#nap_sip_auth_realm')?.value || '',
       authUser: doc.querySelector('#nap_sip_auth_user')?.value || '',
       authPassword: doc.querySelector('#nap_sip_auth_pass')?.value || '',
-      
+
       // NAT Settings - convert IDs to text names for UI
       remoteMethodRtp: this.getNatMethodText(this.getSelectedValue(doc, '#nap_sip_cfg_remote_nat_traversal_method_id')),
       remoteMethodSip: this.getSipNatMethodText(this.getSelectedValue(doc, '#nap_sip_cfg_remote_sip_nat_traversal_method_id')),
       localMethodRtp: this.getSelectedValue(doc, '#nap_sip_cfg_nat_cfg_id') || '',
       localMethodSip: this.getSelectedValue(doc, '#nap_sip_cfg_nat_cfg_sip_id') || '',
-      
+
       // SIP-I Parameters
       sipiEnable: doc.querySelector('#nap_sip_cfg_sipi_enable')?.checked || false,
       isupProtocolVariant: this.getIsupVariantText(this.getSelectedValue(doc, '#nap_sip_cfg_sipi_isup_protocol_variant_id')),
       contentType: doc.querySelector('#nap_sip_cfg_sipi_version')?.value || 'itu-t',
       callProgressMethod: this.getCallProgressMethodText(this.getSelectedValue(doc, '#nap_sip_cfg_sipi_use_info_progress')),
       appendFToOutgoingCalls: doc.querySelector('#nap_tdm_cfg_append_trailing_f_to_number')?.checked || false,
-      
+
       // Advanced Parameters
       mapAnyResponseToAvailableStatus: this.getElementChecked(doc, '#nap_sip_cfg_poll_proxy_ping_quirk', [
         'input[name="nap_sip_cfg[poll_proxy_ping_quirk]"]'
@@ -215,7 +216,7 @@ class NapEditService {
         'input[name="nap_sip_cfg[sip_183_call_progress]"]'
       ]),
       privacyType: this.getPrivacyTypeText(this.getSelectedValue(doc, '#nap_sip_cfg_sip_privacy_type_id')),
-      
+
       // Rate Limiting
       maxCallsPerSecond: doc.querySelector('#nap_rate_limit_cps')?.value || '0',
       maxIncomingCallsPerSecond: doc.querySelector('#nap_rate_limit_cps_in')?.value || '0',
@@ -227,7 +228,7 @@ class NapEditService {
       processingDelayLowUnit: this.getSelectedUnit(doc, 'nap[rate_limit_delay_low_unit_conversion]') || 'seconds',
       processingDelayHighThreshold: doc.querySelector('#nap_rate_limit_delay_high')?.value || '6',
       processingDelayHighUnit: this.getSelectedUnit(doc, 'nap[rate_limit_delay_high_unit_conversion]') || 'seconds',
-      
+
       // Congestion Threshold
       nbCallsPerPeriod: this.getElementValue(doc, '#nap_congestion_threshold_nb_calls', [
         'input[name="nap[congestion_threshold_nb_calls]"]'
@@ -236,11 +237,11 @@ class NapEditService {
         'input[name="nap[congestion_threshold_period_sec]"]'
       ]) || '1',
       periodDurationUnit: this.getSelectedUnit(doc, 'nap[congestion_threshold_period_sec_unit_conversion]') || 'seconds',
-      
+
       // SIP Transport Servers - Parse selected servers from multi-select field
       selectedSipServers: this.parseSelectedSipServers(doc),
       availableSipServers: this.parseAvailableSipServers(doc),
-      
+
       // Port Ranges - Parse selected port ranges from multi-select field
       selectedPortRanges: this.parseSelectedPortRanges(doc),
       availablePortRanges: this.parseAvailablePortRanges(doc)

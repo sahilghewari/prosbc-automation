@@ -1,35 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import NapEditService from '../utils/napEditService';
+
 
 const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessionCookie = '', onSuccess, onAuthError }) => {
-  console.log('EditNapModal rendered with props:', { isOpen, napId, baseUrl, sessionCookieExists: !!sessionCookie });
   const [formData, setFormData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('basic');
 
-  const napEditService = new NapEditService(baseUrl, sessionCookie);
+
 
   useEffect(() => {
-    console.log('NapEditor useEffect triggered:', { isOpen, napId, baseUrl });
     if (isOpen && napId) {
       loadNapData();
     }
   }, [isOpen, napId]);
 
   const loadNapData = async () => {
-    console.log('Loading NAP data for ID:', napId);
-    console.log('Base URL:', baseUrl);
-    console.log('Session Cookie available:', !!sessionCookie);
-    
     setLoading(true);
     setError(null);
     try {
-      const data = await napEditService.getNapForEdit(napId);
-      console.log('NAP data loaded successfully:', data);
-      setFormData(data);
+      // Call backend endpoint directly
+      const res = await fetch(`/backend/api/nap-edit/naps/${napId}/edit`);
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Unknown error');
+      setFormData(result.data);
     } catch (err) {
-      console.error('Error loading NAP data:', err);
       setError('Failed to load NAP data: ' + err.message);
     } finally {
       setLoading(false);
@@ -40,14 +35,21 @@ const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessio
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
     try {
-      await napEditService.updateNap(napId, formData);
+      // Call backend endpoint directly
+      const res = await fetch(`/backend/api/nap-edit/naps/${napId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error || 'Unknown error');
       onSuccess?.();
       onClose();
     } catch (err) {
-      setError('Failed to update NAP');
-      console.error(err);
+      setError('Failed to update NAP: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -823,7 +825,7 @@ const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessio
                             onChange={(e) => {
                               const selectedOptions = Array.from(e.target.selectedOptions);
                               selectedOptions.forEach(option => {
-                                const server = formData.availableSipServers?.find(s => s.id === option.value);
+                                const server = formData.availableSipServers?.find(s => String(s.id) === option.value);
                                 if (server && !formData.selectedSipServers?.find(s => s.id === server.id)) {
                                   const updatedServers = [...(formData.selectedSipServers || []), server];
                                   handleInputChange('selectedSipServers', updatedServers);
@@ -905,7 +907,7 @@ const EditNapModal = ({ isOpen = false, onClose, napId, baseUrl = '/api', sessio
                             onChange={(e) => {
                               const selectedOptions = Array.from(e.target.selectedOptions);
                               selectedOptions.forEach(option => {
-                                const range = formData.availablePortRanges?.find(r => r.id === option.value);
+                                const range = formData.availablePortRanges?.find(r => String(r.id) === option.value);
                                 if (range && !formData.selectedPortRanges?.find(r => r.id === range.id)) {
                                   const updatedRanges = [...(formData.selectedPortRanges || []), range];
                                   handleInputChange('selectedPortRanges', updatedRanges);

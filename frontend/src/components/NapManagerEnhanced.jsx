@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
 import EditNapModal from './NapEditor';
-import NetworkTest from './NetworkTest';
 
 const NapManagerEnhanced = ({ onAuthError }) => {
   const [naps, setNaps] = useState([]);

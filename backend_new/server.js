@@ -10,6 +10,7 @@ import profileRouter from './routes/profile.js';
 import prosbcNapRouter from './routes/prosbc-nap.js';
 const app = express();
 app.use(express.json());
+import napEditRoutes from './routes/napEdit.js';
 
 
 // NAP routes
@@ -23,6 +24,7 @@ app.use('/backend/api/files', filesRouter);
 // Auth routes
 app.use('/backend/api/auth', authRouter);
 app.use('/backend/api/auth', profileRouter);
+app.use('/backend/api/nap-edit', napEditRoutes);
 
 app.get('/', (req, res) => {
   res.send('ProSBC Backend API is running.');
