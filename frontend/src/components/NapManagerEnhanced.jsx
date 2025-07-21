@@ -1,5 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
+// import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
+
+// Helper functions to call backend API endpoints
+const apiBase = '/backend/api/prosbc-nap-api/naps';
+
+const fetchLiveNaps = async () => {
+  const res = await fetch(apiBase);
+  if (!res.ok) throw new Error('Failed to fetch NAPs');
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Failed to fetch NAPs');
+  return data.naps;
+};
+
+const deleteNap = async (napId) => {
+  const res = await fetch(`${apiBase}/${napId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete NAP');
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Failed to delete NAP');
+  return data;
+};
+
+const updateNap = async (napId, napData) => {
+  const res = await fetch(`${apiBase}/${napId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(napData),
+  });
+  if (!res.ok) throw new Error('Failed to update NAP');
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || 'Failed to update NAP');
+  return data;
+};
 import EditNapModal from './NapEditor';
 
 const NapManagerEnhanced = ({ onAuthError }) => {
@@ -103,9 +134,6 @@ const NapManagerEnhanced = ({ onAuthError }) => {
       }
     }
     
-    console.log('Editing NAP:', napId);
-    console.log('Base URL:', baseUrl);
-    console.log('Session Cookie Available:', !!sessionCookie);
   };
 
   const handleEditSuccess = () => {
@@ -314,7 +342,6 @@ const NapManagerEnhanced = ({ onAuthError }) => {
           </div>
         )}
 
-        {/* Network Test Component */}
         
       </div>
 

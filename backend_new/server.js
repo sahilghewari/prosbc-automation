@@ -8,6 +8,7 @@ import filesRouter from './routes/files.js';
 import authRouter from './routes/auth.js';
 import profileRouter from './routes/profile.js';
 import prosbcNapRouter from './routes/prosbc-nap.js';
+import prosbcNapApiRouter from './routes/prosbc-nap-api.js';
 const app = express();
 app.use(express.json());
 import napEditRoutes from './routes/napEdit.js';
@@ -16,6 +17,8 @@ import napEditRoutes from './routes/napEdit.js';
 // NAP routes
 app.use('/backend/api/naps', napsRouter);
 app.use('/backend/api/prosbc-nap', prosbcNapRouter);
+// ProSBC NAP API (new, Node.js backend logic)
+app.use('/backend/api/prosbc-nap-api', prosbcNapApiRouter);
 
 
 // Files routes
