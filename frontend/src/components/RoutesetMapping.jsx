@@ -1,14 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  getRoutesetMappings,
-  getNapEditData,
-  updateNapMapping,
-  getAvailableFiles,
-  generateRoutingDatabase,
-  activateConfiguration,
-  getAvailableConfigurations,
-  validateConfiguration
-} from '../utils/routesetMappingService';
+
 
 const RoutesetMapping = ({ onAuthError }) => {
   const [mappings, setMappings] = useState([]);
@@ -23,47 +14,70 @@ const RoutesetMapping = ({ onAuthError }) => {
   
   // Configuration management state
   const [configurations, setConfigurations] = useState([]);
-  const [selectedConfig, setSelectedConfig] = useState(1);
+  const [selectedConfig, setSelectedConfig] = useState('');
   const [activating, setActivating] = useState(false);
   const [validating, setValidating] = useState(false);
+
 
   // Load initial data
   useEffect(() => {
     loadMappings();
   }, []);
 
+  // Debug: log mappings whenever they change
+  useEffect(() => {
+    console.log('Mappings state changed:', mappings);
+  }, [mappings]);
+
   const loadMappings = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const mappingsData = await getRoutesetMappings();
-      setMappings(mappingsData);
-      
-      // Also load available files and configurations
-      if (mappingsData.length > 0) {
-        const filesData = await getAvailableFiles();
+
+      // Get mappings
+      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings');
+      if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
+      const mappingsJson = await mappingsRes.json();
+      // If backend returns {success, mappings}, extract mappings
+      const mappingsArr = Array.isArray(mappingsJson)
+        ? mappingsJson
+        : (Array.isArray(mappingsJson.mappings) ? mappingsJson.mappings : []);
+      // Filter out mappings with missing or 'undefined' napName
+      const filteredMappings = mappingsArr.filter(m => m.napName && m.napName !== 'undefined');
+      console.log('Mappings from backend:', mappingsJson);
+      console.log('Filtered mappings to display:', filteredMappings);
+      setMappings(filteredMappings);
+
+      // Get available files
+      if (mappingsArr.length > 0) {
+        const filesRes = await fetch('/backend/api/routeset-mapping/available-files');
+        if (!filesRes.ok) throw new Error(await filesRes.text());
+        const filesData = await filesRes.json();
         setAvailableFiles(filesData);
       }
-      
-      // Load available configurations
+
+      // Get available configurations
       try {
-        const configsData = await getAvailableConfigurations();
-        setConfigurations(configsData);
-        
-        // Set the currently selected configuration
-        const activeConfig = configsData.find(config => config.isSelected);
+        const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+        if (!configsRes.ok) throw new Error(await configsRes.text());
+        const configsData = await configsRes.json();
+        const configsArr = Array.isArray(configsData) ? configsData : [];
+        setConfigurations(configsArr);
+        // Set selectedConfig to the id of the selected config, or the first config's id, or ''
+        let activeConfig = configsArr.find(config => config.isSelected);
         if (activeConfig) {
           setSelectedConfig(activeConfig.id);
+        } else if (configsArr.length > 0) {
+          setSelectedConfig(configsArr[0].id);
+        } else {
+          setSelectedConfig('');
         }
       } catch (configError) {
         console.log('Could not load configurations:', configError.message);
-        // This is not critical, so we don't fail the whole operation
       }
     } catch (err) {
       console.error('Error loading mappings:', err);
       setError(err.message);
-      
       if (err.message.includes('Authentication failed')) {
         onAuthError && onAuthError();
       }
@@ -76,15 +90,16 @@ const RoutesetMapping = ({ onAuthError }) => {
     try {
       setError(null);
       console.log('Editing NAP:', napName);
-      
-      const editData = await getNapEditData(napName);
+
+      const res = await fetch(`/backend/api/routeset-mapping/nap-edit-data/${encodeURIComponent(napName)}`);
+      if (!res.ok) throw new Error(await res.text());
+      const editData = await res.json();
       setEditFormData(editData.formData);
       setAvailableFiles(editData.availableFiles);
       setEditingNap(napName);
     } catch (err) {
       console.error('Error loading NAP edit data:', err);
       setError(err.message);
-      
       if (err.message.includes('Authentication failed')) {
         onAuthError && onAuthError();
       }
@@ -93,11 +108,11 @@ const RoutesetMapping = ({ onAuthError }) => {
 
   const handleSaveMapping = async () => {
     if (!editingNap || !editFormData) return;
-    
+
     try {
       setSaving(true);
       setError(null);
-      
+
       const mappingData = {
         priority: editFormData.priority,
         weight: editFormData.weight,
@@ -105,40 +120,37 @@ const RoutesetMapping = ({ onAuthError }) => {
         routesetDefinition: editFormData.currentDefinition,
         routesetDigitmap: editFormData.currentDigitmap
       };
-      
-      await updateNapMapping(editingNap, mappingData);
-      
+
+      const res = await fetch(`/backend/api/routeset-mapping/update-nap-mapping/${encodeURIComponent(editingNap)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mappingData)
+      });
+      if (!res.ok) throw new Error(await res.text());
+
       setSuccessMessage('NAP mapping updated successfully');
       setEditingNap(null);
       setEditFormData(null);
-      
-      // Try to reload mappings, but don't fail if there's a CORS error
+
       try {
         await loadMappings();
       } catch (reloadError) {
         console.log('Could not reload mappings due to CORS, but update was successful');
-        // Just refresh the page to show updated data
         window.location.reload();
       }
-      
-      // Clear success message after 3 seconds
+
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       console.error('Error saving mapping:', err);
-      
-      // Check if this is a network error that might actually be successful
       if (err.message.includes('Network Error') || err.message.includes('CORS')) {
         setSuccessMessage('NAP mapping updated successfully (refreshing page...)');
         setEditingNap(null);
         setEditFormData(null);
-        
-        // Refresh the page after a short delay to show updated data
         setTimeout(() => {
           window.location.reload();
         }, 1500);
       } else {
         setError(err.message);
-        
         if (err.message.includes('Authentication failed')) {
           onAuthError && onAuthError();
         }
@@ -152,37 +164,28 @@ const RoutesetMapping = ({ onAuthError }) => {
     const confirmed = window.confirm(
       'This will delete and recreate the routing table with the above routesets csv files. Are you sure?'
     );
-    
     if (!confirmed) return;
-    
     try {
       setGenerating(true);
       setError(null);
-      setSuccessMessage(''); // Clear any previous messages
-      
+      setSuccessMessage('');
       console.log('Starting routing database generation...');
-      const result = await generateRoutingDatabase();
-      
+      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Route database was generated successfully');
         console.log('Generation completed successfully:', result);
-        
-        // If there's response data, log it for debugging
         if (result.response) {
           console.log('Server response:', result.response);
         }
       } else {
         throw new Error(result.message || 'Generation failed with unknown error');
       }
-      
-      // Clear success message after 5 seconds
       setTimeout(() => setSuccessMessage(''), 5000);
     } catch (err) {
       console.error('Error generating database:', err);
-      
-      // Provide more specific error messages
       let errorMessage = err.message;
-      
       if (err.message.includes('timeout')) {
         errorMessage = 'Generation request timed out. The process may still be running on the server. Please check the routing database status.';
       } else if (err.message.includes('Authentication failed')) {
@@ -193,10 +196,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       } else if (err.message.includes('Network Error')) {
         errorMessage = 'Network error occurred. Please check your connection and try again.';
       }
-      
       setError(errorMessage);
-      
-      // Clear error message after 10 seconds for timeout errors
       if (err.message.includes('timeout')) {
         setTimeout(() => setError(null), 10000);
       }
@@ -206,42 +206,47 @@ const RoutesetMapping = ({ onAuthError }) => {
   };
 
   const handleActivateConfiguration = async () => {
+    const configObj = configurations.find(c => c.id === selectedConfig);
     const confirmed = window.confirm(
-      `Are you sure you want to activate configuration "${configurations.find(c => c.id === selectedConfig)?.name}"? This will apply the configuration to the system.`
+      `Are you sure you want to activate configuration "${configObj ? configObj.name : selectedConfig}"? This will apply the configuration to the system.`
     );
-    
     if (!confirmed) return;
-    
     try {
       setActivating(true);
       setError(null);
       setSuccessMessage('');
-      
       console.log('Activating configuration:', selectedConfig);
-      const result = await activateConfiguration(selectedConfig);
-      
+      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Configuration activated successfully');
         console.log('Activation completed successfully:', result);
-        
-        // Reload configurations to get updated state
         try {
-          const configsData = await getAvailableConfigurations();
-          setConfigurations(configsData);
+          const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+          if (!configsRes.ok) throw new Error(await configsRes.text());
+          const configsData = await configsRes.json();
+          const configsArr = Array.isArray(configsData) ? configsData : [];
+          setConfigurations(configsArr);
+          // Update selectedConfig to match the new active config
+          let activeConfig = configsArr.find(config => config.isSelected);
+          if (activeConfig) {
+            setSelectedConfig(activeConfig.id);
+          } else if (configsArr.length > 0) {
+            setSelectedConfig(configsArr[0].id);
+          } else {
+            setSelectedConfig('');
+          }
         } catch (reloadError) {
           console.log('Could not reload configurations:', reloadError.message);
         }
       } else {
         throw new Error(result.message || 'Configuration activation failed');
       }
-      
-      // Clear success message after 5 seconds
       setTimeout(() => setSuccessMessage(''), 5000);
     } catch (err) {
       console.error('Error activating configuration:', err);
-      
       let errorMessage = err.message;
-      
       if (err.message.includes('timeout')) {
         errorMessage = 'Activation request timed out. The process may still be running on the server. Please check the system status.';
       } else if (err.message.includes('Authentication failed')) {
@@ -252,7 +257,6 @@ const RoutesetMapping = ({ onAuthError }) => {
       } else if (err.message.includes('Network Error')) {
         errorMessage = 'Network error occurred. Please check your connection and try again.';
       }
-      
       setError(errorMessage);
     } finally {
       setActivating(false);
@@ -264,36 +268,29 @@ const RoutesetMapping = ({ onAuthError }) => {
       setValidating(true);
       setError(null);
       setSuccessMessage('');
-      
       console.log('Validating configuration:', selectedConfig);
-      const result = await validateConfiguration(selectedConfig);
-      
+      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Configuration validation completed');
         console.log('Validation completed successfully:', result);
-        
-        // If there's response data, log it for debugging
         if (result.response) {
           console.log('Validation response:', result.response);
         }
       } else {
         throw new Error(result.message || 'Configuration validation failed');
       }
-      
-      // Clear success message after 5 seconds
       setTimeout(() => setSuccessMessage(''), 5000);
     } catch (err) {
       console.error('Error validating configuration:', err);
-      
       let errorMessage = err.message;
-      
       if (err.message.includes('Authentication failed')) {
         errorMessage = 'Authentication failed. Please refresh the page and try again.';
         if (onAuthError) {
           onAuthError();
         }
       }
-      
       setError(errorMessage);
     } finally {
       setValidating(false);
@@ -325,7 +322,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       <div className="bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 border-b border-gray-600 shadow-xl">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
-            🗺️ Routeset Mapping Center
+            🗺️ Routeset Mapping 
           </h2>
           <p className="text-gray-400 text-lg">Advanced mapping of Routeset files and NAP configurations</p>
         </div>
@@ -411,7 +408,7 @@ const RoutesetMapping = ({ onAuthError }) => {
                 </tr>
               </thead>
               <tbody className="bg-gray-800/30 divide-y divide-gray-700">
-                {mappings.map((mapping, index) => (
+                {Array.isArray(mappings) && mappings.map((mapping, index) => (
                   <tr key={index} className="hover:bg-gray-700/50 transition-all duration-200">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -466,7 +463,7 @@ const RoutesetMapping = ({ onAuthError }) => {
           </table>
         </div>
         
-        {mappings.length === 0 && (
+        {Array.isArray(mappings) && mappings.length === 0 && (
           <div className="px-6 py-8 text-center text-gray-500">
             No NAP mappings found
           </div>

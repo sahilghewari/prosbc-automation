@@ -211,15 +211,19 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
         }
       }
       
-      // If no content from database, try to get from ProSBC
+      // If no content from database, try to get from backend API
       if (!content) {
-        setMessage('Fetching file content from ProSBC...');
-        const contentResult = await prosbcFileAPI.getFileContent(file.fileType, file.prosbcId);
-        
-        if (contentResult.success && contentResult.content) {
-          content = contentResult.content;
-        } else {
-          throw new Error('Failed to get file content from ProSBC');
+        setMessage('Fetching file content from backend...');
+        try {
+          const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(file.fileType)}&fileId=${encodeURIComponent(file.prosbcId)}`);
+          const result = await res.json();
+          if (result.success && result.content) {
+            content = result.content;
+          } else {
+            throw new Error(result.message || 'Failed to get file content from backend');
+          }
+        } catch (err) {
+          throw new Error('Failed to get file content from backend: ' + err.message);
         }
       }
       
@@ -304,21 +308,44 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
 
   // Handle CSV save
   const handleCSVSave = async (updatedCsvContent, result) => {
+    setIsLoading(true);
+    setError('');
+    setMessage('Saving file to backend...');
     try {
-      setMessage('File saved successfully to ProSBC!');
-      
-      // Refresh available files
-      await loadAvailableFiles();
-      
-      // Go back to select view
-      setCurrentView('select');
-      setSelectedFile(null);
-      setCsvContent('');
-      setUploadedFile(null);
-      
+      // Determine file info
+      const fileInfo = selectedFile || uploadedFile;
+      if (!fileInfo) throw new Error('No file selected for update');
+      // Prepare FormData
+      const formData = new FormData();
+      // Create a Blob from the updated CSV content
+      const blob = new Blob([updatedCsvContent], { type: 'text/csv' });
+      const fileName = fileInfo.name || fileInfo.fileName || `updated_${Date.now()}.csv`;
+      formData.append('file', blob, fileName);
+      formData.append('fileType', fileInfo.fileType || fileInfo.type);
+      formData.append('fileId', fileInfo.prosbcId || fileInfo.id);
+      // Send to backend
+      const res = await fetch('/backend/api/prosbc-files/update', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage('✅ File updated successfully!');
+        // Refresh available files
+        await loadAvailableFiles();
+        // Go back to select view
+        setCurrentView('select');
+        setSelectedFile(null);
+        setCsvContent('');
+        setUploadedFile(null);
+      } else {
+        throw new Error(data.message || 'Update failed');
+      }
     } catch (error) {
-      console.error('Error after save:', error);
-      setError(`Save completed but failed to refresh: ${error.message}`);
+      console.error('Error updating file:', error);
+      setError(`Update failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 

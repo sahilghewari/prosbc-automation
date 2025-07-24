@@ -20,7 +20,7 @@
     "jsdom": "^26.1.0",
     "jsonwebtoken": "^9.0.2",
     "mariadb": "^3.3.3",
-    "multer": "^2.0.1",
+    "multer": "^2.0.2",
     "node-fetch": "^2.7.0",
     "sequelize": "^6.37.1",
     "tough-cookie": "^5.1.2"

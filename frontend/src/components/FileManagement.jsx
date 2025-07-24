@@ -1,14 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { prosbcFileAPI } from '../utils/prosbcFileApi';
-import { fileManagementService } from '../utils/fileManagementService';
-import { fileService, ClientDatabaseService } from '../services/apiClient.js';
-//import { fileExportService } from '../utils/fileExportService';
+//  ...existing code...
+// import { fileManagementService } from '../utils/fileManagementService';
 import { enhancedFileStorageService } from '../utils/enhancedFileStorageServiceNew';
 import { updateFile, updateMultipleFiles, testConnection, getUpdateStatus, getUpdateHistory } from '../utils/fileUpdateService';
-import FileEditor from './FileEditor';
 import CSVFileEditor from './CSVFileEditor';
 
-import DatabaseStatus from './DatabaseStatus';
 import AddProSBCFilesButton from './AddProSBCFilesButton';
 import DeleteAllFilesButton from './DeleteAllFilesButton';
 
@@ -66,22 +62,14 @@ function FileManagement({ onAuthError }) {
   const loadFiles = async () => {
     setRefreshing(true);
     try {
-      const [dfResult, dmResult] = await Promise.all([
-        prosbcFileAPI.listDfFiles(),
-        prosbcFileAPI.listDmFiles()
+      const [dfRes, dmRes] = await Promise.all([
+        fetch('/backend/api/prosbc-files/list/df').then(r => r.json()),
+        fetch('/backend/api/prosbc-files/list/dm').then(r => r.json())
       ]);
-      
-      if (dfResult.success) {
-        setDfFiles(dfResult.files);
-      }
-      
-      if (dmResult.success) {
-        setDmFiles(dmResult.files);
-      }
-      
+      if (dfRes.success) setDfFiles(dfRes.files);
+      if (dmRes.success) setDmFiles(dmRes.files);
       setMessage("✅ File lists refreshed successfully!");
       setTimeout(() => setMessage(""), 3000);
-      
     } catch (error) {
       console.error('Load files error:', error);
       setMessage(`❌ Failed to load files: ${error.message}`);
@@ -97,11 +85,62 @@ function FileManagement({ onAuthError }) {
   const handleExport = async (fileType, fileId, fileName) => {
     setIsLoading(true);
     setMessage(`🔄 Exporting ${fileName}...`);
-    
     try {
-      const result = await prosbcFileAPI.exportFile(fileType, fileId, fileName);
-      if (result.success) {
-        setMessage(`✅ ${result.message}`);
+      // Step 1: Request export
+      const res = await fetch('/backend/api/prosbc-files/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileType,
+          fileId,
+          fileName
+        })
+      });
+      const result = await res.json();
+      if (result.success && result.path) {
+        setMessage(`✅ ${result.message}\nPreparing download...`);
+        // Step 2: Download file from backend
+        const downloadRes = await fetch(`/backend/api/prosbc-files/download?filePath=${encodeURIComponent(result.path)}`);
+        if (!downloadRes.ok) throw new Error('Download failed');
+        const blob = await downloadRes.blob();
+        // Step 3: Prompt user for save location (File System Access API)
+        if (window.showSaveFilePicker) {
+          try {
+            const fileHandle = await window.showSaveFilePicker({
+              suggestedName: fileName,
+              types: [
+                {
+                  description: 'CSV File',
+                  accept: { 'text/csv': ['.csv'] }
+                },
+                {
+                  description: 'All Files',
+                  accept: { '*/*': ['.*'] }
+                }
+              ]
+            });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            setMessage(`✅ ${result.message}\nFile saved to your chosen location.`);
+            return;
+          } catch (fsError) {
+            setMessage(`❌ Save cancelled or failed: ${fsError.message}`);
+            return;
+          }
+        }
+        // Fallback: browser download
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        setMessage(`✅ ${result.message}\nFile downloaded.`);
+      } else {
+        setMessage(`❌ Export failed: ${result.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Export error:', error);
@@ -116,29 +155,39 @@ function FileManagement({ onAuthError }) {
     if (!window.confirm(`Are you sure you want to delete '${fileName}'?\n\nThis action cannot be undone.`)) {
       return;
     }
-    
     setIsLoading(true);
     setMessage(`🔄 Deleting ${fileName}...`);
-    
     try {
-      const result = await prosbcFileAPI.deleteFile(fileType, fileId, fileName);
+      const res = await fetch('/backend/api/prosbc-files/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileType,
+          fileId,
+          fileName
+        })
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Delete response error:', errorText);
+        setMessage(`❌ Delete failed: ${errorText}`);
+        setIsLoading(false);
+        return;
+      }
+      const result = await res.json();
       if (result.success) {
         let successMessage = `✅ ${result.message}`;
-        
-        // Add note if delete succeeded but confirmation was blocked by CORS
         if (result.note && result.note.includes('CORS')) {
           successMessage += '\n📌 Note: Delete completed but redirect confirmation was blocked by browser security.';
         }
-        
         setMessage(successMessage);
-        // Refresh file lists after successful deletion
         setTimeout(() => loadFiles(), 1000);
+      } else {
+        setMessage(`❌ Delete failed: ${result.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Delete error:', error);
       let errorMessage = error.message;
-      
-      // Provide more specific error messages
       if (error.message.includes('CSRF token')) {
         errorMessage = 'Authentication failed. Please refresh the page and try again.';
       } else if (error.message.includes('401') || error.message.includes('authentication')) {
@@ -146,12 +195,10 @@ function FileManagement({ onAuthError }) {
         onAuthError?.();
       } else if (error.message.includes('404')) {
         errorMessage = 'File not found. It may have been already deleted.';
-        // Refresh file list to update state
         setTimeout(() => loadFiles(), 1000);
       } else if (error.message.includes('403')) {
         errorMessage = 'Permission denied. You may not have rights to delete this file.';
       }
-      
       setMessage(`❌ Delete failed: ${errorMessage}`);
     } finally {
       setIsLoading(false);
@@ -166,9 +213,9 @@ function FileManagement({ onAuthError }) {
   const handleSystemStatusCheck = async () => {
     setIsLoading(true);
     setMessage("🔄 Checking ProSBC system status...");
-    
     try {
-      const result = await prosbcFileAPI.getSystemStatus();
+      const res = await fetch('/backend/api/prosbc-files/status');
+      const result = await res.json();
       if (result.isOnline) {
         setMessage(`✅ ProSBC system is online and accessible (Status: ${result.status})`);
       } else {
@@ -180,6 +227,105 @@ function FileManagement({ onAuthError }) {
     } catch (error) {
       console.error('System status check error:', error);
       setMessage(`❌ System status check failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  // Upload DF file
+  const handleUploadDfFile = async (filePath) => {
+    setIsLoading(true);
+    setMessage("🔄 Uploading DF file...");
+    try {
+      const res = await fetch('/backend/api/prosbc-files/upload/df', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath })
+      });
+      const result = await res.json();
+      if (result.success) {
+        setMessage(`✅ ${result.message}`);
+        loadFiles();
+      }
+    } catch (error) {
+      console.error('Upload DF error:', error);
+      setMessage(`❌ Upload DF failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Upload DM file
+  const handleUploadDmFile = async (filePath) => {
+    setIsLoading(true);
+    setMessage("🔄 Uploading DM file...");
+    try {
+      const res = await fetch('/backend/api/prosbc-files/upload/dm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filePath })
+      });
+      const result = await res.json();
+      if (result.success) {
+        setMessage(`✅ ${result.message}`);
+        loadFiles();
+      }
+    } catch (error) {
+      console.error('Upload DM error:', error);
+      setMessage(`❌ Upload DM failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  // Get file content
+  const handleGetFileContent = async (fileType, fileId) => {
+    setIsLoading(true);
+    setMessage("🔄 Getting file content...");
+    try {
+      const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(fileType)}&fileId=${encodeURIComponent(fileId)}`);
+      const result = await res.json();
+      if (result.success) {
+        setMessage(`✅ File content loaded.`);
+        // You can set state here to display content if needed
+      }
+    } catch (error) {
+      console.error('Get file content error:', error);
+      setMessage(`❌ Get file content failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update file
+  
+  };
+  const handleUpdateFileApi = async (fileType, fileId, file) => {
+    setIsLoading(true);
+    setMessage("🔄 Updating file...");
+    try {
+      const formData = new FormData();
+      formData.append('fileType', fileType);
+      formData.append('fileId', fileId);
+      formData.append('file', file); // file is a File object
+
+      const res = await fetch('/backend/api/prosbc-files/update', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+      if (result.success) {
+        setMessage(`✅ ${result.message}\nFile updated successfully!`);
+        loadFiles();
+        setShowUpdateModal(false);
+        setUpdateTarget(null);
+        setSelectedFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        setMessage(`❌ Update failed: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Update file error:', error);
+      setMessage(`❌ Update file failed: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -916,28 +1062,7 @@ function FileManagement({ onAuthError }) {
                 </div>
               )}
 
-              {/* Connection Test */}
-              <div className="mb-6 p-4 bg-gray-700 rounded-lg">
-                <h3 className="text-lg font-semibold text-white mb-3">Connection Test</h3>
-                <button
-                  onClick={handleTestConnection}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mr-3"
-                  disabled={connectionStatus?.testing || isUpdating}
-                >
-                  {connectionStatus?.testing ? 'Testing...' : 'Test Connection'}
-                </button>
-                
-                {connectionStatus && !connectionStatus.testing && (
-                  <div className={`mt-3 p-3 rounded-lg ${
-                    connectionStatus.success ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'
-                  }`}>
-                    {connectionStatus.success ? 
-                      `✓ ${connectionStatus.message}` : 
-                      `✗ ${connectionStatus.error}`
-                    }
-                  </div>
-                )}
-              </div>
+             
 
               {/* File Selection */}
               <div className="mb-6 p-4 bg-gray-700 rounded-lg">
@@ -1015,16 +1140,22 @@ function FileManagement({ onAuthError }) {
                   Cancel
                 </button>
                 <button
-                  onClick={handleFileUpdate}
-                  disabled={!selectedFile || isUpdating}
-                  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                    !selectedFile || isUpdating
-                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700'
-                  }`}
-                >
-                  {isUpdating ? 'Updating...' : 'Update File'}
-                </button>
+  onClick={() => {
+    if (!selectedFile || !updateTarget) {
+      setMessage('❌ Please select a file first');
+      return;
+    }
+    handleUpdateFileApi(updateTarget.fileType, updateTarget.routesetId, selectedFile);
+  }}
+  disabled={!selectedFile || isUpdating}
+  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+    !selectedFile || isUpdating
+      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+      : 'bg-green-600 text-white hover:bg-green-700'
+  }`}
+>
+  {isUpdating ? 'Updating...' : 'Update File'}
+</button>
                 <button
                   onClick={async () => {
                     if (!updateTarget) return;
@@ -1047,8 +1178,8 @@ function FileManagement({ onAuthError }) {
                       formData.append('uploaded_by', 'manual-db-update');
                       // Use correct endpoint
                       let uploadEndpoint = fileType === 'routesets_digitmaps'
-                        ? '/api/files/digit-maps/upload'
-                        : '/api/files/dial-formats/upload';
+                        ? '/backend/api/files/digit-maps/upload'
+                        : '/backend/api/files/dial-formats/upload';
                       // POST to upload endpoint
                       const dbRes = await fetch(uploadEndpoint, {
                         method: 'POST',

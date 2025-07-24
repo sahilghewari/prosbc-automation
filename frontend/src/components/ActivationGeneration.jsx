@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import {
-  getRoutesetMappings,
-  generateRoutingDatabase,
-  activateConfiguration,
-  getAvailableConfigurations,
-  validateConfiguration
-} from '../utils/routesetMappingService';
+
 
 const ActivationGeneration = ({ onAuthError }) => {
   const [loading, setLoading] = useState(true);
@@ -30,26 +24,23 @@ const ActivationGeneration = ({ onAuthError }) => {
       setLoading(true);
       setError(null);
       
-      // Load configurations and mappings
-      const [configsData, mappingsData] = await Promise.all([
-        getAvailableConfigurations().catch(err => {
-          console.log('Could not load configurations:', err.message);
-          return [];
-        }),
-        getRoutesetMappings().catch(err => {
-          console.log('Could not load mappings:', err.message);
-          return [];
-        })
-      ]);
-      
-      setConfigurations(configsData);
-      setMappings(mappingsData);
-      
+      // Load configurations
+      const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+      if (!configsRes.ok) throw new Error(await configsRes.text());
+      const configsJson = await configsRes.json();
+      const configsArr = Array.isArray(configsJson.configurations) ? configsJson.configurations : [];
+      setConfigurations(configsArr);
       // Set the currently selected configuration
-      const activeConfig = configsData.find(config => config.isSelected);
+      const activeConfig = configsArr.find(config => config.isSelected);
       if (activeConfig) {
         setSelectedConfig(activeConfig.id);
       }
+      // Load mappings
+      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings');
+      if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
+      const mappingsJson = await mappingsRes.json();
+      const mappingsArr = Array.isArray(mappingsJson.mappings) ? mappingsJson.mappings : [];
+      setMappings(mappingsArr);
     } catch (err) {
       console.error('Error loading data:', err);
       setError(err.message);
@@ -75,16 +66,19 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Activating configuration:', selectedConfig);
-      const result = await activateConfiguration(selectedConfig);
-      
+      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Configuration activated successfully');
         console.log('Activation completed successfully:', result);
-        
         // Reload configurations to get updated state
         try {
-          const configsData = await getAvailableConfigurations();
-          setConfigurations(configsData);
+          const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+          if (!configsRes.ok) throw new Error(await configsRes.text());
+          const configsJson = await configsRes.json();
+          const configsArr = Array.isArray(configsJson.configurations) ? configsJson.configurations : [];
+          setConfigurations(configsArr);
         } catch (reloadError) {
           console.log('Could not reload configurations:', reloadError.message);
         }
@@ -123,13 +117,12 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Validating configuration:', selectedConfig);
-      const result = await validateConfiguration(selectedConfig);
-      
+      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Configuration validation completed');
         console.log('Validation completed successfully:', result);
-        
-        // If there's response data, log it for debugging
         if (result.response) {
           console.log('Validation response:', result.response);
         }
@@ -170,13 +163,12 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Starting routing database generation...');
-      const result = await generateRoutingDatabase();
-      
+      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Route database was generated successfully');
         console.log('Generation completed successfully:', result);
-        
-        // If there's response data, log it for debugging
         if (result.response) {
           console.log('Server response:', result.response);
         }
@@ -230,7 +222,7 @@ const ActivationGeneration = ({ onAuthError }) => {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white mb-2">Activation and Generation</h2>
+        <h2 className="text-2xl font-bold text-white mb-2">Activation and  Generation</h2>
         <p className="text-gray-300">Manage configuration activation and routing database generation</p>
       </div>
 

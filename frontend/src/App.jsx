@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
-import NapCreator from './components/NapCreator';
 import NapCreatorEnhanced from './components/NapCreatorEnhanced';
 import NapManagerEnhanced from './components/NapManagerEnhanced';
 import FileUploader from './components/FileUploader';
@@ -9,7 +8,6 @@ import FileManagement from './components/FileManagement';
 import RoutesetMapping from './components/RoutesetMapping';
 import ActivationGeneration from './components/ActivationGeneration';
 import DatabaseStatus from './components/DatabaseStatus';
-import DatabaseWidget from './components/DatabaseWidget';
 import DatabaseDashboard from './components/DatabaseDashboard';
 import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
 import DashboardLogin from './DashboardLogin';

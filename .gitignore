@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 
+.csv
+
 # Environment variables
 .env
 .env.local

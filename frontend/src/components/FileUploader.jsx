@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { ClientDatabaseService } from '../services/apiClient.js';
-import DatabaseStatus from './DatabaseStatus';
 
 function FileUploader({ onAuthError }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -45,19 +44,30 @@ function FileUploader({ onAuthError }) {
     setMessage("🔄 Uploading DF file...");
 
     try {
-      const result = await prosbcFileAPI.uploadDfFile(dfFile, (progress, statusMessage) => {
-        setMessage(`🔄 ${statusMessage}`);
+      // Upload DF file to backend endpoint
+      const formData = new FormData();
+      formData.append('file', dfFile, dfFileName);
+      const response = await fetch('/backend/api/prosbc-upload/df', {
+        method: 'POST',
+        body: formData
       });
+
+      let result = null;
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        // Try to get text for debugging
+        const text = await response.text();
+        throw new Error(`Unexpected response from server. Status: ${response.status}. Body: ${text}`);
+      }
 
       if (result.success) {
         let successMessage = `✅ DF file "${dfFileName}" uploaded successfully!`;
-        
         if (result.note && result.note.includes('CORS')) {
           successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
         }
-        
         setMessage(successMessage);
-        
         // Record file upload in database
         try {
           const dbService = new ClientDatabaseService();
@@ -70,14 +80,12 @@ function FileUploader({ onAuthError }) {
             prosbc_result: result
           });
           console.log('✅ DF file recorded in database');
-          
           setDfFile(null);
           setDfFileName("");
           // Reset file input
           const fileInput = document.getElementById('df-file-input');
           if (fileInput) fileInput.value = '';
         } catch (dbError) {
-          // Check if this is a duplicate file error
           if (dbError.response && dbError.response.status === 409) {
             setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
           } else {
@@ -88,23 +96,9 @@ function FileUploader({ onAuthError }) {
       } else {
         throw new Error(result.message || 'Upload failed');
       }
-
     } catch (error) {
       console.error('DF Upload error:', error);
-      // Check if this is a duplicate file error from the initial upload
-      if (error.response && error.response.status === 409) {
-        const existingFile = error.response.data.existing_file;
-        setMessage(`ℹ️ A file with identical content already exists (${existingFile}). No need to upload again.`);
-        // Reset file input and state since we don't need to retry
-        setDfFile(null);
-        setDfFileName("");
-        const fileInput = document.getElementById('df-file-input');
-        if (fileInput) fileInput.value = '';
-        return;
-      }
-      
       setMessage(`❌ Failed to upload DF file: ${error.message}`);
-      
       if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('login')) {
         onAuthError?.();
       }
@@ -124,19 +118,30 @@ function FileUploader({ onAuthError }) {
     setMessage("🔄 Uploading DM file...");
 
     try {
-      const result = await prosbcFileAPI.uploadDmFile(dmFile, (progress, statusMessage) => {
-        setMessage(`🔄 ${statusMessage}`);
+      // Upload DM file to backend endpoint
+      const formData = new FormData();
+      formData.append('file', dmFile, dmFileName);
+      const response = await fetch('/backend/api/prosbc-upload/dm', {
+        method: 'POST',
+        body: formData
       });
+
+      let result = null;
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        // Try to get text for debugging
+        const text = await response.text();
+        throw new Error(`Unexpected response from server. Status: ${response.status}. Body: ${text}`);
+      }
 
       if (result.success) {
         let successMessage = `✅ DM file "${dmFileName}" uploaded successfully!`;
-        
         if (result.note && result.note.includes('CORS')) {
           successMessage += '\n📌 Note: Upload completed but redirect confirmation was blocked by browser security.';
         }
-        
         setMessage(successMessage);
-        
         // Record file upload in database
         try {
           const dbService = new ClientDatabaseService();
@@ -150,7 +155,6 @@ function FileUploader({ onAuthError }) {
           });
           console.log('✅ DM file recorded in database');
         } catch (dbError) {
-          // Check if this is a duplicate file error
           if (dbError.response && dbError.response.status === 409) {
             setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
           } else {
@@ -158,7 +162,6 @@ function FileUploader({ onAuthError }) {
             setMessage('⚠️ File uploaded but there was an issue recording it in the database.');
           }
         }
-        
         setDmFile(null);
         setDmFileName("");
         // Reset file input
@@ -167,16 +170,9 @@ function FileUploader({ onAuthError }) {
       } else {
         throw new Error(result.message || 'Upload failed');
       }
-
     } catch (error) {
       console.error('DM Upload error:', error);
-      // Check if this is a duplicate file error
-      if (error.response && error.response.status === 409) {
-        setMessage(`ℹ️ A file with identical content already exists (${error.response.data.existing_file}). No need to upload again.`);
-      } else {
-        setMessage(`❌ Failed to upload DM file: ${error.message}`);
-      }
-      
+      setMessage(`❌ Failed to upload DM file: ${error.message}`);
       if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('login')) {
         onAuthError?.();
       }

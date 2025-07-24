@@ -287,64 +287,40 @@ const CSVEditorTable = ({
     }
 
     setIsUpdating(true);
-    
     try {
-      console.log('🚀 Starting versioned CSV save operation for file:', fileInfo);
-      
+      console.log('🚀 Starting backend-driven CSV update for file:', fileInfo);
       onProgress?.(10, 'Converting table to CSV...');
       const csvString = convertToCSV();
-      
-      // First update backend database for versioning
-      onProgress?.(30, 'Updating database with versioning...');
-      const dbResult = await apiClient.updateContent(
-        fileInfo.type, 
-        fileInfo.id, 
-        csvString, 
-        'Updated via CSV editor',
-        fileInfo.name // Pass the original filename for ProSBC update
-      );
-      
-      if (!dbResult.success) {
-        throw new Error(dbResult.error || 'Failed to update database');
-      }
-      
-      // Then update ProSBC system
-      onProgress?.(60, 'Updating file on ProSBC...');
-      const prosbcResult = await csvFileUpdateService.updateCSVFile(
-        csvString,
-        fileInfo,
-        (progress, message) => onProgress?.(60 + (progress * 0.3), message) // Scale progress 60-90%
-      );
-      
-      console.log('ProSBC update result:', prosbcResult);
-      
-      if (!prosbcResult.success) {
-        console.warn('ProSBC update failed, but database was updated:', prosbcResult.message);
-        // Could implement rollback logic here if needed
-      }
-      
-      onProgress?.(95, 'Refreshing history...');
-      
-      // Reload file history to show new version
-      await loadFileHistory();
-      
-      onProgress?.(100, 'File updated successfully!');
-      
-      // Update original data to reflect saved state
-      setOriginalData({ headers, rows });
-      setHasChanges(false);
-      
-      // Call parent callback
-      onSave?.(csvString, { 
-        database: dbResult, 
-        prosbc: prosbcResult 
+
+      // Prepare FormData for backend update
+      onProgress?.(30, 'Preparing file for backend update...');
+      const formData = new FormData();
+      const fileName = fileInfo.name || fileInfo.fileName || `updated_${Date.now()}.csv`;
+      const blob = new Blob([csvString], { type: 'text/csv' });
+      formData.append('file', blob, fileName);
+      formData.append('fileType', fileInfo.fileType || fileInfo.type);
+      formData.append('fileId', fileInfo.prosbcId || fileInfo.id);
+
+      onProgress?.(50, 'Uploading file to backend...');
+      // Send to backend update endpoint
+      const res = await fetch('/backend/api/prosbc-files/update', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
       });
-      
-      alert('File updated successfully with version tracking!');
-      console.log('CSV file update completed with versioning');
-      
+      const data = await res.json();
+      if (data.success) {
+        onProgress?.(100, 'File updated successfully!');
+        setOriginalData({ headers, rows });
+        setHasChanges(false);
+        onSave?.(csvString, data);
+        alert('File updated successfully on ProSBC!');
+        console.log('CSV file update completed with backend-driven workflow');
+      } else {
+        throw new Error(data.message || 'Update failed');
+      }
     } catch (error) {
-      console.error('Error saving file with versioning:', error);
+      console.error('Error saving file with backend update:', error);
       alert(`Failed to save file: ${error.message}`);
     } finally {
       setIsUpdating(false);

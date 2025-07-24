@@ -14,6 +14,12 @@ export default defineConfig({
         changeOrigin: true,
         secure: false
       },
+      '/prosbc-upload': {
+        target: 'http://localhost:3001/prosbc-upload',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/prosbc-upload/, '')
+      },
       // All /api and /file_dbs requests go to ProSBC
       '/file_dbs': {
         target: 'https://prosbc2tpa2.dipvtel.com:12358',

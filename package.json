@@ -14,10 +14,20 @@
     "install:backend": "cd backend && npm install",
     "setup": "npm run install:all && cd backend && npm run setup"
   },
-  "keywords": ["prosbc", "automation", "nap", "frontend", "backend"],
+  "keywords": [
+    "prosbc",
+    "automation",
+    "nap",
+    "frontend",
+    "backend"
+  ],
   "author": "ProSBC Team",
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "form-data": "^4.0.4",
+    "node-fetch": "^3.3.2"
   }
 }
