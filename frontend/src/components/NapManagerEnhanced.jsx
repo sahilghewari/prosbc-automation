@@ -4,8 +4,15 @@ import React, { useState, useEffect } from 'react';
 // Helper functions to call backend API endpoints
 const apiBase = '/backend/api/prosbc-nap-api/naps';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('dashboard_token');
+  return token
+    ? { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json' };
+};
+
 const fetchLiveNaps = async () => {
-  const res = await fetch(apiBase);
+  const res = await fetch(apiBase, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch NAPs');
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to fetch NAPs');
@@ -13,7 +20,7 @@ const fetchLiveNaps = async () => {
 };
 
 const deleteNap = async (napId) => {
-  const res = await fetch(`${apiBase}/${napId}`, { method: 'DELETE' });
+  const res = await fetch(`${apiBase}/${napId}`, { method: 'DELETE', headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to delete NAP');
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to delete NAP');
@@ -23,7 +30,7 @@ const deleteNap = async (napId) => {
 const updateNap = async (napId, napData) => {
   const res = await fetch(`${apiBase}/${napId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify(napData),
   });
   if (!res.ok) throw new Error('Failed to update NAP');

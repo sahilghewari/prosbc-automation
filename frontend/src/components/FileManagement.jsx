@@ -9,6 +9,11 @@ import AddProSBCFilesButton from './AddProSBCFilesButton';
 import DeleteAllFilesButton from './DeleteAllFilesButton';
 
 function FileManagement({ onAuthError }) {
+  // Helper to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  };
   const [activeTab, setActiveTab] = useState('df-files'); // Default to DF files tab
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -63,8 +68,8 @@ function FileManagement({ onAuthError }) {
     setRefreshing(true);
     try {
       const [dfRes, dmRes] = await Promise.all([
-        fetch('/backend/api/prosbc-files/list/df').then(r => r.json()),
-        fetch('/backend/api/prosbc-files/list/dm').then(r => r.json())
+        fetch('/backend/api/prosbc-files/list/df', { headers: getAuthHeaders() }).then(r => r.json()),
+        fetch('/backend/api/prosbc-files/list/dm', { headers: getAuthHeaders() }).then(r => r.json())
       ]);
       if (dfRes.success) setDfFiles(dfRes.files);
       if (dmRes.success) setDmFiles(dmRes.files);
@@ -89,7 +94,7 @@ function FileManagement({ onAuthError }) {
       // Step 1: Request export
       const res = await fetch('/backend/api/prosbc-files/export', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileType,
           fileId,
@@ -100,7 +105,7 @@ function FileManagement({ onAuthError }) {
       if (result.success && result.path) {
         setMessage(`✅ ${result.message}\nPreparing download...`);
         // Step 2: Download file from backend
-        const downloadRes = await fetch(`/backend/api/prosbc-files/download?filePath=${encodeURIComponent(result.path)}`);
+        const downloadRes = await fetch(`/backend/api/prosbc-files/download?filePath=${encodeURIComponent(result.path)}`, { headers: getAuthHeaders() });
         if (!downloadRes.ok) throw new Error('Download failed');
         const blob = await downloadRes.blob();
         // Step 3: Prompt user for save location (File System Access API)
@@ -160,7 +165,7 @@ function FileManagement({ onAuthError }) {
     try {
       const res = await fetch('/backend/api/prosbc-files/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileType,
           fileId,
@@ -214,7 +219,7 @@ function FileManagement({ onAuthError }) {
     setIsLoading(true);
     setMessage("🔄 Checking ProSBC system status...");
     try {
-      const res = await fetch('/backend/api/prosbc-files/status');
+      const res = await fetch('/backend/api/prosbc-files/status', { headers: getAuthHeaders() });
       const result = await res.json();
       if (result.isOnline) {
         setMessage(`✅ ProSBC system is online and accessible (Status: ${result.status})`);
@@ -237,7 +242,7 @@ function FileManagement({ onAuthError }) {
     try {
       const res = await fetch('/backend/api/prosbc-files/upload/df', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath })
       });
       const result = await res.json();
@@ -260,7 +265,7 @@ function FileManagement({ onAuthError }) {
     try {
       const res = await fetch('/backend/api/prosbc-files/upload/dm', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath })
       });
       const result = await res.json();
@@ -280,7 +285,7 @@ function FileManagement({ onAuthError }) {
     setIsLoading(true);
     setMessage("🔄 Getting file content...");
     try {
-      const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(fileType)}&fileId=${encodeURIComponent(fileId)}`);
+      const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(fileType)}&fileId=${encodeURIComponent(fileId)}`, { headers: getAuthHeaders() });
       const result = await res.json();
       if (result.success) {
         setMessage(`✅ File content loaded.`);
@@ -308,7 +313,8 @@ function FileManagement({ onAuthError }) {
 
       const res = await fetch('/backend/api/prosbc-files/update', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: getAuthHeaders()
       });
       const result = await res.json();
       if (result.success) {

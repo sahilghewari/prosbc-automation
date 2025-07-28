@@ -1,3 +1,5 @@
+// Helper to get auth headers
+
 import React, { useState } from 'react';
 
 const Profile = ({ user, onUpdate }) => {
@@ -12,7 +14,10 @@ const Profile = ({ user, onUpdate }) => {
     setSuccess(null);
     setError(null);
   };
-
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('dashboard_token');
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+};
   const handleCancel = () => {
     setEditing(false);
     setUsername(user.username);
@@ -27,10 +32,7 @@ const Profile = ({ user, onUpdate }) => {
     try {
       const response = await fetch(`/backend/api/auth/profile`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('dashboard_token')}`
-        },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ username })
       });
       if (!response.ok) {

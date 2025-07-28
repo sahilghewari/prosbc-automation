@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 
 
 const ActivationGeneration = ({ onAuthError }) => {
+  // Helper to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
@@ -25,7 +30,7 @@ const ActivationGeneration = ({ onAuthError }) => {
       setError(null);
       
       // Load configurations
-      const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+      const configsRes = await fetch('/backend/api/routeset-mapping/configurations', { headers: getAuthHeaders() });
       if (!configsRes.ok) throw new Error(await configsRes.text());
       const configsJson = await configsRes.json();
       const configsArr = Array.isArray(configsJson.configurations) ? configsJson.configurations : [];
@@ -36,7 +41,7 @@ const ActivationGeneration = ({ onAuthError }) => {
         setSelectedConfig(activeConfig.id);
       }
       // Load mappings
-      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings');
+      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings', { headers: getAuthHeaders() });
       if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
       const mappingsJson = await mappingsRes.json();
       const mappingsArr = Array.isArray(mappingsJson.mappings) ? mappingsJson.mappings : [];
@@ -66,7 +71,7 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Activating configuration:', selectedConfig);
-      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {
@@ -74,7 +79,7 @@ const ActivationGeneration = ({ onAuthError }) => {
         console.log('Activation completed successfully:', result);
         // Reload configurations to get updated state
         try {
-          const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+          const configsRes = await fetch('/backend/api/routeset-mapping/configurations', { headers: getAuthHeaders() });
           if (!configsRes.ok) throw new Error(await configsRes.text());
           const configsJson = await configsRes.json();
           const configsArr = Array.isArray(configsJson.configurations) ? configsJson.configurations : [];
@@ -117,7 +122,7 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Validating configuration:', selectedConfig);
-      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {
@@ -163,7 +168,7 @@ const ActivationGeneration = ({ onAuthError }) => {
       setSuccessMessage('');
       
       console.log('Starting routing database generation...');
-      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST' });
+      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {

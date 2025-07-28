@@ -176,7 +176,10 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
       };
       setCurrentStep(3);
       setMessage('Step 3: Sending NAP creation request to backend...');
-      const response = await axios.post('/backend/api/prosbc-nap/create', napConfig);
+      // Add Authorization header with dashboard_token
+      const token = localStorage.getItem('dashboard_token');
+      const headers = token ? { Authorization: 'Bearer ' + token } : {};
+      const response = await axios.post('/backend/api/prosbc-nap/create', napConfig, { headers });
       const result = response.data;
       const totalTime = Date.now() - startTime;
       if (result.success) {

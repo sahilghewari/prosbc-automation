@@ -47,9 +47,12 @@ function FileUploader({ onAuthError }) {
       // Upload DF file to backend endpoint
       const formData = new FormData();
       formData.append('file', dfFile, dfFileName);
+      const token = localStorage.getItem('dashboard_token');
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const response = await fetch('/backend/api/prosbc-upload/df', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers
       });
 
       let result = null;
@@ -121,9 +124,12 @@ function FileUploader({ onAuthError }) {
       // Upload DM file to backend endpoint
       const formData = new FormData();
       formData.append('file', dmFile, dmFileName);
+      const token = localStorage.getItem('dashboard_token');
+      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
       const response = await fetch('/backend/api/prosbc-upload/dm', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers
       });
 
       let result = null;

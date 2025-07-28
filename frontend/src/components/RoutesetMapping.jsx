@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 
 
@@ -18,7 +19,11 @@ const RoutesetMapping = ({ onAuthError }) => {
   const [activating, setActivating] = useState(false);
   const [validating, setValidating] = useState(false);
 
-
+  // Helper to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  };
   // Load initial data
   useEffect(() => {
     loadMappings();
@@ -35,7 +40,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       setError(null);
 
       // Get mappings
-      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings');
+      const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings', { headers: getAuthHeaders() });
       if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
       const mappingsJson = await mappingsRes.json();
       // If backend returns {success, mappings}, extract mappings
@@ -50,7 +55,7 @@ const RoutesetMapping = ({ onAuthError }) => {
 
       // Get available files
       if (mappingsArr.length > 0) {
-        const filesRes = await fetch('/backend/api/routeset-mapping/available-files');
+        const filesRes = await fetch('/backend/api/routeset-mapping/available-files', { headers: getAuthHeaders() });
         if (!filesRes.ok) throw new Error(await filesRes.text());
         const filesData = await filesRes.json();
         setAvailableFiles(filesData);
@@ -58,7 +63,7 @@ const RoutesetMapping = ({ onAuthError }) => {
 
       // Get available configurations
       try {
-        const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+        const configsRes = await fetch('/backend/api/routeset-mapping/configurations', { headers: getAuthHeaders() });
         if (!configsRes.ok) throw new Error(await configsRes.text());
         const configsData = await configsRes.json();
         const configsArr = Array.isArray(configsData) ? configsData : [];
@@ -91,7 +96,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       setError(null);
       console.log('Editing NAP:', napName);
 
-      const res = await fetch(`/backend/api/routeset-mapping/nap-edit-data/${encodeURIComponent(napName)}`);
+      const res = await fetch(`/backend/api/routeset-mapping/nap-edit-data/${encodeURIComponent(napName)}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const editData = await res.json();
       setEditFormData(editData.formData);
@@ -123,7 +128,7 @@ const RoutesetMapping = ({ onAuthError }) => {
 
       const res = await fetch(`/backend/api/routeset-mapping/update-nap-mapping/${encodeURIComponent(editingNap)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(mappingData)
       });
       if (!res.ok) throw new Error(await res.text());
@@ -170,7 +175,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       setError(null);
       setSuccessMessage('');
       console.log('Starting routing database generation...');
-      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST' });
+      const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {
@@ -216,14 +221,14 @@ const RoutesetMapping = ({ onAuthError }) => {
       setError(null);
       setSuccessMessage('');
       console.log('Activating configuration:', selectedConfig);
-      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      const res = await fetch(`/backend/api/routeset-mapping/activate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {
         setSuccessMessage(result.message || 'Configuration activated successfully');
         console.log('Activation completed successfully:', result);
         try {
-          const configsRes = await fetch('/backend/api/routeset-mapping/configurations');
+          const configsRes = await fetch('/backend/api/routeset-mapping/configurations', { headers: getAuthHeaders() });
           if (!configsRes.ok) throw new Error(await configsRes.text());
           const configsData = await configsRes.json();
           const configsArr = Array.isArray(configsData) ? configsData : [];
@@ -269,7 +274,7 @@ const RoutesetMapping = ({ onAuthError }) => {
       setError(null);
       setSuccessMessage('');
       console.log('Validating configuration:', selectedConfig);
-      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST' });
+      const res = await fetch(`/backend/api/routeset-mapping/validate-configuration/${encodeURIComponent(selectedConfig)}`, { method: 'POST', headers: getAuthHeaders() });
       if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
       if (result.success) {

@@ -1,3 +1,8 @@
+  // Helper to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
+  };
 import React, { useState, useEffect } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { csvFileUpdateService } from '../utils/csvFileUpdateService';
@@ -93,8 +98,8 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       
       // Get files from ProSBC
       const [dfResult, dmResult] = await Promise.all([
-        prosbcFileAPI.listDfFiles(),
-        prosbcFileAPI.listDmFiles()
+        prosbcFileAPI.listDfFiles(getAuthHeaders()),
+        prosbcFileAPI.listDmFiles(getAuthHeaders())
       ]);
       
       const allFiles = [];
@@ -215,7 +220,7 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       if (!content) {
         setMessage('Fetching file content from backend...');
         try {
-          const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(file.fileType)}&fileId=${encodeURIComponent(file.prosbcId)}`);
+          const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(file.fileType)}&fileId=${encodeURIComponent(file.prosbcId)}`, { headers: getAuthHeaders() });
           const result = await res.json();
           if (result.success && result.content) {
             content = result.content;
@@ -326,7 +331,8 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       // Send to backend
       const res = await fetch('/backend/api/prosbc-files/update', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.success) {
