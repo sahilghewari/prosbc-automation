@@ -306,7 +306,10 @@ const CSVEditorTable = ({
       const res = await fetch('/backend/api/prosbc-files/update', {
         method: 'POST',
         body: formData,
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          ...getAuthHeaders()
+        }
       });
       const data = await res.json();
       if (data.success) {
@@ -458,6 +461,11 @@ const CSVEditorTable = ({
     }));
     setRows(newRows);
     setHasChanges(true);
+  };
+    // Helper to get auth headers
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return token ? { 'Authorization': 'Bearer ' + token } : {};
   };
 
   // Create backup before editing
