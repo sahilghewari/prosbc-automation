@@ -1,11 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-
-
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 
 import './NapCreatorEnhanced.css';
 
 const NapCreatorEnhanced = ({ onAuthError }) => {
+  const { selectedInstance, hasSelectedInstance, selectedInstanceId } = useProSBCInstance();
+  
+  // ALL HOOKS MUST BE DECLARED FIRST - Before any conditional returns
+  
+  // UI State
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [currentStep, setCurrentStep] = useState(1);
+  const [showPerformanceMetrics, setShowPerformanceMetrics] = useState(false);
+  
+  // Section visibility
+  const [showRegistrationParams, setShowRegistrationParams] = useState(false);
+  const [showAuthParams, setShowAuthParams] = useState(false);
+  const [showNatParams, setShowNatParams] = useState(false);
+  const [showSipiParams, setShowSipiParams] = useState(false);
+  const [showAdvancedParams, setShowAdvancedParams] = useState(false);
+  const [showCallRateLimit, setShowCallRateLimit] = useState(false);
+  const [showCongestionThreshold, setShowCongestionThreshold] = useState(true);
+  
   // Basic NAP Configuration
   const [napName, setNapName] = useState('');
   const [enabled, setEnabled] = useState(true); // Always enabled, not shown in UI
@@ -96,23 +113,23 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
     { id: '6', name: 'voip0:Public_69:pr_Public_69:20000-40000' },
     { id: '7', name: 'voip0:Public_70:pr_Public_70:20000-40000' }
   ]);
-  
-  // UI State
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [currentStep, setCurrentStep] = useState(1);
-  const [showPerformanceMetrics, setShowPerformanceMetrics] = useState(false);
-  
-  // Section visibility
-  const [showRegistrationParams, setShowRegistrationParams] = useState(false);
-  const [showAuthParams, setShowAuthParams] = useState(false);
-  const [showNatParams, setShowNatParams] = useState(false);
-  const [showSipiParams, setShowSipiParams] = useState(false);
-  const [showAdvancedParams, setShowAdvancedParams] = useState(false);
-  const [showCallRateLimit, setShowCallRateLimit] = useState(false);
-  const [showCongestionThreshold, setShowCongestionThreshold] = useState(true);
-  
 
+  // Instance check
+  if (!hasSelectedInstance) {
+    return (
+      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
+        <div className="text-yellow-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
+        <p className="text-gray-300 mb-4">Please select a ProSBC instance to create NAPs.</p>
+        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
+      </div>
+    );
+  }
+  
   // NAP creation handler: send config to backend
   const createNapWithProSBCWorkflow = async () => {
     if (!napName.trim()) {
@@ -176,11 +193,26 @@ const NapCreatorEnhanced = ({ onAuthError }) => {
       };
       setCurrentStep(3);
       setMessage('Step 3: Sending NAP creation request to backend...');
-      // Add Authorization header with dashboard_token
+      // Use direct API call since NAP API handles instances internally
       const token = localStorage.getItem('dashboard_token');
-      const headers = token ? { Authorization: 'Bearer ' + token } : {};
-      const response = await axios.post('/backend/api/prosbc-nap/create', napConfig, { headers });
-      const result = response.data;
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...(selectedInstanceId && { 'X-ProSBC-Instance-ID': selectedInstanceId.toString() })
+      };
+      
+      const response = await fetch('/backend/api/prosbc-nap/create', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(napConfig)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `API call failed: ${response.status}`);
+      }
+      
+      const result = await response.json();
       const totalTime = Date.now() - startTime;
       if (result.success) {
         setCurrentStep(4);

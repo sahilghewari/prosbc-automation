@@ -4,14 +4,51 @@ import fetch from 'node-fetch';
 import { JSDOM } from 'jsdom';
 import FormData from 'form-data';
 import https from 'https';
-
+import { getInstanceContext } from './multiInstanceManager.js';
 
 class NapEditService {
-  constructor(baseUrl, sessionCookie = '') {
-    this.baseUrl = baseUrl || process.env.PROSBC_BASE_URL;
+  constructor(baseUrl = null, sessionCookie = '', instanceId = null) {
+    // Support both old and new initialization methods
+    if (instanceId) {
+      this.instanceId = instanceId;
+      this.instanceContext = null; // Will be loaded on first use
+      this.baseUrl = null; // Will be set from instance context
+    } else {
+      this.baseUrl = baseUrl || process.env.PROSBC_BASE_URL;
+      this.instanceId = null;
+      this.instanceContext = null;
+    }
     this.sessionCookie = sessionCookie;
     this.isLoggingIn = false;
-    console.log('NapEditService initialized:', { baseUrl: this.baseUrl, sessionCookieAvailable: !!this.sessionCookie });
+    console.log('NapEditService initialized:', { 
+      baseUrl: this.baseUrl, 
+      instanceId: this.instanceId,
+      sessionCookieAvailable: !!this.sessionCookie 
+    });
+  }
+
+  // Load instance context and credentials
+  async loadInstanceContext() {
+    if (this.instanceContext) return this.instanceContext;
+    
+    if (this.instanceId) {
+      this.instanceContext = await getInstanceContext(this.instanceId);
+      this.baseUrl = this.instanceContext.baseUrl;
+      console.log(`[NAP Edit Service] Loaded context for instance: ${this.instanceContext.name} (${this.baseUrl})`);
+    } else {
+      // Use environment variables as fallback
+      this.instanceContext = {
+        baseUrl: process.env.PROSBC_BASE_URL,
+        username: process.env.PROSBC_USERNAME,
+        password: process.env.PROSBC_PASSWORD,
+        name: 'Environment-based',
+        id: 'env'
+      };
+      this.baseUrl = this.instanceContext.baseUrl;
+      console.log(`[NAP Edit Service] Using environment-based configuration: ${this.baseUrl}`);
+    }
+    
+    return this.instanceContext;
   }
 
   // Login to ProSBC and store the session cookie
@@ -19,9 +56,15 @@ class NapEditService {
     if (this.sessionCookie || this.isLoggingIn) return;
     this.isLoggingIn = true;
     try {
-      const username = process.env.PROSBC_USERNAME;
-      const password = process.env.PROSBC_PASSWORD;
-      if (!username || !password) throw new Error('Missing ProSBC credentials in .env');
+      // Ensure instance context is loaded
+      await this.loadInstanceContext();
+      
+      const username = this.instanceContext.username;
+      const password = this.instanceContext.password;
+      if (!username || !password) {
+        throw new Error(`Missing ProSBC credentials for instance: ${this.instanceContext.name}`);
+      }
+      
       const loginUrl = `${this.baseUrl}/login/check`;
       const formBody = `user%5Bname%5D=${encodeURIComponent(username)}&user%5Bpass%5D=${encodeURIComponent(password)}`;
       const response = await fetch(loginUrl, {
@@ -40,7 +83,7 @@ class NapEditService {
         const match = setCookie.match(/_WebOAMP_session=([^;]+);/);
         if (match) {
           this.sessionCookie = `_WebOAMP_session=${match[1]}`;
-          console.log('[ProSBC] Login successful, session cookie set.');
+          console.log(`[ProSBC ${this.instanceContext.name}] Login successful, session cookie set.`);
         } else {
           throw new Error('Session cookie not found in login response');
         }
@@ -817,4 +860,10 @@ class NapEditService {
   }
 }
 
+// Export both the class and factory function for instance-based initialization
 export default NapEditService;
+
+// Factory function to create instance-specific NAP edit services
+export function createNapEditService(instanceId, sessionCookie = '') {
+  return new NapEditService(null, sessionCookie, instanceId);
+}

@@ -3,19 +3,31 @@
 
 import axios from 'axios';
 import FormData from 'form-data';
+import { getInstanceContext } from './multiInstanceManager.js';
 
 /**
  * Upload a DF file to ProSBC
  * @param {Buffer|Stream} fileBuffer - The file data
  * @param {string} fileName - The file name
  * @param {string} sessionCookie - The _WebOAMP_session cookie value
- * @param {string} baseUrl - The base URL, e.g. https://prosbc2tpa2.dipvtel.com:12358
+ * @param {string} baseUrl - The base URL (optional if instanceId provided)
+ * @param {number} instanceId - ProSBC instance ID (optional if baseUrl provided)
  * @returns {Promise<object>} Result of upload
  */
-async function uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl) {
-  const resolvedBaseUrl = baseUrl || process.env.PROSBC_BASE_URL;
+async function uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl = null, instanceId = null) {
+  let resolvedBaseUrl = baseUrl;
+  
+  // If instanceId provided, get baseUrl from instance context
+  if (instanceId && !baseUrl) {
+    const instanceContext = await getInstanceContext(instanceId);
+    resolvedBaseUrl = instanceContext.baseUrl;
+    console.log(`[DF Upload] Using instance ${instanceContext.name}: ${resolvedBaseUrl}`);
+  } else if (!resolvedBaseUrl) {
+    resolvedBaseUrl = process.env.PROSBC_BASE_URL;
+  }
+  
   if (!resolvedBaseUrl) {
-    throw new Error('ProSBC base URL is not defined. Set PROSBC_BASE_URL in your environment variables.');
+    throw new Error('ProSBC base URL is not defined. Provide baseUrl parameter, instanceId, or set PROSBC_BASE_URL in environment variables.');
   }
   const url = `${resolvedBaseUrl}/file_dbs/1/routesets_definitions`;
   const uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_definitions/new`;
@@ -104,13 +116,24 @@ async function uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
  * @param {Buffer|Stream} fileBuffer - The file data
  * @param {string} fileName - The file name
  * @param {string} sessionCookie - The _WebOAMP_session cookie value
- * @param {string} baseUrl - The base URL, e.g. https://prosbc2tpa2.dipvtel.com:12358
+ * @param {string} baseUrl - The base URL (optional if instanceId provided)
+ * @param {number} instanceId - ProSBC instance ID (optional if baseUrl provided)
  * @returns {Promise<object>} Result of upload
  */
-async function uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl) {
-  const resolvedBaseUrl = baseUrl || process.env.PROSBC_BASE_URL;
+async function uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl = null, instanceId = null) {
+  let resolvedBaseUrl = baseUrl;
+  
+  // If instanceId provided, get baseUrl from instance context
+  if (instanceId && !baseUrl) {
+    const instanceContext = await getInstanceContext(instanceId);
+    resolvedBaseUrl = instanceContext.baseUrl;
+    console.log(`[DM Upload] Using instance ${instanceContext.name}: ${resolvedBaseUrl}`);
+  } else if (!resolvedBaseUrl) {
+    resolvedBaseUrl = process.env.PROSBC_BASE_URL;
+  }
+  
   if (!resolvedBaseUrl) {
-    throw new Error('ProSBC base URL is not defined. Set PROSBC_BASE_URL in your environment variables.');
+    throw new Error('ProSBC base URL is not defined. Provide baseUrl parameter, instanceId, or set PROSBC_BASE_URL in environment variables.');
   }
   const url = `${resolvedBaseUrl}/file_dbs/1/routesets_digitmaps`;
   const uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_digitmaps/new`;
@@ -195,3 +218,12 @@ async function uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
 }
 
 export { uploadDfFileToProSBC, uploadDmFileToProSBC };
+
+// Helper functions for instance-based uploads
+export async function uploadDfFileByInstanceId(fileBuffer, fileName, sessionCookie, instanceId) {
+  return uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, null, instanceId);
+}
+
+export async function uploadDmFileByInstanceId(fileBuffer, fileName, sessionCookie, instanceId) {
+  return uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, null, instanceId);
+}

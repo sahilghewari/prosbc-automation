@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { ClientDatabaseService } from '../services/apiClient.js';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 
 function FileUploader({ onAuthError }) {
+  const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
+  const instanceAPI = useInstanceAPI();
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState('df'); // 'df' or 'dm'
@@ -14,6 +18,22 @@ function FileUploader({ onAuthError }) {
   // DM File Upload States
   const [dmFile, setDmFile] = useState(null);
   const [dmFileName, setDmFileName] = useState("");
+
+  // Instance check
+  if (!hasSelectedInstance) {
+    return (
+      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
+        <div className="text-yellow-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
+        <p className="text-gray-300 mb-4">Please select a ProSBC instance to upload files.</p>
+        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
+      </div>
+    );
+  }
 
   // Handle DF file selection
   const handleDfFileChange = (e) => {

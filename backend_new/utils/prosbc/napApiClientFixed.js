@@ -39,11 +39,13 @@ export function parseFileTableSection(sectionHtml, type = 'routesets_digitmaps')
   return files;
 }
 // Ensure the ProSBC session is switched to the correct config before any NAP operation
-const ensureConfigSelected = async (configId) => {
+const ensureConfigSelected = async (configId, client = null) => {
   if (!configId) configId = 'config_1';
+  const apiClientToUse = client || apiClient;
+  
   try {
     console.log(`[ProSBC] Switching to config: ${configId}`);
-    const res = await apiClient.get(`/configurations/${configId}/choose_redirect`, {
+    const res = await apiClientToUse.get(`/configurations/${configId}/choose_redirect`, {
       headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
     });
     console.log(`[ProSBC] /choose_redirect status: ${res.status}`);
@@ -88,8 +90,12 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 //
 import axios from 'axios';
 import { JSDOM } from 'jsdom';
+import { getInstanceContext } from './multiInstanceManager.js';
 
-// Get credentials from environment variables
+// Store multiple API clients for different instances
+const apiClientInstances = new Map();
+
+// Get credentials from environment variables (fallback)
 const getCredentials = () => {
   const username = process.env.PROSBC_USERNAME;
   const password = process.env.PROSBC_PASSWORD;
@@ -99,7 +105,53 @@ const getCredentials = () => {
   return { username, password };
 };
 
-// Create axios instance with timeout settings
+// Create an instance-specific axios client
+const createApiClient = async (instanceId = null) => {
+  let config = {};
+  
+  if (instanceId) {
+    // Get instance-specific configuration
+    const instanceContext = await getInstanceContext(instanceId);
+    config = {
+      baseURL: instanceContext.baseUrl,
+      timeout: 120000,
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/html, */*',
+      },
+    };
+    console.log(`[NAP API Client] Created client for instance: ${instanceContext.name} (${instanceContext.baseUrl})`);
+  } else {
+    // Fallback to environment variables
+    config = {
+      baseURL: process.env.PROSBC_BASE_URL,
+      timeout: 120000,
+      withCredentials: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/html, */*',
+      },
+    };
+    console.log(`[NAP API Client] Created client using environment variables: ${config.baseURL}`);
+  }
+  
+  return axios.create(config);
+};
+
+// Get or create API client for specific instance
+const getApiClient = async (instanceId = null) => {
+  const key = instanceId || 'default';
+  
+  if (!apiClientInstances.has(key)) {
+    const client = await createApiClient(instanceId);
+    apiClientInstances.set(key, client);
+  }
+  
+  return apiClientInstances.get(key);
+};
+
+// Legacy global client for backward compatibility
 const apiClient = axios.create({
   baseURL: process.env.PROSBC_BASE_URL,
   timeout: 120000,
@@ -506,5 +558,25 @@ export const validateNapData = (napData) => {
     warnings
   };
 };
+
+// Instance-specific helper functions
+export const createInstanceApiClient = async (instanceId) => {
+  return await getApiClient(instanceId);
+};
+
+export const fetchExistingNapsByInstance = async (configId = 'config_1', instanceId) => {
+  return fetchExistingNaps(configId, instanceId);
+};
+
+export const fetchDfFilesByInstance = async (configId = 'config_1', instanceId) => {
+  return fetchDfFiles(configId, instanceId);
+};
+
+export const fetchDmFilesByInstance = async (configId = 'config_1', instanceId) => {
+  return fetchDmFiles(configId, instanceId);
+};
+
+// Export the getApiClient function for advanced use cases
+export { getApiClient };
 
 export default apiClient;

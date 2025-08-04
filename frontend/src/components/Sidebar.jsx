@@ -1,28 +1,63 @@
-import React, { useState, useEffect } from 'react';
 import './Sidebar.css';
 
 
-const Sidebar = ({ activeSection, onSectionChange, onCollapseChange, onConfigChange }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+import React, { useState, useEffect } from 'react';
+import ProSBCInstanceSelector from './ProSBCInstanceSelector';
+import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+
+const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange, onConfigChange }) => {
+  const { hasSelectedInstance, selectedInstance } = useProSBCInstance();
   const [configs, setConfigs] = useState([]);
   const [selectedConfig, setSelectedConfig] = useState('');
   const [loadingConfigs, setLoadingConfigs] = useState(true);
 
+  // Function to fetch configs
+  const fetchConfigs = async (instance = null) => {
+    setLoadingConfigs(true);
+    try {
+      // Get authentication headers and instance-specific headers
+      const token = localStorage.getItem('dashboard_token');
+      const targetInstance = instance || selectedInstance;
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...(targetInstance?.id && { 'X-ProSBC-Instance-ID': targetInstance.id.toString() })
+      };
+
+      console.log('[Sidebar] Fetching configs for instance:', targetInstance?.id, 'Headers:', headers);
+      const res = await fetch('/backend/api/prosbc-files/test-configs', { headers });
+      const data = await res.json();
+      console.log('[Sidebar] Received configs:', data);
+      setConfigs(data.configs || []);
+      const active = (data.configs || []).find(cfg => cfg.active);
+      if (active) {
+        setSelectedConfig(active.id);
+        onConfigChange?.(active.id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch configs:', error);
+    } finally {
+      setLoadingConfigs(false);
+    }
+  };
+
+  // Add instance refresh hook to reload configs when instance changes
+  useInstanceRefresh(
+    async (instance) => {
+      console.log('[Sidebar] Refreshing configs for instance:', instance?.id);
+      await fetchConfigs(instance);
+    },
+    [], // No additional dependencies
+    {
+      refreshOnMount: true,
+      refreshOnInstanceChange: true
+    }
+  );
+
   // Fetch live configs on mount
   useEffect(() => {
-    setLoadingConfigs(true);
-    fetch('/backend/api/prosbc-files/test-configs')
-      .then(res => res.json())
-      .then(data => {
-        setConfigs(data.configs || []);
-        const active = (data.configs || []).find(cfg => cfg.active);
-        if (active) {
-          setSelectedConfig(active.id);
-          onConfigChange?.(active.id);
-        }
-        setLoadingConfigs(false);
-      })
-      .catch(() => setLoadingConfigs(false));
+    fetchConfigs();
   }, []);
 
   const handleConfigChange = (e) => {
@@ -31,9 +66,7 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange, onConfigCha
   };
 
   const handleCollapseToggle = () => {
-    const newCollapsedState = !isCollapsed;
-    setIsCollapsed(newCollapsedState);
-    onCollapseChange?.(newCollapsedState);
+    onCollapseToggle?.();
   };
 
   const menuItems = [
@@ -95,6 +128,16 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange, onConfigCha
         </svg>
       )
     },
+    {
+      id: 'prosbc-instances',
+      title: 'ProSBC Instances',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      ),
+      subtitle: 'Manage ProSBC server instances'
+    },
  
    
    
@@ -141,6 +184,17 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange, onConfigCha
                 ))}
               </select>
             )}
+          </div>
+        )}
+        
+        {/* ProSBC Instance Selector */}
+        {!isCollapsed && (
+          <div className="mt-4">
+            <ProSBCInstanceSelector
+              showDetails={false}
+              className="sidebar-instance-selector"
+              size="small"
+            />
           </div>
         )}
       </div>

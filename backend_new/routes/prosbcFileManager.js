@@ -3,13 +3,42 @@ import express from 'express';
 import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
-import prosbcFileManager from '../utils/prosbc/prosbcFileManager.js';
+import prosbcFileManager, { createProSBCFileAPI } from '../utils/prosbc/prosbcFileManager.js';
+import { getProSBCCredentials } from '../utils/prosbc/multiInstanceManager.js';
 
 const router = express.Router();
 
 // Helper to extract configId from request (query, body, or header)
 function getConfigIdFromRequest(req) {
   return req.query.configId || req.body?.configId || req.headers['x-prosbc-config-id'] || null;
+}
+
+// Helper to get instance-specific ProSBC configuration
+async function getInstanceConfig(req) {
+  const instanceId = req.headers['x-prosbc-instance-id'];
+  
+  if (instanceId) {
+    console.log(`[FileManager] Using instance ${instanceId}`);
+    const instance = await getProSBCCredentials(instanceId);
+    if (instance) {
+      return {
+        baseURL: instance.baseUrl,
+        username: instance.username,
+        password: instance.password,
+        instanceId: instanceId
+      };
+    } else {
+      throw new Error(`Instance ${instanceId} not found`);
+    }
+  } else {
+    console.log('[FileManager] Using default environment settings');
+    return {
+      baseURL: process.env.PROSBC_BASE_URL,
+      username: process.env.PROSBC_USERNAME,
+      password: process.env.PROSBC_PASSWORD,
+      instanceId: 'default'
+    };
+  }
 }
 
 // Simple export: stream file directly to client as download
@@ -74,9 +103,16 @@ router.get('/download', async (req, res) => {
 router.get('/df/list', async (req, res) => {
   try {
     const configId = getConfigIdFromRequest(req);
-    const result = await prosbcFileManager.listDfFiles(configId);
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    
+    // Create instance-specific file manager
+    const instanceFileManager = createProSBCFileAPI(instanceId);
+    
+    const result = await instanceFileManager.listDfFiles(configId);
+    console.log(`[DF List] Instance ${instanceId || 'default'} returned ${result.dfFiles?.length || 0} files`);
     res.json(result);
   } catch (err) {
+    console.error('[DF List] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -85,9 +121,16 @@ router.get('/df/list', async (req, res) => {
 router.get('/dm/list', async (req, res) => {
   try {
     const configId = getConfigIdFromRequest(req);
-    const result = await prosbcFileManager.listDmFiles(configId);
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    
+    // Create instance-specific file manager
+    const instanceFileManager = createProSBCFileAPI(instanceId);
+    
+    const result = await instanceFileManager.listDmFiles(configId);
+    console.log(`[DM List] Instance ${instanceId || 'default'} returned ${result.dmFiles?.length || 0} files`);
     res.json(result);
   } catch (err) {
+    console.error('[DM List] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

@@ -4,11 +4,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { enhancedFileStorageService } from '../utils/enhancedFileStorageServiceNew';
 import { updateFile, updateMultipleFiles, testConnection, getUpdateStatus, getUpdateHistory } from '../utils/fileUpdateService';
 import CSVFileEditor from './CSVFileEditor';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
+import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 
 import AddProSBCFilesButton from './AddProSBCFilesButton';
 import DeleteAllFilesButton from './DeleteAllFilesButton';
 
 function FileManagement({ onAuthError, configId }) {
+  const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
+  const instanceAPI = useInstanceAPI();
   // Helper to get auth headers
   const getAuthHeaders = () => {
     const token = localStorage.getItem('dashboard_token');
@@ -50,27 +55,78 @@ function FileManagement({ onAuthError, configId }) {
   const [showCSVEditor, setShowCSVEditor] = useState(false);
   const [selectedCSVFile, setSelectedCSVFile] = useState(null);
 
+  // Add instance refresh hook to automatically reload files when instance changes
+  useInstanceRefresh(
+    async (instance) => {
+      console.log('[FileManagement] Refreshing files for instance:', instance?.id);
+      await loadFiles(instance);
+      await loadStoredFiles(instance);
+    },
+    [configId], // Dependencies - reload when configId changes too
+    {
+      refreshOnMount: true,
+      refreshOnInstanceChange: true
+    }
+  );
+
+  // Instance check
+  if (!hasSelectedInstance) {
+    return (
+      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
+        <div className="text-yellow-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
+        <p className="text-gray-300 mb-4">Please select a ProSBC instance to manage files.</p>
+        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
+      </div>
+    );
+  }
+
   // Load files on component mount and when configId changes
   useEffect(() => {
-    loadFiles();
-    loadStoredFiles();
-    loadDatabaseStats();
-    loadUpdateHistory();
-  }, [configId]);
+    if (hasSelectedInstance) {
+      loadFiles();
+      loadStoredFiles();
+      loadDatabaseStats();
+      loadUpdateHistory();
+    }
+  }, [configId, hasSelectedInstance]);
 
   // Load stored files when search term or file type changes
   useEffect(() => {
-    loadStoredFiles();
-  }, [searchTerm, selectedFileType, selectedCategory]);
+    if (hasSelectedInstance) {
+      loadStoredFiles();
+    }
+  }, [searchTerm, selectedFileType, selectedCategory, hasSelectedInstance]);
 
   // Load all files
-  const loadFiles = async () => {
+  const loadFiles = async (instance = null) => {
+    const targetInstance = instance || selectedInstance;
+    if (!targetInstance) return;
+    
     setRefreshing(true);
     try {
-      const [dfRes, dmRes] = await Promise.all([
-        fetch(`/backend/api/prosbc-files/df/list?configId=${configId || ''}`, { headers: getAuthHeaders() }).then(r => r.json()),
-        fetch(`/backend/api/prosbc-files/dm/list?configId=${configId || ''}`, { headers: getAuthHeaders() }).then(r => r.json())
+      // Use direct API calls since file API handles instances internally
+      const token = localStorage.getItem('dashboard_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...(targetInstance?.id && { 'X-ProSBC-Instance-ID': targetInstance.id.toString() })
+      };
+      
+      console.log('[FileManagement] Loading files for instance:', targetInstance?.id);
+      
+      const [dfResponse, dmResponse] = await Promise.all([
+        fetch(`/backend/api/prosbc-files/df/list?configId=${configId || ''}`, { headers }),
+        fetch(`/backend/api/prosbc-files/dm/list?configId=${configId || ''}`, { headers })
       ]);
+      
+      const dfRes = dfResponse.ok ? await dfResponse.json() : { success: false, message: `DF API failed: ${dfResponse.status}` };
+      const dmRes = dmResponse.ok ? await dmResponse.json() : { success: false, message: `DM API failed: ${dmResponse.status}` };
+      
       if (dfRes.success) setDfFiles(dfRes.files);
       if (dmRes.success) setDmFiles(dmRes.files);
       setMessage("✅ File lists refreshed successfully!");
@@ -325,7 +381,9 @@ function FileManagement({ onAuthError, configId }) {
   };
 
   // Load stored files from database
-  const loadStoredFiles = async () => {
+  const loadStoredFiles = async (instance = null) => {
+    // Note: This function loads from local database, not instance-specific
+    // The instance parameter is for consistency with the refresh hook
     try {
       let result;
       

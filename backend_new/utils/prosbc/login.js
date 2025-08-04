@@ -9,8 +9,22 @@ import axios from 'axios';
  * @returns {Promise<string>} The _WebOAMP_session cookie value
  */
 export async function prosbcLogin(baseUrl, username, password) {
-  const loginUrl = `${baseUrl}/login`;
-  const loginPostUrl = `${baseUrl}/login/check`;
+  // Validate URL format
+  if (!baseUrl) {
+    throw new Error("Invalid URL: URL is empty or undefined");
+  }
+  
+  // Ensure URL has protocol
+  let normalizedUrl = baseUrl;
+  if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+    normalizedUrl = 'https://' + normalizedUrl;
+  }
+  
+  console.log(`Attempting to login to: ${normalizedUrl}`);
+  
+  const loginUrl = `${normalizedUrl}/login`;
+  const loginPostUrl = `${normalizedUrl}/login/check`;
+  
   // Step 1: Fetch login page to get authenticity_token
   let authenticityToken = null;
   let initialCookies = '';

@@ -5,29 +5,74 @@ import fs from 'fs';
 import { prosbcLogin } from './login.js';
 import { selectConfiguration } from './prosbcConfigSelector.js';
 import { fetchLiveConfigIds } from './prosbcConfigLiveFetcher.js';
+import { getInstanceContext } from './multiInstanceManager.js';
 
 class ProSBCFileAPI {
-  constructor() {
-    this.baseURL = process.env.PROSBC_BASE_URL;
+  constructor(instanceId = null) {
+    // Support both old env-based and new instance-based initialization
+    if (instanceId) {
+      this.instanceId = instanceId;
+      this.instanceContext = null; // Will be loaded on first use
+      this.baseURL = null; // Will be set from instance context
+    } else {
+      // Fallback to environment variables for backward compatibility
+      this.baseURL = process.env.PROSBC_BASE_URL;
+      this.instanceId = null;
+      this.instanceContext = null;
+    }
     this.sessionCookies = null;
     this.selectedConfigId = null;
     this.configs = null;
     this.configSelectionDone = false;
   }
 
-  getBasicAuthHeader() {
-    const username = process.env.PROSBC_USERNAME;
-    const password = process.env.PROSBC_PASSWORD;
-    const credentials = Buffer.from(`${username}:${password}`).toString('base64');
-    return `Basic ${credentials}`;
+  // Load instance context and credentials
+  async loadInstanceContext() {
+    if (this.instanceContext) return this.instanceContext;
+    
+    if (this.instanceId) {
+      this.instanceContext = await getInstanceContext(this.instanceId);
+      this.baseURL = this.instanceContext.baseUrl;
+      console.log(`[ProSBC FileAPI] Loaded context for instance: ${this.instanceContext.name} (${this.baseURL})`);
+    } else {
+      // Use environment variables as fallback
+      this.instanceContext = {
+        baseUrl: process.env.PROSBC_BASE_URL,
+        username: process.env.PROSBC_USERNAME,
+        password: process.env.PROSBC_PASSWORD,
+        name: 'Environment-based',
+        id: 'env'
+      };
+      this.baseURL = this.instanceContext.baseUrl;
+      console.log(`[ProSBC FileAPI] Using environment-based configuration: ${this.baseURL}`);
+    }
+    
+    return this.instanceContext;
   }
 
+  getBasicAuthHeader() {
+    // Use instance context if available, fallback to environment
+    if (this.instanceContext) {
+      const credentials = Buffer.from(`${this.instanceContext.username}:${this.instanceContext.password}`).toString('base64');
+      return `Basic ${credentials}`;
+    } else {
+      const username = process.env.PROSBC_USERNAME;
+      const password = process.env.PROSBC_PASSWORD;
+      const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+      return `Basic ${credentials}`;
+    }
+  }
 
   async getSessionCookie() {
     if (this.sessionCookie) return this.sessionCookie;
-    const username = process.env.PROSBC_USERNAME;
-    const password = process.env.PROSBC_PASSWORD;
+    
+    // Ensure instance context is loaded
+    await this.loadInstanceContext();
+    
+    const username = this.instanceContext.username;
+    const password = this.instanceContext.password;
     const baseUrl = this.baseURL;
+    
     this.sessionCookie = await prosbcLogin(baseUrl, username, password);
     return this.sessionCookie;
   }
@@ -37,6 +82,10 @@ class ProSBCFileAPI {
   async ensureConfigSelected(configId = null) {
     // If configId is provided and different, always reselect
     if (this.configSelectionDone && (!configId || configId === this.selectedConfigId)) return;
+    
+    // Ensure instance context is loaded
+    await this.loadInstanceContext();
+    
     const sessionCookie = await this.getSessionCookie();
     // Fetch live configs
     this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
@@ -313,7 +362,8 @@ class ProSBCFileAPI {
       const sectionHtml = sectionMatch[1];
       console.log('[ProSBC] Section HTML preview:', sectionHtml.substring(0, 500));
       // Robustly parse file rows for all configIds
-      const files = [];
+      // Clear the files array since we found the section
+      files.length = 0;
       // Match all file rows for the given fileType (routesets_definitions or routesets_digitmaps)
       // Example row:
       // <td><a href="/file_dbs/3/routesets_digitmaps/61/edit" ...>Update</a></td>
@@ -583,4 +633,11 @@ class ProSBCFileAPI {
   }
 }
 
+// Export both the class and a default instance for backward compatibility
+export { ProSBCFileAPI };
 export default new ProSBCFileAPI();
+
+// Factory function to create instance-specific API clients
+export function createProSBCFileAPI(instanceId) {
+  return new ProSBCFileAPI(instanceId);
+}

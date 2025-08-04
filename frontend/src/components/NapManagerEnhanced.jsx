@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 // import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
 
 // Helper functions to call backend RESTful API endpoints with configId
@@ -10,10 +12,29 @@ const getAuthHeaders = () => {
 };
 
 // All NAP operations now require configId and napName (not napId)
-const fetchLiveNaps = async (configId) => {
-  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps`, { headers: getAuthHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch NAPs');
-  const data = await res.json();
+const fetchLiveNaps = async (configId, selectedInstanceId) => {
+  // Use instance-specific API endpoint
+  const token = localStorage.getItem('dashboard_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+  
+  // Construct instance-specific URL
+  const url = selectedInstanceId 
+    ? `/backend/api/prosbc-nap-api/instances/${selectedInstanceId}/configurations/${configId}/naps`
+    : `/backend/api/prosbc-nap-api/configurations/${configId}/naps`;
+  
+  console.log(`[fetchLiveNaps] Using URL: ${url} for instance: ${selectedInstanceId}`);
+  
+  const response = await fetch(url, { headers });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `API call failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to fetch NAPs');
   // Always return an array for naps
   if (Array.isArray(data.naps)) return data.naps;
@@ -26,22 +47,63 @@ const fetchLiveNaps = async (configId) => {
   return [];
 };
 
-const deleteNap = async (configId, napName) => {
-  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`, { method: 'DELETE', headers: getAuthHeaders() });
-  if (!res.ok) throw new Error('Failed to delete NAP');
-  const data = await res.json();
+const deleteNap = async (configId, napName, selectedInstanceId) => {
+  // Use instance-specific API endpoint
+  const token = localStorage.getItem('dashboard_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+  
+  // Construct instance-specific URL
+  const url = selectedInstanceId 
+    ? `/backend/api/prosbc-nap-api/instances/${selectedInstanceId}/configurations/${configId}/naps/${encodeURIComponent(napName)}`
+    : `/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`;
+  
+  console.log(`[deleteNap] Using URL: ${url} for instance: ${selectedInstanceId}`);
+  
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers
+  });
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `API call failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to delete NAP');
   return data;
 };
 
-const updateNap = async (configId, napName, napData) => {
-  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`, {
+const updateNap = async (configId, napName, napData, selectedInstanceId) => {
+  // Use instance-specific API endpoint
+  const token = localStorage.getItem('dashboard_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+  
+  // Construct instance-specific URL
+  const url = selectedInstanceId 
+    ? `/backend/api/prosbc-nap-api/instances/${selectedInstanceId}/configurations/${configId}/naps/${encodeURIComponent(napName)}`
+    : `/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`;
+  
+  console.log(`[updateNap] Using URL: ${url} for instance: ${selectedInstanceId}`);
+  
+  const response = await fetch(url, {
     method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(napData),
+    headers,
+    body: JSON.stringify(napData)
   });
-  if (!res.ok) throw new Error('Failed to update NAP');
-  const data = await res.json();
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `API call failed: ${response.status}`);
+  }
+  
+  const data = await response.json();
   if (!data.success) throw new Error(data.message || 'Failed to update NAP');
   return data;
 };
@@ -50,6 +112,8 @@ import EditNapModal from './NapEditor';
 
 // Accept configId as a prop (default to 'config_1' if not provided)
 const NapManagerEnhanced = ({ onAuthError, configId = 'config_1' }) => {
+  const { selectedInstance, hasSelectedInstance, selectedInstanceId } = useProSBCInstance();
+
   const [naps, setNaps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -62,27 +126,18 @@ const NapManagerEnhanced = ({ onAuthError, configId = 'config_1' }) => {
   const [baseUrl, setBaseUrl] = useState('/api');
   const [sessionCookie, setSessionCookie] = useState('');
 
-
-  useEffect(() => {
-    // Get session cookie from document.cookie
-    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-      const [key, value] = cookie.trim().split('=');
-      acc[key] = value;
-      return acc;
-    }, {});
-    if (cookies['_prosbc_session']) {
-      setSessionCookie(cookies['_prosbc_session']);
-    }
-    loadNaps();
-    // Re-load naps when configId changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configId]);
-
-  const loadNaps = async () => {
+  // Define loadNaps function for reuse
+  const loadNaps = async (instance = null) => {
+    const targetInstance = instance || selectedInstance;
+    const targetInstanceId = targetInstance?.id || selectedInstanceId;
+    
+    if (!targetInstance && !hasSelectedInstance) return;
+    
     try {
       setLoading(true);
       setError(null);
-      const napData = await fetchLiveNaps(configId);
+      console.log('[NapManagerEnhanced] Loading NAPs for instance:', targetInstanceId);
+      const napData = await fetchLiveNaps(configId, targetInstanceId);
       setNaps(napData);
     } catch (err) {
       const errorMessage = err.message || 'Unknown error occurred';
@@ -100,13 +155,59 @@ const NapManagerEnhanced = ({ onAuthError, configId = 'config_1' }) => {
     }
   };
 
+  // Add instance refresh hook to automatically reload NAPs when instance changes
+  useInstanceRefresh(
+    async (instance) => {
+      console.log('[NapManagerEnhanced] Refreshing NAPs for instance:', instance?.id);
+      await loadNaps(instance);
+    },
+    [configId], // Dependencies - reload when configId changes too
+    {
+      refreshOnMount: true,
+      refreshOnInstanceChange: true
+    }
+  );
+
+  // Instance check
+  if (!hasSelectedInstance) {
+    return (
+      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
+        <div className="text-yellow-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
+        <p className="text-gray-300 mb-4">Please select a ProSBC instance to manage NAPs.</p>
+        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
+      </div>
+    );
+  }
+
+  useEffect(() => {
+    if (hasSelectedInstance) {
+      // Get session cookie from document.cookie
+      const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [key, value] = cookie.trim().split('=');
+        acc[key] = value;
+        return acc;
+      }, {});
+      if (cookies['_prosbc_session']) {
+        setSessionCookie(cookies['_prosbc_session']);
+      }
+      loadNaps();
+    }
+    // Re-load naps when configId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configId, hasSelectedInstance]);
+
   const handleDelete = async (napName) => {
     if (!window.confirm(`Are you sure you want to delete '${napName}'?`)) {
       return;
     }
     try {
       setLoading(true);
-      await deleteNap(configId, napName);
+      await deleteNap(configId, napName, selectedInstanceId);
       await loadNaps();
       alert(`NAP '${napName}' was successfully deleted.`);
     } catch (err) {

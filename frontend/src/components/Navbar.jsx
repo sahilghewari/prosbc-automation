@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getDBHealth } from '../services/apiClient.js';
+import InstanceStatusDisplay from './InstanceStatusDisplay';
 import './Navbar.css';
 
 const Navbar = ({ onLoginClick, isDashboardAuth, onLogout, onShowProfile }) => {
@@ -18,6 +19,11 @@ const Navbar = ({ onLoginClick, isDashboardAuth, onLogout, onShowProfile }) => {
             <h1 className="text-white text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
               PROSBC AUTOMATION
             </h1>
+          </div>
+
+          {/* Center - Instance Status */}
+          <div className="flex-1 flex justify-center">
+            <InstanceStatusDisplay />
           </div>
 
           {/* Login/Logout Button and Profile */}

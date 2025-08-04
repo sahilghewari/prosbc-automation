@@ -5,6 +5,7 @@ import './models/index.js';
 
 import jwt from 'jsonwebtoken';
 import Log from './models/Log.js';
+import proSbcInstanceService from './services/proSbcInstanceService.js';
 
 import napsRouter from './routes/naps.js';
 import filesRouter from './routes/files.js';
@@ -13,6 +14,7 @@ import profileRouter from './routes/profile.js';
 import prosbcNapRouter from './routes/prosbc-nap.js';
 import prosbcNapApiRouter from './routes/prosbc-nap-api.js';
 import napEditRoutes from './routes/napEdit.js';
+import prosbcInstancesRouter from './routes/prosbcInstances.js';
 
 import prosbcUploadRouter from './routes/prosbcUpload.js';
 
@@ -93,6 +95,8 @@ app.use('/backend/api/auth', authRouter);
 app.use('/backend/api/auth', profileRouter);
 app.use('/backend/api/nap-edit', napEditRoutes);
 
+// ProSBC Instance Management routes
+app.use('/backend/api/prosbc-instances', prosbcInstancesRouter);
 
 // ProSBC Upload routes
 app.use('/backend/api/prosbc-upload', prosbcUploadRouter);
@@ -107,17 +111,36 @@ app.use('/backend/api/routeset-mapping', routesetMappingRouter);
 // Test endpoint: fetch live ProSBC configs
 app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
   try {
-    // You may want to secure this endpoint in production
-    const baseURL = process.env.PROSBC_BASE_URL;
-    // Use the session cookie from the backend utility (simulate login)
-    // For demo, use prosbcLogin directly
+    // Extract instance ID from headers for instance-specific config fetching
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    let baseURL, username, password;
+
+    if (instanceId) {
+      // Use instance-specific settings
+      const { getProSBCCredentials } = await import('./utils/prosbc/multiInstanceManager.js');
+      const instance = await getProSBCCredentials(instanceId);
+      if (instance) {
+        baseURL = instance.baseUrl;
+        username = instance.username;
+        password = instance.password;
+        console.log(`[test-configs] Using instance ${instanceId}: ${baseURL}`);
+      } else {
+        return res.status(404).json({ success: false, error: `Instance ${instanceId} not found` });
+      }
+    } else {
+      // Use default environment settings
+      baseURL = process.env.PROSBC_BASE_URL;
+      username = process.env.PROSBC_USERNAME;
+      password = process.env.PROSBC_PASSWORD;
+      console.log('[test-configs] Using default environment settings');
+    }
+
     const { prosbcLogin } = await import('./utils/prosbc/login.js');
-    const username = process.env.PROSBC_USERNAME;
-    const password = process.env.PROSBC_PASSWORD;
     const sessionCookie = await prosbcLogin(baseURL, username, password);
     const configs = await fetchLiveConfigIds(baseURL, sessionCookie);
-    res.json({ success: true, configs });
+    res.json({ success: true, configs, instanceId: instanceId || 'default' });
   } catch (err) {
+    console.error('[test-configs] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -141,6 +164,10 @@ const PORT = process.env.PORT || 3001;
     await database.connect();
     // Sync Log table (does not drop existing data)
     await Log.sync();
+    
+    // Initialize default ProSBC instances
+    await proSbcInstanceService.initializeDefaultInstances();
+    
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });

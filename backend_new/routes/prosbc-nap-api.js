@@ -7,7 +7,8 @@ import {
   deleteNap,
   checkNapExists,
   generateNapTemplate,
-  validateNapData
+  validateNapData,
+  fetchExistingNapsByInstance
 } from '../utils/prosbc/napApiClientFixed.js';
 
 const router = express.Router();
@@ -22,12 +23,24 @@ router.use(async (req, res, next) => {
   }
 });
 
+// Instance-specific NAP endpoints under /instances/:instanceId/configurations/:configId/naps
+router.get('/instances/:instanceId/configurations/:configId/naps', async (req, res) => {
+  try {
+    const { instanceId, configId } = req.params;
+    console.log(`[API] Fetching NAPs for instance ${instanceId}, config ${configId}`);
+    const naps = await fetchExistingNapsByInstance(configId, parseInt(instanceId));
+    res.json({ success: true, naps, instanceId: parseInt(instanceId), configId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
-// RESTful NAP endpoints under /configurations/:configId/naps
+// Legacy RESTful NAP endpoints under /configurations/:configId/naps (backward compatibility)
 // List all NAPs for a configuration
 router.get('/configurations/:configId/naps', async (req, res) => {
   try {
     const { configId } = req.params;
+    // Use default/env-based instance if no instance specified
     const naps = await fetchLiveNaps(configId);
     res.json({ success: true, naps });
   } catch (err) {
