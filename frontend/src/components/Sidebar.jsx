@@ -1,8 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './Sidebar.css';
 
-const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
+
+const Sidebar = ({ activeSection, onSectionChange, onCollapseChange, onConfigChange }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [configs, setConfigs] = useState([]);
+  const [selectedConfig, setSelectedConfig] = useState('');
+  const [loadingConfigs, setLoadingConfigs] = useState(true);
+
+  // Fetch live configs on mount
+  useEffect(() => {
+    setLoadingConfigs(true);
+    fetch('/backend/api/prosbc-files/test-configs')
+      .then(res => res.json())
+      .then(data => {
+        setConfigs(data.configs || []);
+        const active = (data.configs || []).find(cfg => cfg.active);
+        if (active) {
+          setSelectedConfig(active.id);
+          onConfigChange?.(active.id);
+        }
+        setLoadingConfigs(false);
+      })
+      .catch(() => setLoadingConfigs(false));
+  }, []);
+
+  const handleConfigChange = (e) => {
+    setSelectedConfig(e.target.value);
+    onConfigChange?.(e.target.value);
+  };
 
   const handleCollapseToggle = () => {
     const newCollapsedState = !isCollapsed;
@@ -96,6 +122,27 @@ const Sidebar = ({ activeSection, onSectionChange, onCollapseChange }) => {
             </svg>
           </button>
         </div>
+        {/* ProSBC Config Dropdown */}
+        {!isCollapsed && (
+          <div className="mt-4">
+            <label className="block text-xs text-gray-400 mb-1">ProSBC Config</label>
+            {loadingConfigs ? (
+              <div className="text-xs text-gray-500">Loading configs...</div>
+            ) : (
+              <select
+                className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={selectedConfig}
+                onChange={handleConfigChange}
+              >
+                {configs.map(cfg => (
+                  <option key={cfg.id} value={cfg.id}>
+                    {cfg.name} {cfg.active ? '(Active)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Menu Items */}

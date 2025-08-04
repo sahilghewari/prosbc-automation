@@ -3,11 +3,16 @@ import fetch from 'node-fetch';
 import FormData from 'form-data';
 import fs from 'fs';
 import { prosbcLogin } from './login.js';
+import { selectConfiguration } from './prosbcConfigSelector.js';
+import { fetchLiveConfigIds } from './prosbcConfigLiveFetcher.js';
 
 class ProSBCFileAPI {
   constructor() {
     this.baseURL = process.env.PROSBC_BASE_URL;
     this.sessionCookies = null;
+    this.selectedConfigId = null;
+    this.configs = null;
+    this.configSelectionDone = false;
   }
 
   getBasicAuthHeader() {
@@ -17,6 +22,7 @@ class ProSBCFileAPI {
     return `Basic ${credentials}`;
   }
 
+
   async getSessionCookie() {
     if (this.sessionCookie) return this.sessionCookie;
     const username = process.env.PROSBC_USERNAME;
@@ -24,6 +30,26 @@ class ProSBCFileAPI {
     const baseUrl = this.baseURL;
     this.sessionCookie = await prosbcLogin(baseUrl, username, password);
     return this.sessionCookie;
+  }
+
+  // Fetch configs and select the active one (or a specific one if set)
+  // Accepts configId (string/number) to override selection for this operation
+  async ensureConfigSelected(configId = null) {
+    // If configId is provided and different, always reselect
+    if (this.configSelectionDone && (!configId || configId === this.selectedConfigId)) return;
+    const sessionCookie = await this.getSessionCookie();
+    // Fetch live configs
+    this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
+    // Pick config: use configId if set, else pick the active one
+    let configToSelect = configId || this.selectedConfigId;
+    if (!configToSelect) {
+      const active = this.configs.find(cfg => cfg.active);
+      configToSelect = active ? active.id : (this.configs[0] && this.configs[0].id);
+    }
+    if (!configToSelect) throw new Error('No configuration found to select');
+    await selectConfiguration(configToSelect, this.baseURL, sessionCookie);
+    this.selectedConfigId = configToSelect;
+    this.configSelectionDone = true;
   }
 
   async getCommonHeaders() {
@@ -40,11 +66,13 @@ class ProSBCFileAPI {
     return { success: true, message: 'Using basic authentication' };
   }
 
-  async uploadDfFile(filePath, onProgress) {
+  async uploadDfFile(filePath, onProgress, configId = null) {
     try {
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId ;
       const fileName = filePath.split('/').pop();
       onProgress?.(25, 'Getting upload form...');
-      const newDfResponse = await fetch(`${this.baseURL}/file_dbs/1/routesets_definitions/new`, {
+      const newDfResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -58,7 +86,7 @@ class ProSBCFileAPI {
       let csrfToken = null;
       const patterns = [
         /name="authenticity_token"[^>]*value="([^"]+)"/,
-        /name='authenticity_token'[^>]*value='([^']+)'/,
+        /name='authenticity_token'[^>]*value='([^"]+)'/,
         /name="csrf-token"[^>]*content="([^"]+)"/,
         /<meta[^>]*name="csrf-token"[^>]*content="([^"]+)"/,
         /authenticity_token['"]\s*:\s*['"]([^'"]+)['"]/
@@ -78,11 +106,11 @@ class ProSBCFileAPI {
       const formData = new FormData();
       formData.append('authenticity_token', csrfToken);
       formData.append('tbgw_routesets_definition[file]', fs.createReadStream(filePath));
-      formData.append('tbgw_routesets_definition[tbgw_files_db_id]', '1');
+      formData.append('tbgw_routesets_definition[tbgw_files_db_id]', dbId);
       formData.append('commit', 'Import');
       const uploadHeaders = await this.getCommonHeaders();
-      uploadHeaders['Referer'] = `${this.baseURL}/file_dbs/1/routesets_definitions/new`;
-      const uploadResponse = await fetch(`${this.baseURL}/file_dbs/1/routesets_definitions`, {
+      uploadHeaders['Referer'] = `${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`;
+      const uploadResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions`, {
         method: 'POST',
         headers: uploadHeaders,
         body: formData
@@ -99,11 +127,13 @@ class ProSBCFileAPI {
     }
   }
 
-  async uploadDmFile(filePath, onProgress) {
+  async uploadDmFile(filePath, onProgress, configId = null) {
     try {
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId || '1';
       const fileName = filePath.split('/').pop();
       onProgress?.(25, 'Getting upload form...');
-      const newDmResponse = await fetch(`${this.baseURL}/file_dbs/1/routesets_digitmaps/new`, {
+      const newDmResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -120,11 +150,11 @@ class ProSBCFileAPI {
       const formData = new FormData();
       formData.append('authenticity_token', csrfToken);
       formData.append('tbgw_routesets_digitmap[file]', fs.createReadStream(filePath));
-      formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', '1');
+      formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', dbId);
       formData.append('commit', 'Import');
       const uploadHeaders = await this.getCommonHeaders();
-      uploadHeaders['Referer'] = `${this.baseURL}/file_dbs/1/routesets_digitmaps/new`;
-      const uploadResponse = await fetch(`${this.baseURL}/file_dbs/1/routesets_digitmaps`, {
+      uploadHeaders['Referer'] = `${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`;
+      const uploadResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps`, {
         method: 'POST',
         headers: uploadHeaders,
         body: formData
@@ -141,10 +171,12 @@ class ProSBCFileAPI {
     }
   }
 
-  async listDfFiles() {
+  async listDfFiles(configId = null) {
     try {
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId || '3';
       console.log('[ProSBC] Fetching DF files list...');
-      const response = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
+      const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -163,10 +195,12 @@ class ProSBCFileAPI {
     }
   }
 
-  async listDmFiles() {
+  async listDmFiles(configId = null) {
     try {
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId || '3';
       console.log('[ProSBC] Fetching DM files list...');
-      const response = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
+      const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -229,27 +263,44 @@ class ProSBCFileAPI {
       if (!sectionMatch) {
         const norm = s => s.replace(/:/g, '').replace(/\s+/g, '').toLowerCase();
         const normTitle = norm(sectionTitle);
+        let bestLegend = null;
         for (const legend of legends) {
-          if (norm(legend).includes(normTitle)) {
+          if (norm(legend).includes(normTitle) || normTitle.includes(norm(legend))) {
+            bestLegend = legend;
             console.log(`[ProSBC] Fuzzy legend match used: '${legend}' for section '${sectionTitle}'`);
             // Find the corresponding fieldset
-            // 1. Find the <legend> position
             const legendEscaped = escapeRegExp(legend);
             const legendRegex = new RegExp(`<legend>\s*${legendEscaped}\s*<\/legend>`, 'i');
             const legendPos = html.search(legendRegex);
             if (legendPos !== -1) {
-              // 2. Find the nearest preceding <fieldset>
               const fieldsetStart = html.lastIndexOf('<fieldset', legendPos);
-              // 3. Find the next </fieldset> after legend
               const fieldsetEnd = html.indexOf('</fieldset>', legendPos);
               if (fieldsetStart !== -1 && fieldsetEnd !== -1) {
-                // 4. Extract content between <legend> and </fieldset>
                 const legendEnd = html.indexOf('</legend>', legendPos);
                 if (legendEnd !== -1 && legendEnd < fieldsetEnd) {
                   const sectionHtml = html.substring(legendEnd + 9, fieldsetEnd);
                   sectionMatch = [null, sectionHtml];
                   break;
                 }
+              }
+            }
+          }
+        }
+        // If still not found, try the first legend as a fallback
+        if (!sectionMatch && legends.length > 0) {
+          bestLegend = legends[0];
+          console.log(`[ProSBC] Fallback to first legend: '${bestLegend}' for section '${sectionTitle}'`);
+          const legendEscaped = escapeRegExp(bestLegend);
+          const legendRegex = new RegExp(`<legend>\s*${legendEscaped}\s*<\/legend>`, 'i');
+          const legendPos = html.search(legendRegex);
+          if (legendPos !== -1) {
+            const fieldsetStart = html.lastIndexOf('<fieldset', legendPos);
+            const fieldsetEnd = html.indexOf('</fieldset>', legendPos);
+            if (fieldsetStart !== -1 && fieldsetEnd !== -1) {
+              const legendEnd = html.indexOf('</legend>', legendPos);
+              if (legendEnd !== -1 && legendEnd < fieldsetEnd) {
+                const sectionHtml = html.substring(legendEnd + 9, fieldsetEnd);
+                sectionMatch = [null, sectionHtml];
               }
             }
           }
@@ -261,31 +312,48 @@ class ProSBCFileAPI {
       }
       const sectionHtml = sectionMatch[1];
       console.log('[ProSBC] Section HTML preview:', sectionHtml.substring(0, 500));
-      const rowRegex = /<tr>\s*<td>([^<]+)<\/td>\s*<td><a href="\/file_dbs\/1\/[^\/]+\/(\d+)\/edit"[^>]*>Update<\/a><\/td>\s*<td><a href="\/file_dbs\/1\/[^\/]+\/(\d+)\/export"[^>]*>Export<\/a><\/td>\s*<td><a href="\/file_dbs\/1\/[^\/]+\/(\d+)"[^>]*onclick="[^"]*">Delete<\/a><\/td>\s*<\/tr>/g;
+      // Robustly parse file rows for all configIds
+      const files = [];
+      // Match all file rows for the given fileType (routesets_definitions or routesets_digitmaps)
+      // Example row:
+      // <td><a href="/file_dbs/3/routesets_digitmaps/61/edit" ...>Update</a></td>
+      // <td><a href="/file_dbs/3/routesets_digitmaps/61/export" ...>Export</a></td>
+      // <td><a href="/file_dbs/3/routesets_digitmaps/61" ...>Delete</a></td>
+      const rowRegex = new RegExp(
+        `<tr>\\s*<td>([^<]+)<\\/td>\\s*` +
+        `<td><a href=\\"/file_dbs/(\\d+)/(?:${fileType})/(\\d+)/edit\\"[^>]*>Update<\\/a><\\/td>\\s*` +
+        `<td><a href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)/export\\"[^>]*>Export<\\/a><\\/td>\\s*` +
+        `<td><a href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)\\"[^>]*onclick=[^>]*>Delete<\\/a><\\/td>\\s*<\\/tr>`,
+        'g'
+      );
       let match;
       let rowCount = 0;
       while ((match = rowRegex.exec(sectionHtml)) !== null) {
         rowCount++;
-        const [, fileName, updateId, exportId, deleteId] = match;
+        const [ , fileName, dbId, updateId, exportId, deleteId ] = match;
         files.push({
           id: updateId,
           name: fileName.trim(),
           type: fileType,
-          updateUrl: `/file_dbs/1/${fileType}/${updateId}/edit`,
-          exportUrl: `/file_dbs/1/${fileType}/${exportId}/export`,
-          deleteUrl: `/file_dbs/1/${fileType}/${deleteId}`
+          configId: dbId,
+          updateUrl: `/file_dbs/${dbId}/${fileType}/${updateId}/edit`,
+          exportUrl: `/file_dbs/${dbId}/${fileType}/${exportId}/export`,
+          deleteUrl: `/file_dbs/${dbId}/${fileType}/${deleteId}`
         });
       }
       console.log(`[ProSBC] Found ${rowCount} rows in section: ${sectionTitle}`);
+      return files;
     } catch (error) {
       console.error('[ProSBC] parseFileTable error:', error);
+      return files;
     }
-    return files;
   }
 
-  async exportFile(fileType, fileId, fileName, outputPath) {
+  async exportFile(fileType, fileId, fileName, outputPath, configId = null) {
     try {
-      const response = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/export`, {
+      // Use configId if provided, else default to 1 (legacy fallback)
+      const dbId = configId || '1';
+      const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/export`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -298,13 +366,14 @@ class ProSBCFileAPI {
     }
   }
 
-  async deleteFile(fileType, fileId, fileName) {
+  async deleteFile(fileType, fileId, fileName, configId = null) {
     try {
-      console.log('[deleteFile] Params:', { fileType, fileId, fileName });
+      console.log('[deleteFile] Params:', { fileType, fileId, fileName, configId });
       let csrfToken = null;
+      const dbId = configId || '1';
       let uploadFormUrl = fileType === 'routesets_definitions'
-        ? `${this.baseURL}/file_dbs/1/routesets_definitions/new`
-        : `${this.baseURL}/file_dbs/1/routesets_digitmaps/new`;
+        ? `${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`
+        : `${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`;
       try {
         const uploadFormResponse = await fetch(uploadFormUrl, {
           method: 'GET',
@@ -323,7 +392,7 @@ class ProSBCFileAPI {
         console.error('[deleteFile] Error fetching upload form:', uploadError);
       }
       if (!csrfToken) {
-        const mainPageResponse = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
+        const mainPageResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
           method: 'GET',
           headers: await this.getCommonHeaders()
         });
@@ -357,11 +426,11 @@ class ProSBCFileAPI {
       }
       // commit field is not required for delete, omit for now
       const deleteHeaders = await this.getCommonHeaders();
-      deleteHeaders['Referer'] = `${this.baseURL}/file_dbs/1/edit`;
+      deleteHeaders['Referer'] = `${this.baseURL}/file_dbs/${dbId}/edit`;
       deleteHeaders['X-Requested-With'] = 'XMLHttpRequest';
       deleteHeaders['Content-Type'] = 'application/x-www-form-urlencoded';
-      console.log('[deleteFile] Sending delete request:', `${this.baseURL}/file_dbs/1/${fileType}/${fileId}`);
-      const response = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}`, {
+      console.log('[deleteFile] Sending delete request:', `${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}`);
+      const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}`, {
         method: 'POST',
         headers: deleteHeaders,
         body: params.toString()
@@ -380,9 +449,10 @@ class ProSBCFileAPI {
     }
   }
 
-  async getFileContent(fileType, fileId) {
+  async getFileContent(fileType, fileId, configId = null) {
     try {
-      const exportResponse = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/export`, {
+      const dbId = configId || '1';
+      const exportResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/export`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -395,7 +465,7 @@ class ProSBCFileAPI {
           found: true
         };
       }
-      const response = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}/edit`, {
+      const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
@@ -449,11 +519,12 @@ class ProSBCFileAPI {
     }
   }
 
-  async updateFile(fileType, fileId, updatedFilePath, onProgress = null) {
+  async updateFile(fileType, fileId, updatedFilePath, onProgress = null, configId = null) {
     try {
+      const dbId = configId || '1';
       const updatedFileName = updatedFilePath.split('/').pop();
       onProgress?.(10, 'Getting edit form...');
-      const editUrl = `/file_dbs/1/${fileType}/${fileId}/edit`;
+      const editUrl = `/file_dbs/${dbId}/${fileType}/${fileId}/edit`;
       const editResponse = await fetch(`${this.baseURL}${editUrl}`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
@@ -468,7 +539,7 @@ class ProSBCFileAPI {
       const csrfToken = tokenMatch[1];
       let recordId = fileId;
       const fieldName = fileType === 'routesets_digitmaps' ? 'tbgw_routesets_digitmap' : 'tbgw_routesets_definition';
-      const idMatch = editHtml.match(new RegExp(`name="${fieldName}\\[id\\]"[^>]*value="([^"]+)"`));
+      const idMatch = editHtml.match(new RegExp(`name="${fieldName}\[id\]"[^>]*value="([^"]+)"`));
       if (idMatch) recordId = idMatch[1];
       onProgress?.(30, 'Preparing update request...');
       const formData = new FormData();
@@ -477,18 +548,18 @@ class ProSBCFileAPI {
       if (fileType === 'routesets_digitmaps') {
         formData.append('tbgw_routesets_digitmap[file]', fs.createReadStream(updatedFilePath));
         formData.append('tbgw_routesets_digitmap[id]', recordId);
-        formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', '1');
+        formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', dbId);
       } else {
         formData.append('tbgw_routesets_definition[file]', fs.createReadStream(updatedFilePath));
         formData.append('tbgw_routesets_definition[id]', recordId);
-        formData.append('tbgw_routesets_definition[tbgw_files_db_id]', '1');
+        formData.append('tbgw_routesets_definition[tbgw_files_db_id]', dbId);
       }
       formData.append('commit', 'Update');
       onProgress?.(50, 'Sending update to ProSBC...');
       const updateHeaders = await this.getCommonHeaders();
       updateHeaders['Referer'] = `${this.baseURL}${editUrl}`;
       updateHeaders['X-Requested-With'] = 'XMLHttpRequest';
-      const updateResponse = await fetch(`${this.baseURL}/file_dbs/1/${fileType}/${fileId}`, {
+      const updateResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}`, {
         method: 'POST',
         headers: updateHeaders,
         body: formData,

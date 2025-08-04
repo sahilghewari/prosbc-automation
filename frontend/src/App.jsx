@@ -26,6 +26,7 @@ function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [user, setUser] = useState(null);
+  const [selectedConfigId, setSelectedConfigId] = useState('');
 
   useEffect(() => {
     const initializeAuth = async () => {
@@ -136,11 +137,11 @@ function App() {
       case 'nap-creation':
         return <NapCreatorEnhanced onAuthError={handleAuthError} />;
       case 'nap-management':
-        return <NapManagerEnhanced onAuthError={handleAuthError} />;
+        return <NapManagerEnhanced onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-upload':
         return <FileUploader onAuthError={handleAuthError} />;
       case 'dm-df-management':
-        return <FileManagement onAuthError={handleAuthError} />;
+        return <FileManagement onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'routeset-mapping':
         return <RoutesetMapping onAuthError={handleAuthError} />;
       case 'activation-generation':
@@ -166,6 +167,7 @@ function App() {
         activeSection={activeSection} 
         onSectionChange={setActiveSection} 
         onCollapseChange={setSidebarCollapsed}
+        onConfigChange={setSelectedConfigId}
       />
       {showLoginModal && !isDashboardAuth && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">

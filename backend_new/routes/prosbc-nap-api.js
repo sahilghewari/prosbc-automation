@@ -22,52 +22,76 @@ router.use(async (req, res, next) => {
   }
 });
 
-// GET /prosbc-nap/naps - List all NAPs
-router.get('/naps', async (req, res) => {
+
+// RESTful NAP endpoints under /configurations/:configId/naps
+// List all NAPs for a configuration
+router.get('/configurations/:configId/naps', async (req, res) => {
   try {
-    const naps = await fetchLiveNaps();
+    const { configId } = req.params;
+    const naps = await fetchLiveNaps(configId);
     res.json({ success: true, naps });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// POST /prosbc-nap/naps - Create a new NAP
-router.post('/naps', async (req, res) => {
+// Get a specific NAP by name
+router.get('/configurations/:configId/naps/:napName', async (req, res) => {
   try {
+    const { configId, napName } = req.params;
+    // Use getNap if available, else filter from fetchLiveNaps
+    if (typeof getNap === 'function') {
+      const nap = await getNap(napName, configId);
+      if (!nap) return res.status(404).json({ success: false, message: 'NAP not found' });
+      res.json({ success: true, nap });
+    } else {
+      const naps = await fetchLiveNaps(configId);
+      const nap = Array.isArray(naps) ? naps.find(n => n.name === napName) : naps[napName];
+      if (!nap) return res.status(404).json({ success: false, message: 'NAP not found' });
+      res.json({ success: true, nap });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Create a new NAP for a configuration
+router.post('/configurations/:configId/naps', async (req, res) => {
+  try {
+    const { configId } = req.params;
     const napData = req.body;
     const validation = validateNapData(napData);
     if (!validation.isValid) {
       return res.status(400).json({ success: false, errors: validation.errors, warnings: validation.warnings });
     }
-    const exists = await checkNapExists(napData.name);
+    const exists = await checkNapExists(napData.name, configId);
     if (exists) {
       return res.status(409).json({ success: false, message: 'NAP with this name already exists' });
     }
-    const result = await createNap(napData);
+    const result = await createNap(napData, configId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// PUT /prosbc-nap/naps/:napId - Update a NAP
-router.put('/naps/:napId', async (req, res) => {
+// Update a NAP for a configuration
+router.put('/configurations/:configId/naps/:napName', async (req, res) => {
   try {
-    const napId = req.params.napId;
+    const { configId, napName } = req.params;
     const napData = req.body;
-    const result = await updateNap(napId, napData);
+    const result = await updateNap(napName, napData, configId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// DELETE /prosbc-nap/naps/:napId - Delete a NAP
-router.delete('/naps/:napId', async (req, res) => {
+// Delete a NAP for a configuration
+router.delete('/configurations/:configId/naps/:napName', async (req, res) => {
   try {
-    const napId = req.params.napId;
-    const result = await deleteNap(napId);
+    const { configId, napName } = req.params;
+    const result = await deleteNap(napName, configId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

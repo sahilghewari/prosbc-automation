@@ -1,3 +1,73 @@
+// --- Robust HTML file table parser for DF/DM files ---
+// Returns an array of file objects with correct configId from HTML URLs
+export function parseFileTableSection(sectionHtml, type = 'routesets_digitmaps') {
+  const files = [];
+  // Match each <tr>...</tr> that contains a file row
+  const rowRegex = /<tr>\s*<td>([^<]+)<\/td>\s*([\s\S]*?)<\/tr>/g;
+  let match;
+  while ((match = rowRegex.exec(sectionHtml)) !== null) {
+    const fileName = match[1].trim();
+    const rowHtml = match[2];
+    // Find all action URLs in this row
+    const urlRegex = /href="(\/file_dbs\/(\d+)\/(routesets_digitmaps|routesets_definitions)\/(\d+)(?:\/(edit|export))?)"/g;
+    let updateUrl = null, exportUrl = null, deleteUrl = null, htmlConfigId = null, fileId = null;
+    let urlMatch;
+    while ((urlMatch = urlRegex.exec(rowHtml)) !== null) {
+      const url = urlMatch[1];
+      const configId = urlMatch[2];
+      const urlType = urlMatch[3];
+      const id = urlMatch[4];
+      const action = urlMatch[5];
+      if (!htmlConfigId) htmlConfigId = configId;
+      if (!fileId) fileId = id;
+      if (action === 'edit') updateUrl = url;
+      else if (action === 'export') exportUrl = url;
+      else if (!action) deleteUrl = url; // delete is just the base URL
+    }
+    if (fileName && htmlConfigId && fileId) {
+      files.push({
+        id: fileId,
+        name: fileName,
+        type,
+        updateUrl,
+        exportUrl,
+        deleteUrl,
+        configId: htmlConfigId,
+      });
+    }
+  }
+  return files;
+}
+// Ensure the ProSBC session is switched to the correct config before any NAP operation
+const ensureConfigSelected = async (configId) => {
+  if (!configId) configId = 'config_1';
+  try {
+    console.log(`[ProSBC] Switching to config: ${configId}`);
+    const res = await apiClient.get(`/configurations/${configId}/choose_redirect`, {
+      headers: { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    });
+    console.log(`[ProSBC] /choose_redirect status: ${res.status}`);
+    if (res.headers && res.headers['set-cookie']) {
+      console.log('[ProSBC] Set-Cookie:', res.headers['set-cookie']);
+    }
+    // Immediately check which config is active by fetching the edit page and logging the config name
+    const checkRes = await apiClient.get(`/configurations/${configId}/edit`, {
+      headers: { 'Accept': 'text/html' }
+    });
+    const match = checkRes.data.match(/<td class="edit_link">(config_[^<]+)<\/td>/);
+    if (match && match[1]) {
+      console.log(`[ProSBC] Confirmed config switched to: ${match[1]}`);
+      if (match[1] !== configId) {
+        console.warn(`[ProSBC] WARNING: Active config in HTML is ${match[1]}, expected ${configId}`);
+      }
+    } else {
+      console.warn('[ProSBC] Could not confirm active config from HTML');
+    }
+  } catch (error) {
+    console.error(`Failed to select config ${configId}:`, error.message);
+    // Don't throw, allow NAP operation to proceed (may fail if config not switched)
+  }
+};
 // NAP Management API Client - Using Basic Auth with Environment Variables - Fixed Version
 
 // Allow self-signed certificates for development (do not use in production)
@@ -93,516 +163,146 @@ export const isSessionValid = () => {
   return isAuthenticated && apiClient;
 };
 
-// Function to fetch existing NAPs from ProSBC with improved endpoint discovery
-export const fetchExistingNaps = async () => {
-  // Try multiple possible endpoints in order of preference
-  const endpointsToTry = [
-    { path: '/configurations/config_1/naps.json', contentType: 'application/json' },
-    { path: '/configurations/config_1/naps/', contentType: 'text/html' },
-    { path: '/naps.json', contentType: 'application/json' },
-    { path: '/naps', contentType: 'text/html' },
-    { path: '/configurations/config_1/naps', contentType: 'text/html' },
-    { path: '/admin/configurations/config_1/naps/', contentType: 'text/html' },
-    { path: '/prosbc/configurations/config_1/naps/', contentType: 'text/html' },
-  ];
-  
-  for (const endpoint of endpointsToTry) {
-    try {
-      console.log(`Trying endpoint: ${endpoint.path} (expecting ${endpoint.contentType})`);
-      
-      const headers = {
-        'Accept': endpoint.contentType === 'application/json' 
-          ? 'application/json' 
-          : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      };
-      
-      const response = await apiClient.get(endpoint.path, { headers });
-      
-      console.log(`Response from ${endpoint.path}:`);
-      console.log('Status:', response.status);
-      console.log('Content-Type:', response.headers['content-type']);
-      console.log('Data type:', typeof response.data);
-      console.log('Data length:', response.data?.length || 'N/A');
-      
-      // Handle JSON responses
-      if (endpoint.contentType === 'application/json' && 
-          typeof response.data === 'object' && 
-          response.data !== null) {
-        console.log(`Successfully fetched NAPs from JSON endpoint: ${endpoint.path}`);
-        return response.data;
-      }
-      
-      // Handle HTML responses
-      if (typeof response.data === 'string') {
-        // Check if it's a login redirect
-        if (response.data.includes('login_form') || 
-            response.data.includes('user[name]') ||
-            response.data.includes('<title>Login</title>') ||
-            response.data.includes('Please log in')) {
-          console.log(`Endpoint ${endpoint.path} returned login page, authentication may have failed`);
-          throw new Error('Authentication required - redirected to login page');
-        }
-        
-        // Check if it's an error page
-        if (response.data.includes('404') || response.data.includes('Not Found') ||
-            response.data.includes('500') || response.data.includes('Internal Server Error')) {
-          console.log(`Endpoint ${endpoint.path} returned error page`);
-          continue;
-        }
-        
-        // Try to parse NAP data from HTML
-        try {
-          const dom = new JSDOM(response.data);
-          const doc = dom.window.document;
-          
-          // Look for various possible NAP table structures
-          const possibleSelectors = [
-            '#nap_list table.list',
-            '#nap_list table',
-            'table.list',
-            'table.nap-list',
-            '.nap-table',
-            '#configurations table',
-            'table[id*="nap"]',
-            'table[class*="nap"]',
-            '.content table',
-            '#main-content table',
-            'div.list table'
-          ];
-          
-          let napTable = null;
-          for (const selector of possibleSelectors) {
-            napTable = doc.querySelector(selector);
-            if (napTable) {
-              break;
-            }
-          }
-          
-          if (!napTable) {
-            // Log all tables found for debugging
-            const allTables = doc.querySelectorAll('table');
-            console.log(`Endpoint ${endpoint.path} returned HTML with ${allTables.length} tables but no NAP table found`);
-            
-            if (allTables.length > 0) {
-              console.log('Available tables:');
-              allTables.forEach((table, index) => {
-                console.log(`Table ${index}: id="${table.id}" class="${table.className}"`);
-              });
-            }
-            
-            console.log('HTML preview:', response.data.substring(0, 1000));
-            continue;
-          }
-          
-          // Extract NAP names from table rows
-          const rows = napTable.querySelectorAll('tr');
-          const naps = {};
-          for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            const cells = row.querySelectorAll('td, th');
-            if (cells.length >= 1) {
-              let napName = null;
-              const editLink = cells[0].querySelector('a.edit_link, a[href*="edit"], a[href*="nap"]');
-              if (editLink) {
-                napName = editLink.textContent?.trim();
-              }
-              if (!napName) {
-                const anyLink = cells[0].querySelector('a');
-                if (anyLink) {
-                  napName = anyLink.textContent?.trim();
-                }
-              }
-              if (!napName) {
-                napName = cells[0].textContent?.trim();
-              }
-              if (!napName || napName.length < 2) {
-                if (cells.length > 1) {
-                  napName = cells[1].textContent?.trim();
-                }
-              }
-              if (napName && napName.length > 0 && !napName.includes('No NAPs') && !napName.includes('Name')) {
-                let enabled = false;
-                let status = 'inactive';
-                if (cells.length > 1) {
-                  const statusText = cells[1].textContent?.trim().toLowerCase();
-                  if (statusText) {
-                    if (statusText.includes('active') || 
-                        statusText.includes('enabled') || 
-                        statusText.includes('on') ||
-                        statusText.includes('yes') ||
-                        statusText === 'true') {
-                      enabled = true;
-                      status = 'active';
-                    } else if (statusText.includes('inactive') || 
-                               statusText.includes('disabled') || 
-                               statusText.includes('off') ||
-                               statusText.includes('no') ||
-                               statusText === 'false') {
-                      enabled = false;
-                      status = 'inactive';
-                    }
-                  }
-                }
-                naps[napName] = {
-                  name: napName,
-                  enabled: enabled,
-                  status: status,
-                  description: cells.length > 2 ? cells[2].textContent?.trim() : undefined,
-                  raw_status: cells.length > 1 ? cells[1].textContent?.trim() : undefined,
-                };
-              }
-            }
-          }
-          
-          if (Object.keys(naps).length > 0) {
-            console.log(`Successfully parsed ${Object.keys(naps).length} NAPs from HTML:`, Object.keys(naps));
-            return naps;
-          } else {
-            console.log(`NAP table found but no NAPs extracted from ${endpoint.path}`);
-            console.log('Table HTML:', napTable.outerHTML.substring(0, 500));
-            continue;
-          }
-          
-        } catch (parseError) {
-          console.log(`Failed to parse HTML from ${endpoint.path}:`, parseError.message);
-          continue;
-        }
-      }
-      
-      console.log(`Endpoint ${endpoint.path} returned unexpected format, trying next...`);
-      continue;
-      
-    } catch (error) {
-      console.log(`Endpoint ${endpoint.path} failed:`, error.message);
-      
-      if (error.response) {
-        console.log('Error status:', error.response.status);
-        console.log('Error headers:', error.response.headers);
-        
-        // If we get 406 (Not Acceptable), the server doesn't like our Accept header
-        if (error.response.status === 406) {
-          console.log(`Server returned 406 for ${endpoint.path}, content negotiation failed`);
-          continue;
-        }
-        
-        // If we get 401/403, authentication failed
-        if (error.response.status === 401 || error.response.status === 403) {
-          throw new Error('Authentication failed - invalid credentials or session expired');
-        }
-      }
-      
-      if (error.message.includes('Authentication required')) {
-        throw error; // Re-throw auth errors
-      }
-      
-      // Continue to next endpoint for other errors
-      continue;
-    }
-  }
-  
-  // If all endpoints failed, return empty object instead of throwing error to allow app to continue
-  console.warn('All NAP listing endpoints failed. Returning empty NAP list.');
-  return {};
-};
-
-// Function to check if NAP name already exists
-export const checkNapExists = async (napName) => {
+// List all NAPs in a configuration (RESTful, JSON)
+export const fetchExistingNaps = async (configId = 'config_1') => {
   try {
-    const existingNaps = await fetchExistingNaps();
-    // Check if napName exists as a key in the response (excluding ***meta***)
-    return existingNaps.hasOwnProperty(napName) && napName !== '***meta***';
-  } catch (error) {
-    console.error('Error checking NAP existence:', error);
-    
-    if (error.message.includes('Authentication required') || 
-        error.message.includes('login') ||
-        error.message.includes('credentials not found')) {
-      throw new Error('Authentication required. Please check your .env file credentials.');
-    }
-    
-    // Return false if we can't check, allowing creation to proceed
-    console.warn('Could not check NAP existence, allowing creation to proceed');
-    return false;
-  }
-};
-
-// Create a new NAP following ProSBC's exact workflow: create -> redirect -> configure -> save
-export const createNap = async (napData) => {
-  try {
-    console.log('Creating NAP with ProSBC workflow...', napData);
-    
-    // Step 1: Create initial NAP with basic data (following ProSBC form structure)
-    const initialPayload = new URLSearchParams();
-    initialPayload.append('authenticity_token', ''); // Will be handled by interceptor
-    initialPayload.append('nap[name]', napData.name);
-    initialPayload.append('nap[enabled]', '0'); // Hidden field
-    initialPayload.append('nap[enabled]', napData.enabled !== false ? '1' : '0');
-    initialPayload.append('nap[profile_id]', napData.profile_id || '1');
-    initialPayload.append('nap[get_stats_on_leg_termination]', 'true');
-    initialPayload.append('nap[rate_limit_cps]', '0');
-    initialPayload.append('nap[rate_limit_cps_in]', '0');
-    initialPayload.append('nap[rate_limit_cps_out]', '0');
-    initialPayload.append('nap[max_incoming_calls]', '0');
-    initialPayload.append('nap[max_outgoing_calls]', '0');
-    initialPayload.append('nap[max_incoming_outgoing_calls]', '0');
-    initialPayload.append('nap[rate_limit_delay_low]', '3');
-    initialPayload.append('nap[rate_limit_delay_low_unit_conversion]', '1000.0');
-    initialPayload.append('nap[rate_limit_delay_high]', '6');
-    initialPayload.append('nap[rate_limit_delay_high_unit_conversion]', '1000.0');
-    initialPayload.append('nap[rate_limit_cpu_usage_low]', '0');
-    initialPayload.append('nap[rate_limit_cpu_usage_high]', '0');
-    initialPayload.append('nap[congestion_threshold_nb_calls]', '1');
-    initialPayload.append('nap[congestion_threshold_period_sec]', '1');
-    initialPayload.append('nap[congestion_threshold_period_sec_unit_conversion]', '60.0');
-    initialPayload.append('nap[configuration_id]', '1');
-    initialPayload.append('commit', 'Create');
-
-    console.log('Step 1: Creating initial NAP at /naps');
-    
-    const createResponse = await apiClient.post('/naps', initialPayload, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-      },
-      maxRedirects: 0, // Don't auto-follow redirects
-      validateStatus: (status) => status >= 200 && status < 400 // Accept redirects
+    await ensureConfigSelected(configId);
+    console.log(`[ProSBC] Fetching NAPs for config: ${configId}`);
+    const response = await apiClient.get(`/configurations/${configId}/naps`, {
+      headers: { 'Accept': 'application/json' }
     });
-
-    console.log('Initial creation response status:', createResponse.status);
-    
-    // Check if we got a redirect (302) with location header
-    let napId = null;
-    if (createResponse.status === 302 && createResponse.headers.location) {
-      const locationMatch = createResponse.headers.location.match(/\/naps\/(\d+)\/edit/);
-      if (locationMatch) {
-        napId = locationMatch[1];
-        console.log(`Step 1 successful: NAP created with ID ${napId}`);
-      }
-    }
-
-    if (!napId) {
-      throw new Error('Failed to create NAP - no redirect received');
-    }
-
-    // Step 2: If we have additional configuration, update the NAP
-    if (Object.keys(napData).length > 2) { // More than just name and enabled
-      console.log(`Step 2: Configuring NAP ${napId} with detailed settings`);
-      
-      const updatePayload = new URLSearchParams();
-      updatePayload.append('_method', 'put');
-      updatePayload.append('authenticity_token', '');
-      
-      // Basic settings
-      updatePayload.append('nap[name]', napData.name);
-      updatePayload.append('nap[enabled]', '0');
-      updatePayload.append('nap[enabled]', napData.enabled !== false ? '1' : '0');
-      updatePayload.append('nap[profile_id]', napData.profile_id || '1');
-      updatePayload.append('nap[get_stats_on_leg_termination]', 'true');
-
-      // SIP Configuration
-      if (napData.sip_destination_ip || napData.proxy_address) {
-        updatePayload.append('nap_sip_cfg[sip_use_proxy]', '0');
-        updatePayload.append('nap_sip_cfg[sip_use_proxy]', '1');
-        updatePayload.append('nap[sip_destination_ip]', napData.sip_destination_ip || napData.proxy_address || '');
-        updatePayload.append('nap[sip_destination_port]', napData.sip_destination_port || napData.proxy_port || '5060');
-        updatePayload.append('nap_sip_cfg[filter_by_remote_port]', '0');
-        updatePayload.append('nap_sip_cfg[filter_by_remote_port]', '1');
-        updatePayload.append('nap_sip_cfg[poll_proxy]', '0');
-        updatePayload.append('nap_sip_cfg[poll_proxy]', '1');
-        updatePayload.append('nap_sip_cfg[proxy_polling_interval]', '1');
-        updatePayload.append('nap_sip_cfg[proxy_polling_interval_unit_conversion]', '60000.0');
-      } else {
-        updatePayload.append('nap_sip_cfg[sip_use_proxy]', '0');
-      }
-
-      updatePayload.append('nap_sip_cfg[accept_only_authorized_users]', '0');
-      
-      // Registration parameters
-      updatePayload.append('nap_sip_cfg[register_to_proxy]', '0');
-      updatePayload.append('nap_sip_cfg[aor]', napData.aor || '');
-
-      // Authentication parameters
-      updatePayload.append('nap[sip_auth_ignore_realm]', '0');
-      updatePayload.append('nap[sip_auth_reuse_challenge]', '0');
-      updatePayload.append('nap[sip_auth_realm]', napData.sip_auth_realm || '');
-      updatePayload.append('nap[sip_auth_user]', napData.sip_auth_user || '');
-      updatePayload.append('nap[sip_auth_pass]', napData.sip_auth_pass || '');
-
-      // NAT settings
-      updatePayload.append('nap_sip_cfg[remote_nat_traversal_method_id]', '0');
-      updatePayload.append('nap_sip_cfg[remote_sip_nat_traversal_method_id]', '0');
-      updatePayload.append('nap_sip_cfg[nat_cfg_id]', '');
-      updatePayload.append('nap_sip_cfg[nat_cfg_sip_id]', '');
-
-      // SIP-I parameters
-      updatePayload.append('nap_sip_cfg[sipi_enable]', '0');
-      updatePayload.append('nap_sip_cfg[sipi_isup_protocol_variant_id]', '5');
-      updatePayload.append('nap_sip_cfg[sipi_version]', 'itu-t');
-      updatePayload.append('nap_sip_cfg[sipi_use_info_progress]', '0');
-      updatePayload.append('nap_tdm_cfg[append_trailing_f_to_number]', '0');
-
-      // Advanced parameters
-      updatePayload.append('nap_sip_cfg[poll_proxy_ping_quirk]', '0');
-      updatePayload.append('nap_sip_cfg[poll_proxy_ping_quirk]', '1');
-      updatePayload.append('nap_sip_cfg[proxy_polling_response_timeout]', '12');
-      updatePayload.append('nap_sip_cfg[proxy_polling_response_timeout_unit_conversion]', '1000.0');
-      updatePayload.append('nap_sip_cfg[proxy_polling_max_forwards]', '1');
-      updatePayload.append('nap_sip_cfg[sip_183_call_progress]', '0');
-      updatePayload.append('nap_sip_cfg[sip_privacy_type_id]', '3');
-
-      // Rate limiting (keep defaults from creation)
-      updatePayload.append('nap[rate_limit_cps]', '0');
-      updatePayload.append('nap[rate_limit_cps_in]', '0');
-      updatePayload.append('nap[rate_limit_cps_out]', '0');
-      updatePayload.append('nap[max_incoming_calls]', '0');
-      updatePayload.append('nap[max_outgoing_calls]', '0');
-      updatePayload.append('nap[max_incoming_outgoing_calls]', '0');
-      updatePayload.append('nap[rate_limit_delay_low]', '3');
-      updatePayload.append('nap[rate_limit_delay_low_unit_conversion]', '1.0');
-      updatePayload.append('nap[rate_limit_delay_high]', '6');
-      updatePayload.append('nap[rate_limit_delay_high_unit_conversion]', '1.0');
-      updatePayload.append('nap[rate_limit_cpu_usage_low]', '0');
-      updatePayload.append('nap[rate_limit_cpu_usage_high]', '0');
-
-      // Congestion threshold
-      updatePayload.append('nap[congestion_threshold_nb_calls]', '1');
-      updatePayload.append('nap[congestion_threshold_period_sec]', '1');
-      updatePayload.append('nap[congestion_threshold_period_sec_unit_conversion]', '1.0');
-
-      updatePayload.append('nap[configuration_id]', '1');
-      updatePayload.append('commit', 'Save');
-
-      const updateResponse = await apiClient.post(`/naps/${napId}`, updatePayload, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        },
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 200 && status < 400
-      });
-
-      console.log('Configuration update response status:', updateResponse.status);
-    }
-
-    return { 
-      success: true, 
-      message: `NAP "${napData.name}" created successfully with ID ${napId}`,
-      napId: napId,
-      editUrl: `/naps/${napId}/edit`
-    };
-    
+    console.log(`[ProSBC] NAPs response status: ${response.status}`);
+    return response.data;
   } catch (error) {
-    console.error('Error creating NAP:', error);
-    
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      throw new Error('Authentication failed. Please check your credentials in the .env file.');
-    }
-    
-    return { 
-      success: false, 
-      message: error.message || 'Failed to create NAP' 
-    };
+    console.error('Error fetching NAPs:', error);
+    throw error;
   }
 };
-
-// Fetch live NAP data from ProSBC (alias for fetchExistingNaps)
-export const fetchLiveNaps = async () => {
+// Add similar debug logging for file fetches
+export const fetchDfFiles = async (configId = 'config_1') => {
   try {
-    const naps = await fetchExistingNaps();
-    
-    // Convert object format to array format if needed
-    if (typeof naps === 'object' && !Array.isArray(naps)) {
-      return Object.keys(naps)
-        .filter(name => name !== '***meta***')
-        .map(name => ({
-          id: name,
-          name: name,
-          ...naps[name]
-        }));
+    await ensureConfigSelected(configId);
+    console.log(`[ProSBC] Fetching DF files for config: ${configId}`);
+    const response = await apiClient.get(`/file_dbs/${configId}/routesets_definitions`, {
+      headers: { 'Accept': 'text/html' }
+    });
+    console.log(`[ProSBC] DF files response status: ${response.status}`);
+    console.log(`[ProSBC] HTML length: ${response.data.length}`);
+    // Find the <table class="list">...</table> for DF files
+    const tableMatch = response.data.match(/<table class="list">([\s\S]*?)<\/table>/);
+    if (!tableMatch) {
+      console.warn('[ProSBC] Could not find DF files table in HTML');
+      return [];
     }
-    
-    return naps;
+    const files = parseFileTableSection(tableMatch[0], 'routesets_definitions');
+    return files;
   } catch (error) {
-    console.error('Error fetching live NAPs:', error);
+    console.error('Error fetching DF files:', error);
     throw error;
   }
 };
 
-// Delete a NAP (basic implementation)
-export const deleteNap = async (napId) => {
+export const fetchDmFiles = async (configId = 'config_1') => {
   try {
-    console.log(`Deleting NAP ${napId}...`);
-    
-    const deleteEndpoints = [
-      `/configurations/config_1/naps/${napId}`,
-      `/naps/${napId}`,
-      `/admin/configurations/config_1/naps/${napId}`,
-      `/prosbc/configurations/config_1/naps/${napId}`
-    ];
-    
-    for (const endpoint of deleteEndpoints) {
-      try {
-        const response = await apiClient.delete(endpoint);
-        
-        if (response.status >= 200 && response.status < 300) {
-          return { success: true, message: 'NAP deleted successfully' };
-        }
-        
-      } catch (endpointError) {
-        console.log(`Delete endpoint ${endpoint} failed:`, endpointError.message);
-        continue;
-      }
+    await ensureConfigSelected(configId);
+    console.log(`[ProSBC] Fetching DM files for config: ${configId}`);
+    const response = await apiClient.get(`/file_dbs/${configId}/routesets_digitmaps`, {
+      headers: { 'Accept': 'text/html' }
+    });
+    console.log(`[ProSBC] DM files response status: ${response.status}`);
+    console.log(`[ProSBC] HTML length: ${response.data.length}`);
+    // Find the <table class="list">...</table> for DM files
+    const tableMatch = response.data.match(/<table class="list">([\s\S]*?)<\/table>/);
+    if (!tableMatch) {
+      console.warn('[ProSBC] Could not find DM files table in HTML');
+      return [];
     }
-    
-    throw new Error('All NAP deletion endpoints failed');
-    
+    const files = parseFileTableSection(tableMatch[0], 'routesets_digitmaps');
+    return files;
   } catch (error) {
-    console.error('Error deleting NAP:', error);
-    
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      throw new Error('Authentication failed. Please check your credentials in the .env file.');
-    }
-    
-    throw new Error(`Failed to delete NAP: ${error.message}`);
+    console.error('Error fetching DM files:', error);
+    throw error;
   }
 };
 
-// Update a NAP (basic implementation)
-export const updateNap = async (napId, napData) => {
+// Function to check if NAP name already exists (RESTful)
+export const checkNapExists = async (napName, configId = 'config_1') => {
   try {
-    console.log(`Updating NAP ${napId}...`, napData);
-    
-    const updateEndpoints = [
-      `/configurations/config_1/naps/${napId}`,
-      `/naps/${napId}`,
-      `/admin/configurations/config_1/naps/${napId}`,
-      `/prosbc/configurations/config_1/naps/${napId}`
-    ];
-    
-    for (const endpoint of updateEndpoints) {
-      try {
-        const response = await apiClient.put(endpoint, napData);
-        
-        if (response.status >= 200 && response.status < 300) {
-          return { success: true, message: 'NAP updated successfully' };
-        }
-        
-      } catch (endpointError) {
-        console.log(`Update endpoint ${endpoint} failed:`, endpointError.message);
-        continue;
-      }
+    await ensureConfigSelected(configId);
+    const response = await apiClient.get(`/configurations/${configId}/naps/${encodeURIComponent(napName)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    return !!response.data && response.status === 200;
+  } catch (error) {
+    if (error.response && error.response.status === 404) {
+      return false;
     }
-    
-    throw new Error('All NAP update endpoints failed');
-    
+    console.error('Error checking NAP existence:', error);
+    throw error;
+  }
+};
+
+// Create a new NAP (RESTful, JSON)
+export const createNap = async (napData, configId = 'config_1') => {
+  try {
+    await ensureConfigSelected(configId);
+    const response = await apiClient.post(
+      `/configurations/${configId}/naps`,
+      napData,
+      { headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error creating NAP:', error);
+    throw error;
+  }
+};
+
+// Fetch live NAP data from ProSBC (alias for fetchExistingNaps, RESTful)
+export const fetchLiveNaps = async (configId = 'config_1') => {
+  return fetchExistingNaps(configId);
+};
+
+// Delete a NAP (RESTful, JSON)
+export const deleteNap = async (napName, configId = 'config_1') => {
+  try {
+    await ensureConfigSelected(configId);
+    const response = await apiClient.delete(`/configurations/${configId}/naps/${encodeURIComponent(napName)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting NAP:', error);
+    throw error;
+  }
+};
+
+// Update a NAP (RESTful, JSON)
+export const updateNap = async (napName, napData, configId = 'config_1') => {
+  try {
+    await ensureConfigSelected(configId);
+    const response = await apiClient.put(
+      `/configurations/${configId}/naps/${encodeURIComponent(napName)}`,
+      napData,
+      { headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } }
+    );
+    return response.data;
   } catch (error) {
     console.error('Error updating NAP:', error);
-    
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      throw new Error('Authentication failed. Please check your credentials in the .env file.');
-    }
-    
-    throw new Error(`Failed to update NAP: ${error.message}`);
+    throw error;
+  }
+};
+// Get a specific NAP's details (RESTful, JSON)
+export const getNap = async (napName, configId = 'config_1') => {
+  try {
+    await ensureConfigSelected(configId);
+    const response = await apiClient.get(`/configurations/${configId}/naps/${encodeURIComponent(napName)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching NAP details:', error);
+    throw error;
   }
 };
 
@@ -722,7 +422,7 @@ export const getNapConfigurationFields = () => {
 };
 
 // Helper function to create NAP with SIP proxy configuration
-export const createSipProxyNap = async (napData) => {
+export const createSipProxyNap = async (napData, configId = 'config_1') => {
   const sipProxyConfig = {
     name: napData.name,
     enabled: napData.enabled !== false,
@@ -745,15 +445,15 @@ export const createSipProxyNap = async (napData) => {
   };
   
   console.log('Creating SIP Proxy NAP with configuration:', sipProxyConfig);
-  return await createNap(sipProxyConfig);
+  return await createNap(sipProxyConfig, configId);
 };
 
 // Helper function to create simple NAP (name only)
-export const createSimpleNap = async (name, enabled = true) => {
+export const createSimpleNap = async (name, enabled = true, configId = 'config_1') => {
   return await createNap({
     name: name,
     enabled: enabled
-  });
+  }, configId);
 };
 
 // Validate NAP data before creation

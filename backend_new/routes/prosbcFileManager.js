@@ -1,105 +1,143 @@
+
 import express from 'express';
 import path from 'path';
-import prosbcFileAPI from '../utils/prosbc/prosbcFileManager.js';
 import multer from 'multer';
 import fs from 'fs';
+import prosbcFileManager from '../utils/prosbc/prosbcFileManager.js';
+
 const router = express.Router();
 
-// Upload DF file
-router.post('/upload/df', async (req, res) => {
+// Helper to extract configId from request (query, body, or header)
+function getConfigIdFromRequest(req) {
+  return req.query.configId || req.body?.configId || req.headers['x-prosbc-config-id'] || null;
+}
+
+// Simple export: stream file directly to client as download
+router.get('/export', async (req, res) => {
   try {
-    const filePath = req.body.filePath;
-    if (!filePath) return res.status(400).json({ error: 'Missing filePath' });
-    const result = await prosbcFileAPI.uploadDfFile(filePath);
-    res.json(result);
+    const fileType = req.query.fileType;
+    const fileId = req.query.fileId;
+    const fileName = req.query.fileName || 'export.csv';
+    const configId = req.query.configId;
+    if (!fileType || !fileId) {
+      return res.status(400).json({ success: false, error: 'Missing fileType or fileId' });
+    }
+    const dbId = configId || '1';
+    const fetch = (await import('node-fetch')).default;
+    const exportUrl = `${prosbcFileManager.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/export`;
+    console.log(`[EXPORT] Fetching: ${exportUrl}`);
+    const response = await fetch(exportUrl, {
+      method: 'GET',
+      headers: await prosbcFileManager.getCommonHeaders()
+    });
+    console.log(`[EXPORT] Response status: ${response.status}`);
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[EXPORT] Error response:`, text.substring(0, 300));
+      return res.status(500).json({ success: false, error: `Failed to export file: ${response.status}`, details: text.substring(0, 300) });
+    }
+    // If not CSV, likely a login page or error
+    if (!contentType.includes('csv')) {
+      const text = await response.text();
+      console.error(`[EXPORT] Unexpected content-type: ${contentType}`);
+      if (text.includes('login') || text.includes('Login')) {
+        return res.status(401).json({ success: false, error: 'Not authenticated to ProSBC. Please check credentials or session.' });
+      }
+      return res.status(500).json({ success: false, error: 'Unexpected response from ProSBC', details: text.substring(0, 300) });
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/csv');
+    response.body.pipe(res);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[EXPORT] Exception:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Upload DM file
-router.post('/upload/dm', async (req, res) => {
+// Download exported file
+router.get('/download', async (req, res) => {
   try {
-    const filePath = req.body.filePath;
-    if (!filePath) return res.status(400).json({ error: 'Missing filePath' });
-    const result = await prosbcFileAPI.uploadDmFile(filePath);
-    res.json(result);
+    const filePath = req.query.filePath;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+    res.download(filePath, path.basename(filePath), (err) => {
+      // Optionally delete file after download
+      try { fs.unlinkSync(filePath); } catch (e) {}
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-
 // List DF files
-router.get('/list/df', async (req, res) => {
+router.get('/df/list', async (req, res) => {
   try {
-    const result = await prosbcFileAPI.listDfFiles();
+    const configId = getConfigIdFromRequest(req);
+    const result = await prosbcFileManager.listDfFiles(configId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // List DM files
-router.get('/list/dm', async (req, res) => {
+router.get('/dm/list', async (req, res) => {
   try {
-    const result = await prosbcFileAPI.listDmFiles();
+    const configId = getConfigIdFromRequest(req);
+    const result = await prosbcFileManager.listDmFiles(configId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Get system status
-router.get('/status', async (req, res) => {
+// Upload DF file
+router.post('/df/upload', async (req, res) => {
   try {
-    const result = await prosbcFileAPI.getSystemStatus();
+    const filePath = req.body.filePath;
+    if (!filePath) return res.status(400).json({ error: 'Missing filePath' });
+    const configId = getConfigIdFromRequest(req);
+    const result = await prosbcFileManager.uploadDfFile(filePath, undefined, configId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Export file
-router.post('/export', async (req, res) => {
+// Upload DM file
+router.post('/dm/upload', async (req, res) => {
   try {
-    const { fileType, fileId, fileName, outputPath } = req.body;
-    if (!fileType || !fileId || !fileName) return res.status(400).json({ error: 'Missing parameters' });
-    const result = await prosbcFileAPI.exportFile(fileType, fileId, fileName, outputPath);
+    const filePath = req.body.filePath;
+    if (!filePath) return res.status(400).json({ error: 'Missing filePath' });
+    const configId = getConfigIdFromRequest(req);
+    const result = await prosbcFileManager.uploadDmFile(filePath, undefined, configId);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Delete file
-router.post('/delete', async (req, res) => {
-  try {
-    const { fileType, fileId, fileName } = req.body;
-    if (!fileType || !fileId || !fileName) return res.status(400).json({ error: 'Missing parameters' });
-    const result = await prosbcFileAPI.deleteFile(fileType, fileId, fileName);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get file content
-router.get('/content', async (req, res) => {
-  try {
-    const { fileType, fileId } = req.query;
-    if (!fileType || !fileId) return res.status(400).json({ error: 'Missing parameters' });
-    const result = await prosbcFileAPI.getFileContent(fileType, fileId);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// Multer setup for file uploads
 const upload = multer({
   dest: path.join(process.cwd(), 'uploads', 'update_tmp'),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+
+// Get file content (for CSV editor etc)
+router.get('/content', async (req, res) => {
+  try {
+    const fileType = req.query.fileType;
+    const fileId = req.query.fileId;
+    const configId = getConfigIdFromRequest(req);
+    if (!fileType || !fileId) {
+      return res.status(400).json({ success: false, error: 'Missing fileType or fileId' });
+    }
+    const result = await prosbcFileManager.getFileContent(fileType, fileId, configId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Update file (accepts multipart/form-data)
@@ -115,7 +153,8 @@ router.post('/update', upload.single('file'), async (req, res) => {
     const targetPath = path.join(path.dirname(tempPath), originalName);
     await fs.promises.rename(tempPath, targetPath);
     // Call the updateFile API with the renamed file path
-    const result = await prosbcFileAPI.updateFile(fileType, fileId, targetPath);
+    const configId = getConfigIdFromRequest(req);
+    const result = await prosbcFileManager.updateFile(fileType, fileId, targetPath, undefined, configId);
     // Remove temp file after update
     fs.unlink(targetPath, () => {});
     res.json(result);

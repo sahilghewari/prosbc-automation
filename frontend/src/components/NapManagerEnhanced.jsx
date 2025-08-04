@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 // import { fetchLiveNaps, deleteNap, updateNap } from '../utils/napApiClientFixed';
 
-// Helper functions to call backend API endpoints
-const apiBase = '/backend/api/prosbc-nap-api/naps';
-
+// Helper functions to call backend RESTful API endpoints with configId
 const getAuthHeaders = () => {
   const token = localStorage.getItem('dashboard_token');
   return token
@@ -11,24 +9,33 @@ const getAuthHeaders = () => {
     : { 'Content-Type': 'application/json' };
 };
 
-const fetchLiveNaps = async () => {
-  const res = await fetch(apiBase, { headers: getAuthHeaders() });
+// All NAP operations now require configId and napName (not napId)
+const fetchLiveNaps = async (configId) => {
+  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to fetch NAPs');
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to fetch NAPs');
-  return data.naps;
+  // Always return an array for naps
+  if (Array.isArray(data.naps)) return data.naps;
+  if (data.naps && typeof data.naps === 'object') {
+    // Convert object to array, skip meta keys
+    return Object.keys(data.naps)
+      .filter(key => key !== '***meta***')
+      .map(key => ({ name: key, ...data.naps[key] }));
+  }
+  return [];
 };
 
-const deleteNap = async (napId) => {
-  const res = await fetch(`${apiBase}/${napId}`, { method: 'DELETE', headers: getAuthHeaders() });
+const deleteNap = async (configId, napName) => {
+  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`, { method: 'DELETE', headers: getAuthHeaders() });
   if (!res.ok) throw new Error('Failed to delete NAP');
   const data = await res.json();
   if (!data.success) throw new Error(data.message || 'Failed to delete NAP');
   return data;
 };
 
-const updateNap = async (napId, napData) => {
-  const res = await fetch(`${apiBase}/${napId}`, {
+const updateNap = async (configId, napName, napData) => {
+  const res = await fetch(`/backend/api/prosbc-nap-api/configurations/${configId}/naps/${encodeURIComponent(napName)}`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify(napData),
@@ -40,7 +47,9 @@ const updateNap = async (napId, napData) => {
 };
 import EditNapModal from './NapEditor';
 
-const NapManagerEnhanced = ({ onAuthError }) => {
+
+// Accept configId as a prop (default to 'config_1' if not provided)
+const NapManagerEnhanced = ({ onAuthError, configId = 'config_1' }) => {
   const [naps, setNaps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,9 +58,10 @@ const NapManagerEnhanced = ({ onAuthError }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState({});
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [selectedNapId, setSelectedNapId] = useState(null);
+  const [selectedNapName, setSelectedNapName] = useState(null);
   const [baseUrl, setBaseUrl] = useState('/api');
   const [sessionCookie, setSessionCookie] = useState('');
+
 
   useEffect(() => {
     // Get session cookie from document.cookie
@@ -60,26 +70,24 @@ const NapManagerEnhanced = ({ onAuthError }) => {
       acc[key] = value;
       return acc;
     }, {});
-    
     if (cookies['_prosbc_session']) {
       setSessionCookie(cookies['_prosbc_session']);
     }
-    
     loadNaps();
-  }, []);
+    // Re-load naps when configId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configId]);
 
   const loadNaps = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const napData = await fetchLiveNaps();
+      const napData = await fetchLiveNaps(configId);
       setNaps(napData);
     } catch (err) {
       const errorMessage = err.message || 'Unknown error occurred';
       setError(`Failed to load NAPs: ${errorMessage}`);
       console.error('Error loading NAPs:', err);
-      
       if (errorMessage.includes('login') || 
           errorMessage.includes('auth') || 
           errorMessage.includes('session expired')) {
@@ -92,20 +100,18 @@ const NapManagerEnhanced = ({ onAuthError }) => {
     }
   };
 
-  const handleDelete = async (napId, napName) => {
+  const handleDelete = async (napName) => {
     if (!window.confirm(`Are you sure you want to delete '${napName}'?`)) {
       return;
     }
-
     try {
       setLoading(true);
-      await deleteNap(napId);
+      await deleteNap(configId, napName);
       await loadNaps();
       alert(`NAP '${napName}' was successfully deleted.`);
     } catch (err) {
       setError(`Failed to delete NAP: ${err.message}`);
       console.error('Error deleting NAP:', err);
-      
       const errorMessage = err.message || '';
       if (errorMessage.includes('login') || 
           errorMessage.includes('auth') || 
@@ -119,39 +125,32 @@ const NapManagerEnhanced = ({ onAuthError }) => {
     }
   };
 
-  const handleEditNap = (napId) => {
-    setSelectedNapId(napId);
+  const handleEditNap = (napName) => {
+    setSelectedNapName(napName);
     setEditModalOpen(true);
-    
-    // Make sure we have the base URL
     if (!baseUrl) {
       setBaseUrl('/api');
     }
-    
-    // Get session cookie if we don't have it yet
     if (!sessionCookie) {
       const cookies = document.cookie.split(';').reduce((acc, cookie) => {
         const [key, value] = cookie.trim().split('=');
         acc[key] = value;
         return acc;
       }, {});
-      
       if (cookies['_prosbc_session']) {
         setSessionCookie(cookies['_prosbc_session']);
       }
     }
-    
   };
 
   const handleEditSuccess = () => {
     loadNaps();
     setEditModalOpen(false);
-    setSelectedNapId(null);
+    setSelectedNapName(null);
   };
 
   const filteredNaps = naps.filter(nap => 
     nap.name?.toLowerCase().includes(filterTerm.toLowerCase()) ||
-    nap.id?.toString().includes(filterTerm) ||
     nap.sip_destination_ip?.toLowerCase().includes(filterTerm.toLowerCase())
   );
 
@@ -273,7 +272,7 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                     </tr>
                   ) : (
                     filteredNaps.map((nap, index) => (
-                      <tr key={nap.id} className="hover:bg-gray-700/30 transition-all duration-200">
+                      <tr key={nap.name} className="hover:bg-gray-700/30 transition-all duration-200">
                         <td className="px-6 py-4">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
@@ -281,14 +280,14 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                             </div>
                             <div className="ml-4">
                               <div className="text-sm font-medium text-white">{nap.name || 'Unnamed NAP'}</div>
-                              <div className="text-sm text-gray-400">ID: {nap.id}</div>
+                              <div className="text-sm text-gray-400">Name: {nap.name}</div>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center space-x-2">
                             <button
-                              onClick={() => handleEditNap(nap.id)}
+                              onClick={() => handleEditNap(nap.name)}
                               className="bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-300 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border border-blue-600/30 hover:border-blue-500"
                             >
                               <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,7 +296,7 @@ const NapManagerEnhanced = ({ onAuthError }) => {
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(nap.id, nap.name)}
+                              onClick={() => handleDelete(nap.name)}
                               className="bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border border-red-600/30 hover:border-red-500"
                             >
                               <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,15 +352,16 @@ const NapManagerEnhanced = ({ onAuthError }) => {
       </div>
 
       {/* Modal Components */}
-      {editModalOpen && selectedNapId && (
+      {editModalOpen && selectedNapName && (
         <EditNapModal
           isOpen={editModalOpen}
-          napId={selectedNapId}
+          napName={selectedNapName}
+          configId={configId}
           baseUrl={baseUrl}
           sessionCookie={sessionCookie}
           onClose={() => {
             setEditModalOpen(false);
-            setSelectedNapId(null);
+            setSelectedNapName(null);
           }}
           onSuccess={handleEditSuccess}
           onAuthError={onAuthError}

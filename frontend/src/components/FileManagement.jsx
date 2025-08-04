@@ -8,7 +8,7 @@ import CSVFileEditor from './CSVFileEditor';
 import AddProSBCFilesButton from './AddProSBCFilesButton';
 import DeleteAllFilesButton from './DeleteAllFilesButton';
 
-function FileManagement({ onAuthError }) {
+function FileManagement({ onAuthError, configId }) {
   // Helper to get auth headers
   const getAuthHeaders = () => {
     const token = localStorage.getItem('dashboard_token');
@@ -50,13 +50,13 @@ function FileManagement({ onAuthError }) {
   const [showCSVEditor, setShowCSVEditor] = useState(false);
   const [selectedCSVFile, setSelectedCSVFile] = useState(null);
 
-  // Load files on component mount
+  // Load files on component mount and when configId changes
   useEffect(() => {
     loadFiles();
     loadStoredFiles();
     loadDatabaseStats();
     loadUpdateHistory();
-  }, []);
+  }, [configId]);
 
   // Load stored files when search term or file type changes
   useEffect(() => {
@@ -68,8 +68,8 @@ function FileManagement({ onAuthError }) {
     setRefreshing(true);
     try {
       const [dfRes, dmRes] = await Promise.all([
-        fetch('/backend/api/prosbc-files/list/df', { headers: getAuthHeaders() }).then(r => r.json()),
-        fetch('/backend/api/prosbc-files/list/dm', { headers: getAuthHeaders() }).then(r => r.json())
+        fetch(`/backend/api/prosbc-files/df/list?configId=${configId || ''}`, { headers: getAuthHeaders() }).then(r => r.json()),
+        fetch(`/backend/api/prosbc-files/dm/list?configId=${configId || ''}`, { headers: getAuthHeaders() }).then(r => r.json())
       ]);
       if (dfRes.success) setDfFiles(dfRes.files);
       if (dmRes.success) setDmFiles(dmRes.files);
@@ -87,66 +87,31 @@ function FileManagement({ onAuthError }) {
   };
 
   // Export file
-  const handleExport = async (fileType, fileId, fileName) => {
+  const handleExport = async (fileType, fileId, fileName, configId) => {
     setIsLoading(true);
     setMessage(`🔄 Exporting ${fileName}...`);
     try {
-      // Step 1: Request export
-      const res = await fetch('/backend/api/prosbc-files/export', {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileType,
-          fileId,
-          fileName
-        })
+      // Use the working backend export endpoint
+      const params = new URLSearchParams({
+        fileType,
+        fileId,
+        fileName,
+        configId: configId || ''
       });
-      const result = await res.json();
-      if (result.success && result.path) {
-        setMessage(`✅ ${result.message}\nPreparing download...`);
-        // Step 2: Download file from backend
-        const downloadRes = await fetch(`/backend/api/prosbc-files/download?filePath=${encodeURIComponent(result.path)}`, { headers: getAuthHeaders() });
-        if (!downloadRes.ok) throw new Error('Download failed');
-        const blob = await downloadRes.blob();
-        // Step 3: Prompt user for save location (File System Access API)
-        if (window.showSaveFilePicker) {
-          try {
-            const fileHandle = await window.showSaveFilePicker({
-              suggestedName: fileName,
-              types: [
-                {
-                  description: 'CSV File',
-                  accept: { 'text/csv': ['.csv'] }
-                },
-                {
-                  description: 'All Files',
-                  accept: { '*/*': ['.*'] }
-                }
-              ]
-            });
-            const writable = await fileHandle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            setMessage(`✅ ${result.message}\nFile saved to your chosen location.`);
-            return;
-          } catch (fsError) {
-            setMessage(`❌ Save cancelled or failed: ${fsError.message}`);
-            return;
-          }
-        }
-        // Fallback: browser download
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        window.URL.revokeObjectURL(url);
-        setMessage(`✅ ${result.message}\nFile downloaded.`);
-      } else {
-        setMessage(`❌ Export failed: ${result.message || 'Unknown error'}`);
-      }
+      const url = `/backend/api/prosbc-files/export?${params.toString()}`;
+      // Use fetch to support auth headers if needed, fallback to link for browser download
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Export failed: ' + (await res.text()));
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      setMessage(`✅ File download started.`);
     } catch (error) {
       console.error('Export error:', error);
       setMessage(`❌ Export failed: ${error.message}`);
@@ -156,7 +121,7 @@ function FileManagement({ onAuthError }) {
   };
 
   // Delete file
-  const handleDelete = async (fileType, fileId, fileName) => {
+  const handleDelete = async (fileType, fileId, fileName, configId) => {
     if (!window.confirm(`Are you sure you want to delete '${fileName}'?\n\nThis action cannot be undone.`)) {
       return;
     }
@@ -169,17 +134,30 @@ function FileManagement({ onAuthError }) {
         body: JSON.stringify({
           fileType,
           fileId,
-          fileName
+          fileName,
+          configId
         })
       });
+      let result;
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error('Delete response error:', errorText);
-        setMessage(`❌ Delete failed: ${errorText}`);
+        let errorText;
+        try {
+          errorText = await res.text();
+        } catch (e) {
+          errorText = 'Unknown error';
+        }
+        setMessage(`❌ Delete failed: ${errorText.substring(0, 300)}`);
         setIsLoading(false);
         return;
       }
-      const result = await res.json();
+      try {
+        result = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text();
+        setMessage(`❌ Delete failed: Unexpected response from server.\n${text.substring(0, 300)}`);
+        setIsLoading(false);
+        return;
+      }
       if (result.success) {
         let successMessage = `✅ ${result.message}`;
         if (result.note && result.note.includes('CORS')) {
@@ -243,7 +221,7 @@ function FileManagement({ onAuthError }) {
       const res = await fetch('/backend/api/prosbc-files/upload/df', {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath })
+        body: JSON.stringify({ filePath, configId })
       });
       const result = await res.json();
       if (result.success) {
@@ -266,7 +244,7 @@ function FileManagement({ onAuthError }) {
       const res = await fetch('/backend/api/prosbc-files/upload/dm', {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath })
+        body: JSON.stringify({ filePath, configId })
       });
       const result = await res.json();
       if (result.success) {
@@ -281,15 +259,23 @@ function FileManagement({ onAuthError }) {
     }
   };
   // Get file content
-  const handleGetFileContent = async (fileType, fileId) => {
+  const handleGetFileContent = async (fileType, fileId, configId) => {
     setIsLoading(true);
     setMessage("🔄 Getting file content...");
     try {
-      const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(fileType)}&fileId=${encodeURIComponent(fileId)}`, { headers: getAuthHeaders() });
-      const result = await res.json();
+      const res = await fetch(`/backend/api/prosbc-files/content?fileType=${encodeURIComponent(fileType)}&fileId=${encodeURIComponent(fileId)}&configId=${configId || ''}`, { headers: getAuthHeaders() });
+      let result;
+      try {
+        result = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text();
+        throw new Error(`Get file content failed: Unexpected response from server.\n${text.substring(0, 300)}`);
+      }
       if (result.success) {
         setMessage(`✅ File content loaded.`);
         // You can set state here to display content if needed
+      } else {
+        setMessage(`❌ Get file content failed: ${result.message || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Get file content error:', error);
@@ -302,7 +288,7 @@ function FileManagement({ onAuthError }) {
   // Update file
   
   };
-  const handleUpdateFileApi = async (fileType, fileId, file) => {
+  const handleUpdateFileApi = async (fileType, fileId, file, configId) => {
     setIsLoading(true);
     setMessage("🔄 Updating file...");
     try {
@@ -311,6 +297,7 @@ function FileManagement({ onAuthError }) {
       formData.append('fileId', fileId);
       formData.append('file', file); // file is a File object
 
+      formData.append('configId', configId);
       const res = await fetch('/backend/api/prosbc-files/update', {
         method: 'POST',
         body: formData,
@@ -851,71 +838,71 @@ function FileManagement({ onAuthError }) {
               </tr>
             </thead>
             <tbody>
-              {files.map((file) => (
-                <tr key={file.id} className="border-b border-gray-700 hover:bg-gray-700/50">
-                  <td className="py-4 px-4">
-                    <div className="flex items-center">
-                      <span className="text-xl mr-3">{fileType === 'routesets_definitions' ? '📄' : '🗺️'}</span>
-                      <span className="font-medium text-white">{file.name}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-4">
-                    <div className="flex justify-center space-x-2">
-                      <button
-                        onClick={() => handleCSVEditor(file)}
-                        disabled={isLoading}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          isLoading 
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : 'bg-purple-600 text-white hover:bg-purple-700'
-                        }`}
-                        title="View & Edit CSV file"
-                      >
-                        📝 View & Edit
-                      </button>
-                      
-                      <button
-                        onClick={() => showUpdateFileModal(file.type, file.id, file.name)}
-                        disabled={isLoading}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          isLoading 
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                        }`}
-                        title="Update file"
-                      >
-                        📤 Update
-                      </button>
-                      
-                      <button
-                        onClick={() => handleExport(file.type, file.id, file.name)}
-                        disabled={isLoading}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          isLoading 
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        }`}
-                        title="Export file"
-                      >
-                        💾 Export
-                      </button>
-                      
-                      <button
-                        onClick={() => handleDelete(file.type, file.id, file.name)}
-                        disabled={isLoading}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                          isLoading 
-                            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                            : 'bg-red-600 text-white hover:bg-red-700'
-                        }`}
-                        title="Delete file"
-                      >
-                        🗑️ Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+      {files.map((file) => (
+        <tr key={file.id} className="border-b border-gray-700 hover:bg-gray-700/50">
+          <td className="py-4 px-4">
+            <div className="flex items-center">
+              <span className="text-xl mr-3">{fileType === 'routesets_definitions' ? '📄' : '🗺️'}</span>
+              <span className="font-medium text-white">{file.name}</span>
+            </div>
+          </td>
+          <td className="py-4 px-4">
+            <div className="flex justify-center space-x-2">
+              <button
+                onClick={() => handleCSVEditor(file)}
+                disabled={isLoading}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isLoading 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                }`}
+                title="View & Edit CSV file"
+              >
+                📝 View & Edit
+              </button>
+              
+              <button
+                onClick={() => showUpdateFileModal(file.type, file.id, file.name)}
+                disabled={isLoading}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isLoading 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+                title="Update file"
+              >
+                📤 Update
+              </button>
+              
+              <button
+                onClick={() => handleExport(file.type, file.id, file.name, file.configId || file.config_id)}
+                disabled={isLoading}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isLoading 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+                title="Export file"
+              >
+                💾 Export
+              </button>
+              
+              <button
+                onClick={() => handleDelete(file.type, file.id, file.name, file.configId || file.config_id)}
+                disabled={isLoading}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isLoading 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-red-600 text-white hover:bg-red-700'
+                }`}
+                title="Delete file"
+              >
+                🗑️ Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+      ))}
             </tbody>
           </table>
         </div>

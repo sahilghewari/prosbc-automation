@@ -15,8 +15,10 @@ import prosbcNapApiRouter from './routes/prosbc-nap-api.js';
 import napEditRoutes from './routes/napEdit.js';
 
 import prosbcUploadRouter from './routes/prosbcUpload.js';
+
 import prosbcFileManagerRouter from './routes/prosbcFileManager.js';
 import routesetMappingRouter from './routes/routesetMapping.js';
+import { fetchLiveConfigIds } from './utils/prosbc/prosbcConfigLiveFetcher.js';
 
 
 
@@ -24,12 +26,27 @@ const app = express();
 app.use(express.json());
 
 
-// JWT authentication middleware for all requests (except login)
-app.use((req, res, next) => {
-  // Allow unauthenticated access to login route
-  if (req.path === '/backend/api/auth/login') return next();
+// JWT authentication middleware for all requests (except login and test-configs)
+function extractToken(req) {
+  // Try Authorization header first
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+  // Optionally, try cookie (for browser clients)
+  if (req.cookies && req.cookies['dashboard_token']) {
+    return req.cookies['dashboard_token'];
+  }
+  return null;
+}
+
+app.use((req, res, next) => {
+  // Allow unauthenticated access only to login and test-configs endpoints
+  if (
+    req.path === '/backend/api/auth/login' ||
+    req.path === '/backend/api/prosbc-files/test-configs'
+  ) return next();
+  const token = extractToken(req);
   if (!token) return res.status(401).json({ message: 'Missing or invalid token' });
   jwt.verify(token, process.env.JWT_SECRET || 'secret', (err, user) => {
     if (err) return res.status(401).json({ message: 'Invalid or expired token' });
@@ -86,8 +103,34 @@ app.use('/backend/api/prosbc-files', prosbcFileManagerRouter);
 // Routeset Mapping Center API
 app.use('/backend/api/routeset-mapping', routesetMappingRouter);
 
+
+// Test endpoint: fetch live ProSBC configs
+app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
+  try {
+    // You may want to secure this endpoint in production
+    const baseURL = process.env.PROSBC_BASE_URL;
+    // Use the session cookie from the backend utility (simulate login)
+    // For demo, use prosbcLogin directly
+    const { prosbcLogin } = await import('./utils/prosbc/login.js');
+    const username = process.env.PROSBC_USERNAME;
+    const password = process.env.PROSBC_PASSWORD;
+    const sessionCookie = await prosbcLogin(baseURL, username, password);
+    const configs = await fetchLiveConfigIds(baseURL, sessionCookie);
+    res.json({ success: true, configs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 app.get('/', (req, res) => {
   res.send('ProSBC Backend API is running.');
+});
+
+// Global error handler (always returns JSON, logs stack)
+app.use((err, req, res, next) => {
+  console.error('GLOBAL ERROR:', err.stack || err);
+  res.status(500).json({ success: false, error: err.message || 'Internal server error', stack: err.stack });
 });
 
 const PORT = process.env.PORT || 3001;
