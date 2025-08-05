@@ -9,7 +9,9 @@ const router = express.Router();
 // GET /api/routeset-mappings
 router.get('/mappings', async (req, res) => {
   try {
-    const mappings = await routesetService.getRoutesetMappings();
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
+    const configId = req.query.configId;
+    const mappings = await routesetService.getRoutesetMappings(configId, instanceId);
     res.json({ success: true, mappings });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -19,7 +21,9 @@ router.get('/mappings', async (req, res) => {
 // GET /api/routeset-mapping/nap-edit-data/:napName
 router.get('/nap-edit-data/:napName', async (req, res) => {
   try {
-    const data = await routesetService.getNapEditData(req.params.napName);
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
+    const configId = req.query.configId;
+    const data = await routesetService.getNapEditData(req.params.napName, configId, instanceId);
     res.json(data);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -66,7 +70,9 @@ router.put('/mappings/:napName', async (req, res) => {
 // GET /api/routeset-files
 router.get('/files', async (req, res) => {
   try {
-    const files = await routesetService.getAvailableFiles();
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
+    const configId = req.query.configId;
+    const files = await routesetService.getAvailableFiles(configId, instanceId);
     res.json({ success: true, ...files });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -125,7 +131,9 @@ router.post('/configurations/:id/validate', async (req, res) => {
 // GET /api/routeset-mapping/available-files
 router.get('/available-files', async (req, res) => {
   try {
-    const files = await routesetService.getAvailableFiles();
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
+    const configId = req.query.configId;
+    const files = await routesetService.getAvailableFiles(configId, instanceId);
     res.json(files);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

@@ -2,27 +2,48 @@ import axios from 'axios';
 import { JSDOM } from 'jsdom';
 import { URLSearchParams } from 'url';
 import { prosbcLogin } from './login.js';
+import { getInstanceContext } from './multiInstanceManager.js';
 
-
-// Helper to get a logged-in axios instance with session cookie
-let sessionCookie = null;
-let lastLoginTime = 0;
+// Store multiple API clients for different instances
+const sessionCookies = new Map();
+const lastLoginTimes = new Map();
 const SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
-async function getApiClient() {
-  const baseURL = process.env.PROSBC_BASE_URL;
-  const username = process.env.PROSBC_USERNAME;
-  const password = process.env.PROSBC_PASSWORD;
-  if (!baseURL || !username || !password) {
-    throw new Error('ProSBC credentials not found. Please set PROSBC_BASE_URL, PROSBC_USERNAME, and PROSBC_PASSWORD in your environment variables');
+async function getApiClient(instanceId = null) {
+  let baseURL, username, password;
+  
+  if (instanceId) {
+    // Get instance-specific configuration
+    const instanceContext = await getInstanceContext(instanceId);
+    baseURL = instanceContext.baseUrl;
+    username = instanceContext.username;
+    password = instanceContext.password;
+    console.log(`[RoutesetMapping] Using instance: ${instanceContext.name} (${baseURL})`);
+  } else {
+    // Fallback to environment variables
+    baseURL = process.env.PROSBC_BASE_URL;
+    username = process.env.PROSBC_USERNAME;
+    password = process.env.PROSBC_PASSWORD;
+    console.log(`[RoutesetMapping] Using environment variables: ${baseURL}`);
   }
+  
+  if (!baseURL || !username || !password) {
+    throw new Error('ProSBC credentials not found. Please set credentials in environment variables or provide valid instanceId');
+  }
+  
+  const sessionKey = instanceId || 'default';
+  let sessionCookie = sessionCookies.get(sessionKey);
+  let lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
+  
   // Refresh session if expired or not set
   if (!sessionCookie || (Date.now() - lastLoginTime > SESSION_TTL_MS)) {
-    console.log('Logging in to ProSBC to get session cookie...');
+    console.log(`[RoutesetMapping] Logging in to ProSBC instance: ${sessionKey}...`);
     sessionCookie = await prosbcLogin(baseURL, username, password);
-    lastLoginTime = Date.now();
-    console.log('Obtained ProSBC session cookie.');
+    sessionCookies.set(sessionKey, sessionCookie);
+    lastLoginTimes.set(sessionKey, Date.now());
+    console.log(`[RoutesetMapping] Obtained ProSBC session cookie for: ${sessionKey}`);
   }
+  
   const apiClient = axios.create({
     baseURL,
     timeout: 60000,
@@ -127,10 +148,10 @@ const parseNapEditForm = (html) => {
 };
 
 // Get all routeset mappings
-const getRoutesetMappings = async () => {
+const getRoutesetMappings = async (configId = 'config_1', instanceId = null) => {
   try {
-    console.log('Fetching routeset mappings...');
-    const apiClient = await getApiClient();
+    console.log(`Fetching routeset mappings for config: ${configId}, instance: ${instanceId || 'default'}`);
+    const apiClient = await getApiClient(instanceId);
     const response = await apiClient.get('/routesets');
     if (response.status === 200) {
       const mappings = parseRoutesetMappings(response.data);
@@ -149,10 +170,10 @@ const getRoutesetMappings = async () => {
 };
 
 // Get NAP edit form data (including available files)
-const getNapEditData = async (napName) => {
+const getNapEditData = async (napName, configId = 'config_1', instanceId = null) => {
   try {
-    console.log(`Fetching edit data for NAP: ${napName}`);
-    const apiClient = await getApiClient();
+    console.log(`Fetching edit data for NAP: ${napName}, config: ${configId}, instance: ${instanceId || 'default'}`);
+    const apiClient = await getApiClient(instanceId);
     const editUrl = `/nap_columns_values/${napName}/edit?from_controller=tbgw_routesets`;
     const response = await apiClient.get(editUrl);
     if (response.status === 200) {
@@ -228,10 +249,10 @@ const updateNapMapping = async (napName, mappingData) => {
 };
 
 // Get available files for dropdowns
-const getAvailableFiles = async () => {
+const getAvailableFiles = async (configId = 'config_1', instanceId = null) => {
   try {
-    console.log('Fetching available files...');
-    const mappings = await getRoutesetMappings();
+    console.log(`Fetching available files for config: ${configId}, instance: ${instanceId || 'default'}`);
+    const mappings = await getRoutesetMappings(configId, instanceId);
     if (mappings.length === 0) {
       return { definitions: [], digitmaps: [] };
     }
@@ -241,7 +262,7 @@ const getAvailableFiles = async () => {
       try {
         // Skip undefined NAPs
         if (!mapping.napName || mapping.napName === 'undefined') continue;
-        const editData = await getNapEditData(mapping.napName);
+        const editData = await getNapEditData(mapping.napName, configId, instanceId);
         if (editData && editData.availableFiles) {
           return editData.availableFiles;
         }

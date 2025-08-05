@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext.jsx';
 
 const RoutesetMapping = ({ onAuthError }) => {
   const [mappings, setMappings] = useState([]);
@@ -19,15 +19,42 @@ const RoutesetMapping = ({ onAuthError }) => {
   const [activating, setActivating] = useState(false);
   const [validating, setValidating] = useState(false);
 
-  // Helper to get auth headers
+  // ProSBC Instance Context
+  const { 
+    selectedInstanceId, 
+    selectedInstance, 
+    getInstanceHeaders, 
+    registerRefreshCallback,
+    hasSelectedInstance 
+  } = useProSBCInstance();
+
+  // Helper to get auth headers with instance support
   const getAuthHeaders = () => {
     const token = localStorage.getItem('dashboard_token');
-    return token ? { 'Authorization': 'Bearer ' + token } : {};
+    const baseHeaders = token ? { 'Authorization': 'Bearer ' + token } : {};
+    
+    // Add instance-specific headers if available
+    return {
+      ...baseHeaders,
+      ...getInstanceHeaders()
+    };
   };
   // Load initial data
   useEffect(() => {
-    loadMappings();
-  }, []);
+    if (hasSelectedInstance) {
+      loadMappings();
+    }
+  }, [hasSelectedInstance]);
+
+  // Register for instance change callbacks
+  useEffect(() => {
+    const unregister = registerRefreshCallback((instanceId, instance) => {
+      console.log(`[RoutesetMapping] Instance changed to: ${instanceId}`, instance);
+      loadMappings();
+    });
+
+    return unregister;
+  }, [registerRefreshCallback]);
 
   // Debug: log mappings whenever they change
   useEffect(() => {
@@ -39,14 +66,25 @@ const RoutesetMapping = ({ onAuthError }) => {
       setLoading(true);
       setError(null);
 
+      if (!hasSelectedInstance) {
+        console.log('[RoutesetMapping] No ProSBC instance selected, skipping load');
+        setMappings([]);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`[RoutesetMapping] Loading mappings for instance: ${selectedInstanceId}`);
+
       // Get mappings
       const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings', { headers: getAuthHeaders() });
       if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
       const mappingsJson = await mappingsRes.json();
+      
       // If backend returns {success, mappings}, extract mappings
       const mappingsArr = Array.isArray(mappingsJson)
         ? mappingsJson
         : (Array.isArray(mappingsJson.mappings) ? mappingsJson.mappings : []);
+      
       // Filter out mappings with missing or 'undefined' napName
       const filteredMappings = mappingsArr.filter(m => m.napName && m.napName !== 'undefined');
       console.log('Mappings from backend:', mappingsJson);
@@ -326,14 +364,56 @@ const RoutesetMapping = ({ onAuthError }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-800 via-gray-700 to-gray-800 border-b border-gray-600 shadow-xl">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
-            🗺️ Routeset Mapping 
-          </h2>
-          <p className="text-gray-400 text-lg">Advanced mapping of Routeset files and NAP configurations</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
+                🗺️ Routeset Mapping 
+                {selectedInstance && (
+                  <span className="ml-3 px-3 py-1 text-sm bg-blue-600 text-white rounded-full">
+                    {selectedInstance.name}
+                  </span>
+                )}
+              </h2>
+              <p className="text-gray-400 text-lg">
+                Advanced mapping of Routeset files and NAP configurations
+                {selectedInstance && (
+                  <span className="text-gray-500">
+                    {' '}for {selectedInstance.baseUrl}
+                  </span>
+                )}
+              </p>
+            </div>
+            {!hasSelectedInstance && (
+              <div className="text-center">
+                <span className="inline-flex items-center px-4 py-2 text-sm text-yellow-400 bg-yellow-400/10 rounded-full border border-yellow-400/20">
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  No ProSBC instance selected
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {!hasSelectedInstance ? (
+          <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl backdrop-blur-sm">
+            <div className="px-6 py-8 text-center">
+              <div className="mx-auto w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-white mb-2">No ProSBC Instance Selected</h3>
+              <p className="text-gray-400 mb-6">
+                Please select a ProSBC instance from the instance selector to view and manage routeset mappings.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Success Message */}
         {successMessage && (
           <div className="mb-6 bg-green-900/20 border border-green-700 rounded-xl p-4 backdrop-blur-sm">
@@ -660,8 +740,10 @@ const RoutesetMapping = ({ onAuthError }) => {
           )}
         </button>
       </div>
+          </>
+        )}
+      </div>
     </div>
-</div>
   );
 };
 

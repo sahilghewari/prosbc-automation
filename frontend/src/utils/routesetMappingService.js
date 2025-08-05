@@ -24,11 +24,18 @@ const getCredentials = () => {
   return { username, password };
 };
 
-// Setup authentication interceptor
+// Setup authentication interceptor with instance support
 apiClient.interceptors.request.use((config) => {
   const credentials = getCredentials();
   const authString = btoa(`${credentials.username}:${credentials.password}`);
   config.headers.Authorization = `Basic ${authString}`;
+  
+  // Add instance ID header if available
+  const instanceId = config.headers['X-ProSBC-Instance-ID'] || window.__prosbc_instance_id;
+  if (instanceId) {
+    config.headers['X-ProSBC-Instance-ID'] = instanceId;
+  }
+  
   return config;
 });
 
