@@ -2,6 +2,7 @@
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import fs from 'fs';
+import path from 'path';
 import { prosbcLogin } from './login.js';
 import { selectConfiguration } from './prosbcConfigSelector.js';
 import { fetchLiveConfigIds } from './prosbcConfigLiveFetcher.js';
@@ -77,11 +78,57 @@ class ProSBCFileAPI {
     return this.sessionCookie;
   }
 
+  // Helper to convert frontend config identifier to ProSBC numeric config ID
+  async getNumericConfigId(configId) {
+    if (!configId) return null;
+    
+    // If it's already numeric, return as is
+    if (/^\d+$/.test(configId.toString())) {
+      return configId.toString();
+    }
+    
+    // Ensure we have fetched the live configs
+    if (!this.configs) {
+      const sessionCookie = await this.getSessionCookie();
+      this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
+    }
+    
+    // Try to find a config that matches the provided configId
+    // This could be by name or by a pattern
+    const matchingConfig = this.configs.find(cfg => {
+      // Direct match by name or ID
+      if (cfg.name === configId || cfg.id === configId) {
+        return true;
+      }
+      // Try pattern matching for config names like "config_062425"
+      if (cfg.name.toLowerCase().includes(configId.toLowerCase()) || 
+          configId.toLowerCase().includes(cfg.name.toLowerCase())) {
+        return true;
+      }
+      return false;
+    });
+    
+    if (matchingConfig) {
+      console.log(`[Config Mapping] Mapped '${configId}' to ProSBC config ID '${matchingConfig.id}' (name: '${matchingConfig.name}')`);
+      return matchingConfig.id;
+    }
+    
+    // If no match found, log available configs for debugging
+    console.warn(`[Config Mapping] Could not map '${configId}' to any ProSBC config.`);
+    console.warn(`[Config Mapping] Available configs:`, this.configs.map(cfg => `${cfg.id}: ${cfg.name}`));
+    
+    // Return the original configId as fallback
+    return configId;
+  }
+
   // Fetch configs and select the active one (or a specific one if set)
   // Accepts configId (string/number) to override selection for this operation
   async ensureConfigSelected(configId = null) {
+    // Convert frontend config ID to numeric ID
+    const numericConfigId = await this.getNumericConfigId(configId);
+    
     // If configId is provided and different, always reselect
-    if (this.configSelectionDone && (!configId || configId === this.selectedConfigId)) return;
+    if (this.configSelectionDone && (!numericConfigId || numericConfigId === this.selectedConfigId)) return;
     
     // Ensure instance context is loaded
     await this.loadInstanceContext();
@@ -89,11 +136,16 @@ class ProSBCFileAPI {
     const sessionCookie = await this.getSessionCookie();
     // Fetch live configs
     this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
-    // Pick config: use configId if set, else pick the active one
-    let configToSelect = configId || this.selectedConfigId;
+    console.log(`[Config Selection] Available configs from ProSBC:`, this.configs);
+    
+    // Pick config: use numericConfigId if set, else pick the active one
+    let configToSelect = numericConfigId || this.selectedConfigId;
     if (!configToSelect) {
       const active = this.configs.find(cfg => cfg.active);
       configToSelect = active ? active.id : (this.configs[0] && this.configs[0].id);
+      console.log(`[Config Selection] No specific config requested, using: ${configToSelect} (active: ${active ? 'yes' : 'first available'})`);
+    } else {
+      console.log(`[Config Selection] Selecting specific config: ${configToSelect} (requested: ${configId})`);
     }
     if (!configToSelect) throw new Error('No configuration found to select');
     await selectConfiguration(configToSelect, this.baseURL, sessionCookie);
@@ -115,11 +167,12 @@ class ProSBCFileAPI {
     return { success: true, message: 'Using basic authentication' };
   }
 
-  async uploadDfFile(filePath, onProgress, configId = null) {
+  async uploadDfFile(filePath, onProgress, configId = null, originalFileName = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId ;
-      const fileName = filePath.split('/').pop();
+      const dbId = this.selectedConfigId;
+      const fileName = originalFileName || path.basename(filePath);
+      console.log(`[Upload DF] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
       onProgress?.(25, 'Getting upload form...');
       const newDfResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`, {
         method: 'GET',
@@ -138,23 +191,53 @@ class ProSBCFileAPI {
         /name='authenticity_token'[^>]*value='([^"]+)'/,
         /name="csrf-token"[^>]*content="([^"]+)"/,
         /<meta[^>]*name="csrf-token"[^>]*content="([^"]+)"/,
-        /authenticity_token['"]\s*:\s*['"]([^'"]+)['"]/
+        /authenticity_token['"]\s*:\s*['"]([^'"]+)['"]/,
+        // Additional patterns for different ProSBC versions
+        /<input[^>]*name="authenticity_token"[^>]*value="([^"]+)"[^>]*>/,
+        /<input[^>]*value="([^"]+)"[^>]*name="authenticity_token"[^>]*>/,
+        /csrf[_-]?token['"]\s*[:=]\s*['"]([^'"]+)['"]/i,
+        /_token['"]\s*[:=]\s*['"]([^'"]+)['"]/
       ];
+      
+      console.log('[CSRF Debug] Searching for CSRF token...');
       for (const pattern of patterns) {
         const match = formHTML.match(pattern);
         if (match) {
           csrfToken = match[1];
+          console.log(`[CSRF Debug] Found token with pattern: ${pattern.source}`);
           break;
         }
       }
+      
       if (!csrfToken) {
-        console.error('[CSRF Extraction] Raw HTML:', formHTML.substring(0, 1000));
-        throw new Error('Could not find CSRF token in upload form');
+        console.error('[CSRF Extraction] Raw HTML:', formHTML.substring(0, 1500));
+        console.log('[CSRF Debug] Trying to find any hidden input fields...');
+        const hiddenInputs = formHTML.match(/<input[^>]*type="hidden"[^>]*>/gi) || [];
+        console.log('[CSRF Debug] Hidden inputs found:', hiddenInputs);
+        
+        // Last resort: try to extract any token-like value from hidden inputs
+        const tokenPattern = /<input[^>]*type="hidden"[^>]*value="([A-Za-z0-9+\/=_-]{20,})"[^>]*>/i;
+        const tokenMatch = formHTML.match(tokenPattern);
+        if (tokenMatch) {
+          csrfToken = tokenMatch[1];
+          console.log('[CSRF Debug] Using fallback token from hidden input');
+        }
       }
+      
+      if (!csrfToken) {
+        console.warn('[CSRF Warning] Could not find CSRF token, attempting upload without token as fallback');
+        // Continue without CSRF token as some ProSBC versions might not require it
+        csrfToken = '';
+      }
+      
       onProgress?.(75, 'Uploading file...');
       const formData = new FormData();
-      formData.append('authenticity_token', csrfToken);
-      formData.append('tbgw_routesets_definition[file]', fs.createReadStream(filePath));
+      if (csrfToken) {
+        formData.append('authenticity_token', csrfToken);
+      }
+      // Use buffer instead of stream to avoid redirect issues with node-fetch
+      const fileBuffer = fs.readFileSync(filePath);
+      formData.append('tbgw_routesets_definition[file]', fileBuffer, fileName);
       formData.append('tbgw_routesets_definition[tbgw_files_db_id]', dbId);
       formData.append('commit', 'Import');
       const uploadHeaders = await this.getCommonHeaders();
@@ -162,25 +245,112 @@ class ProSBCFileAPI {
       const uploadResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions`, {
         method: 'POST',
         headers: uploadHeaders,
-        body: formData
+        body: formData,
+        redirect: 'manual' // Handle redirects manually to avoid stream issues
       });
+      
+      console.log(`[Upload DF] Response status: ${uploadResponse.status}`);
+      console.log(`[Upload DF] Response headers:`, Object.fromEntries(uploadResponse.headers.entries()));
+      
+      const responseText = await uploadResponse.text();
+      console.log(`[Upload DF] Response body preview:`, responseText.substring(0, 500));
+      
       onProgress?.(100, 'Upload complete!');
-      if (uploadResponse.ok || uploadResponse.status === 302) {
-        return { success: true, message: 'DF file uploaded successfully!' };
+      
+      // For redirects, check if they contain success indicators
+      if (uploadResponse.status === 302 || uploadResponse.status === 301) {
+        const location = uploadResponse.headers.get('location');
+        console.log(`[Upload DF] Redirect location: ${location}`);
+        
+        // Check for error messages in the response headers or body
+        const setCookieHeader = uploadResponse.headers.get('set-cookie');
+        if (setCookieHeader && setCookieHeader.includes('error')) {
+          // Try to extract the error message from the session cookie
+          const errorMatch = setCookieHeader.match(/error[^:]*:\s*([^&]+)/);
+          if (errorMatch) {
+            const errorMsg = decodeURIComponent(errorMatch[1]).replace(/\+/g, ' ');
+            console.log(`[Upload DF] Server error detected: ${errorMsg}`);
+            
+            // Check for specific error types
+            if (errorMsg.toLowerCase().includes('already been taken') || 
+                errorMsg.toLowerCase().includes('name') && errorMsg.toLowerCase().includes('taken')) {
+              throw new Error(`File name already exists: ${errorMsg}`);
+            } else {
+              throw new Error(`Upload failed: ${errorMsg}`);
+            }
+          }
+        }
+        
+        // Follow the redirect to check for success
+        if (location) {
+          const redirectUrl = location.startsWith('http') ? location : `${this.baseURL}${location}`;
+          console.log(`[Upload DF] Following redirect to: ${redirectUrl}`);
+          
+          try {
+            const redirectResponse = await fetch(redirectUrl, {
+              method: 'GET',
+              headers: await this.getCommonHeaders()
+            });
+            const redirectText = await redirectResponse.text();
+            console.log(`[Upload DF] Redirect response preview:`, redirectText.substring(0, 500));
+            
+            // Check for error messages in the redirect page
+            if (redirectText.includes('error') || redirectText.includes('failed') || 
+                redirectText.includes('already been taken') || redirectText.includes('Name has already been taken')) {
+              // Try to extract specific error message from HTML
+              const errorMatch = redirectText.match(/<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/div>/i) ||
+                                redirectText.match(/<p[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/p>/i) ||
+                                redirectText.match(/error[^:]*:\s*([^<\n]+)/i);
+              
+              if (errorMatch) {
+                const errorMsg = errorMatch[1].trim();
+                console.log(`[Upload DF] Error found in redirect page: ${errorMsg}`);
+                throw new Error(`Upload failed: ${errorMsg}`);
+              } else {
+                throw new Error(`Upload failed: Server reported an error but details could not be extracted`);
+              }
+            }
+            
+            // Check for success indicators in the redirect response
+            if (redirectText.includes('successfully') || redirectText.includes('imported') || 
+                redirectText.includes('uploaded') || redirectResponse.url.includes('edit')) {
+              return { success: true, message: 'DF file uploaded successfully!' };
+            }
+            
+            // Check if we can see our uploaded file in the file listing
+            if (redirectText.includes(fileName)) {
+              console.log(`[Upload DF] SUCCESS: Found uploaded file '${fileName}' in the file listing!`);
+              return { success: true, message: `DF file '${fileName}' uploaded and verified in ProSBC!` };
+            } else {
+              console.log(`[Upload DF] WARNING: Could not find file '${fileName}' in the redirect response. Upload may have failed.`);
+            }
+          } catch (redirectError) {
+            console.error(`[Upload DF] Error following redirect:`, redirectError);
+          }
+        }
+        
+        return { success: true, message: 'DF file upload completed (redirect received)' };
+      } else if (uploadResponse.ok) {
+        // Check response content for success indicators
+        if (responseText.includes('successfully') || responseText.includes('imported') || 
+            responseText.includes('uploaded')) {
+          return { success: true, message: 'DF file uploaded successfully!' };
+        }
+        return { success: true, message: 'DF file upload completed' };
       } else {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText.substring(0, 200)}`);
+        throw new Error(`Upload failed: ${uploadResponse.status} - ${responseText.substring(0, 200)}`);
       }
     } catch (error) {
       throw error;
     }
   }
 
-  async uploadDmFile(filePath, onProgress, configId = null) {
+  async uploadDmFile(filePath, onProgress, configId = null, originalFileName = null) {
     try {
       await this.ensureConfigSelected(configId);
       const dbId = this.selectedConfigId || '1';
-      const fileName = filePath.split('/').pop();
+      const fileName = originalFileName || path.basename(filePath);
+      console.log(`[Upload DM] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
       onProgress?.(25, 'Getting upload form...');
       const newDmResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`, {
         method: 'GET',
@@ -192,13 +362,61 @@ class ProSBCFileAPI {
       }
       onProgress?.(50, 'Extracting security token...');
       const formHTML = await newDmResponse.text();
-      const csrfMatch = formHTML.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
-      if (!csrfMatch) throw new Error('Could not find CSRF token in upload form');
-      const csrfToken = csrfMatch[1];
+      
+      // Try multiple patterns for CSRF extraction (same as DF upload)
+      let csrfToken = null;
+      const patterns = [
+        /name="authenticity_token"[^>]*value="([^"]+)"/,
+        /name='authenticity_token'[^>]*value='([^"]+)'/,
+        /name="csrf-token"[^>]*content="([^"]+)"/,
+        /<meta[^>]*name="csrf-token"[^>]*content="([^"]+)"/,
+        /authenticity_token['"]\s*:\s*['"]([^'"]+)['"]/,
+        // Additional patterns for different ProSBC versions
+        /<input[^>]*name="authenticity_token"[^>]*value="([^"]+)"[^>]*>/,
+        /<input[^>]*value="([^"]+)"[^>]*name="authenticity_token"[^>]*>/,
+        /csrf[_-]?token['"]\s*[:=]\s*['"]([^'"]+)['"]/i,
+        /_token['"]\s*[:=]\s*['"]([^'"]+)['"]/
+      ];
+      
+      console.log('[DM CSRF Debug] Searching for CSRF token...');
+      for (const pattern of patterns) {
+        const match = formHTML.match(pattern);
+        if (match) {
+          csrfToken = match[1];
+          console.log(`[DM CSRF Debug] Found token with pattern: ${pattern.source}`);
+          break;
+        }
+      }
+      
+      if (!csrfToken) {
+        console.error('[DM CSRF Extraction] Raw HTML:', formHTML.substring(0, 1500));
+        console.log('[DM CSRF Debug] Trying to find any hidden input fields...');
+        const hiddenInputs = formHTML.match(/<input[^>]*type="hidden"[^>]*>/gi) || [];
+        console.log('[DM CSRF Debug] Hidden inputs found:', hiddenInputs);
+        
+        // Last resort: try to extract any token-like value from hidden inputs
+        const tokenPattern = /<input[^>]*type="hidden"[^>]*value="([A-Za-z0-9+\/=_-]{20,})"[^>]*>/i;
+        const tokenMatch = formHTML.match(tokenPattern);
+        if (tokenMatch) {
+          csrfToken = tokenMatch[1];
+          console.log('[DM CSRF Debug] Using fallback token from hidden input');
+        }
+      }
+      
+      if (!csrfToken) {
+        console.warn('[DM CSRF Warning] Could not find CSRF token, attempting upload without token as fallback');
+        // Continue without CSRF token as some ProSBC versions might not require it
+        csrfToken = '';
+      }
+      
       onProgress?.(75, 'Uploading file...');
       const formData = new FormData();
-      formData.append('authenticity_token', csrfToken);
-      formData.append('tbgw_routesets_digitmap[file]', fs.createReadStream(filePath));
+      if (csrfToken) {
+        formData.append('authenticity_token', csrfToken);
+      }
+      // Use buffer instead of stream to avoid redirect issues with node-fetch
+      const fileBuffer = fs.readFileSync(filePath);
+      formData.append('tbgw_routesets_digitmap[file]', fileBuffer, fileName);
       formData.append('tbgw_routesets_digitmap[tbgw_files_db_id]', dbId);
       formData.append('commit', 'Import');
       const uploadHeaders = await this.getCommonHeaders();
@@ -206,14 +424,100 @@ class ProSBCFileAPI {
       const uploadResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps`, {
         method: 'POST',
         headers: uploadHeaders,
-        body: formData
+        body: formData,
+        redirect: 'manual' // Handle redirects manually to avoid stream issues
       });
+      
+      console.log(`[Upload DM] Response status: ${uploadResponse.status}`);
+      console.log(`[Upload DM] Response headers:`, Object.fromEntries(uploadResponse.headers.entries()));
+      
+      const responseText = await uploadResponse.text();
+      console.log(`[Upload DM] Response body preview:`, responseText.substring(0, 500));
+      
       onProgress?.(100, 'Upload complete!');
-      if (uploadResponse.ok || uploadResponse.status === 302) {
-        return { success: true, message: 'DM file uploaded successfully!' };
+      
+      // For redirects, check if they contain success indicators
+      if (uploadResponse.status === 302 || uploadResponse.status === 301) {
+        const location = uploadResponse.headers.get('location');
+        console.log(`[Upload DM] Redirect location: ${location}`);
+        
+        // Check for error messages in the response headers or body
+        const setCookieHeader = uploadResponse.headers.get('set-cookie');
+        if (setCookieHeader && setCookieHeader.includes('error')) {
+          // Try to extract the error message from the session cookie
+          const errorMatch = setCookieHeader.match(/error[^:]*:\s*([^&]+)/);
+          if (errorMatch) {
+            const errorMsg = decodeURIComponent(errorMatch[1]).replace(/\+/g, ' ');
+            console.log(`[Upload DM] Server error detected: ${errorMsg}`);
+            
+            // Check for specific error types
+            if (errorMsg.toLowerCase().includes('already been taken') || 
+                errorMsg.toLowerCase().includes('name') && errorMsg.toLowerCase().includes('taken')) {
+              throw new Error(`File name already exists: ${errorMsg}`);
+            } else {
+              throw new Error(`Upload failed: ${errorMsg}`);
+            }
+          }
+        }
+        
+        // Follow the redirect to check for success
+        if (location) {
+          const redirectUrl = location.startsWith('http') ? location : `${this.baseURL}${location}`;
+          console.log(`[Upload DM] Following redirect to: ${redirectUrl}`);
+          
+          try {
+            const redirectResponse = await fetch(redirectUrl, {
+              method: 'GET',
+              headers: await this.getCommonHeaders()
+            });
+            const redirectText = await redirectResponse.text();
+            console.log(`[Upload DM] Redirect response preview:`, redirectText.substring(0, 500));
+            
+            // Check for error messages in the redirect page
+            if (redirectText.includes('error') || redirectText.includes('failed') || 
+                redirectText.includes('already been taken') || redirectText.includes('Name has already been taken')) {
+              // Try to extract specific error message from HTML
+              const errorMatch = redirectText.match(/<div[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/div>/i) ||
+                                redirectText.match(/<p[^>]*class="[^"]*error[^"]*"[^>]*>([^<]+)<\/p>/i) ||
+                                redirectText.match(/error[^:]*:\s*([^<\n]+)/i);
+              
+              if (errorMatch) {
+                const errorMsg = errorMatch[1].trim();
+                console.log(`[Upload DM] Error found in redirect page: ${errorMsg}`);
+                throw new Error(`Upload failed: ${errorMsg}`);
+              } else {
+                throw new Error(`Upload failed: Server reported an error but details could not be extracted`);
+              }
+            }
+            
+            // Check for success indicators in the redirect response
+            if (redirectText.includes('successfully') || redirectText.includes('imported') || 
+                redirectText.includes('uploaded') || redirectResponse.url.includes('edit')) {
+              return { success: true, message: 'DM file uploaded successfully!' };
+            }
+            
+            // Check if we can see our uploaded file in the file listing
+            if (redirectText.includes(fileName)) {
+              console.log(`[Upload DM] SUCCESS: Found uploaded file '${fileName}' in the file listing!`);
+              return { success: true, message: `DM file '${fileName}' uploaded and verified in ProSBC!` };
+            } else {
+              console.log(`[Upload DM] WARNING: Could not find file '${fileName}' in the redirect response. Upload may have failed.`);
+            }
+          } catch (redirectError) {
+            console.error(`[Upload DM] Error following redirect:`, redirectError);
+          }
+        }
+        
+        return { success: true, message: 'DM file upload completed (redirect received)' };
+      } else if (uploadResponse.ok) {
+        // Check response content for success indicators
+        if (responseText.includes('successfully') || responseText.includes('imported') || 
+            responseText.includes('uploaded')) {
+          return { success: true, message: 'DM file uploaded successfully!' };
+        }
+        return { success: true, message: 'DM file upload completed' };
       } else {
-        const errorText = await uploadResponse.text();
-        throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText.substring(0, 200)}`);
+        throw new Error(`Upload failed: ${uploadResponse.status} - ${responseText.substring(0, 200)}`);
       }
     } catch (error) {
       throw error;

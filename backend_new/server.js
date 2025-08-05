@@ -113,32 +113,49 @@ app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
   try {
     // Extract instance ID from headers for instance-specific config fetching
     const instanceId = req.headers['x-prosbc-instance-id'];
+    console.log(`[test-configs] Request received with instance ID: ${instanceId}`);
+    console.log(`[test-configs] Headers with x-prefix:`, Object.keys(req.headers).filter(h => h.startsWith('x-')));
+    
     let baseURL, username, password;
 
     if (instanceId) {
       // Use instance-specific settings
+      console.log(`[test-configs] Attempting to get credentials for instance ${instanceId}`);
       const { getProSBCCredentials } = await import('./utils/prosbc/multiInstanceManager.js');
-      const instance = await getProSBCCredentials(instanceId);
-      if (instance) {
-        baseURL = instance.baseUrl;
-        username = instance.username;
-        password = instance.password;
-        console.log(`[test-configs] Using instance ${instanceId}: ${baseURL}`);
-      } else {
-        return res.status(404).json({ success: false, error: `Instance ${instanceId} not found` });
+      try {
+        const instance = await getProSBCCredentials(instanceId);
+        if (instance) {
+          baseURL = instance.baseUrl;
+          username = instance.username;
+          password = instance.password;
+          console.log(`[test-configs] Using instance ${instanceId}: ${baseURL}`);
+        } else {
+          console.log(`[test-configs] Instance ${instanceId} returned null, falling back to default`);
+          baseURL = process.env.PROSBC_BASE_URL;
+          username = process.env.PROSBC_USERNAME;
+          password = process.env.PROSBC_PASSWORD;
+        }
+      } catch (instanceError) {
+        console.log(`[test-configs] Error getting instance ${instanceId}:`, instanceError.message);
+        console.log(`[test-configs] Falling back to default environment settings`);
+        baseURL = process.env.PROSBC_BASE_URL;
+        username = process.env.PROSBC_USERNAME;
+        password = process.env.PROSBC_PASSWORD;
       }
     } else {
       // Use default environment settings
       baseURL = process.env.PROSBC_BASE_URL;
       username = process.env.PROSBC_USERNAME;
       password = process.env.PROSBC_PASSWORD;
-      console.log('[test-configs] Using default environment settings');
+      console.log('[test-configs] No instance ID provided, using default environment settings');
     }
 
+    console.log(`[test-configs] Final baseURL: ${baseURL}`);
     const { prosbcLogin } = await import('./utils/prosbc/login.js');
     const sessionCookie = await prosbcLogin(baseURL, username, password);
     const configs = await fetchLiveConfigIds(baseURL, sessionCookie);
-    res.json({ success: true, configs, instanceId: instanceId || 'default' });
+    console.log(`[test-configs] Retrieved ${configs.length} configs`);
+    res.json({ success: true, configs, instanceId: instanceId || 'default', baseURL: baseURL });
   } catch (err) {
     console.error('[test-configs] Error:', err);
     res.status(500).json({ success: false, error: err.message });

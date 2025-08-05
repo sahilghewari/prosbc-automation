@@ -146,7 +146,7 @@ function App() {
       case 'nap-management':
         return <NapManagerEnhanced onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-upload':
-        return <FileUploader onAuthError={handleAuthError} />;
+        return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-management':
         return <FileManagement onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'routeset-mapping':

@@ -10,7 +10,11 @@ const router = express.Router();
 
 // Helper to extract configId from request (query, body, or header)
 function getConfigIdFromRequest(req) {
-  return req.query.configId || req.body?.configId || req.headers['x-prosbc-config-id'] || null;
+  return req.query.configId || 
+         req.body?.configId || 
+         req.headers['x-config-id'] || 
+         req.headers['x-prosbc-config-id'] || 
+         null;
 }
 
 // Helper to get instance-specific ProSBC configuration
@@ -164,6 +168,78 @@ router.post('/dm/upload', async (req, res) => {
 const upload = multer({
   dest: path.join(process.cwd(), 'uploads', 'update_tmp'),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+// Upload DF file via FormData (new route for FileUploader component)
+router.post('/df/upload-form', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+    
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const configId = getConfigIdFromRequest(req);
+    
+    console.log(`[Upload DF] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}`);
+    
+    // Create instance-specific ProSBC file manager
+    const fileManager = await createProSBCFileAPI(instanceId);
+    
+    // Create a simple progress callback for logging
+    const onProgress = (percent, message) => {
+      console.log(`[Upload DF Progress] ${percent}% - ${message}`);
+    };
+    
+    const result = await fileManager.uploadDfFile(req.file.path, onProgress, configId, req.file.originalname);
+    
+    // Clean up uploaded file
+    try {
+      await fs.promises.unlink(req.file.path);
+    } catch (cleanupError) {
+      console.warn('Failed to cleanup uploaded file:', cleanupError);
+    }
+    
+    res.json(result);
+  } catch (err) {
+    console.error('[Upload DF] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload DM file via FormData (new route for FileUploader component)
+router.post('/dm/upload-form', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+    
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const configId = getConfigIdFromRequest(req);
+    
+    console.log(`[Upload DM] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}`);
+    
+    // Create instance-specific ProSBC file manager
+    const fileManager = await createProSBCFileAPI(instanceId);
+    
+    // Create a simple progress callback for logging
+    const onProgress = (percent, message) => {
+      console.log(`[Upload DM Progress] ${percent}% - ${message}`);
+    };
+    
+    const result = await fileManager.uploadDmFile(req.file.path, onProgress, configId, req.file.originalname);
+    
+    // Clean up uploaded file
+    try {
+      await fs.promises.unlink(req.file.path);
+    } catch (cleanupError) {
+      console.warn('Failed to cleanup uploaded file:', cleanupError);
+    }
+    
+    res.json(result);
+  } catch (err) {
+    console.error('[Upload DM] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 

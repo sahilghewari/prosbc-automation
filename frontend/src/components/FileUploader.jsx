@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 import { prosbcFileAPI } from '../utils/prosbcFileApi';
 import { ClientDatabaseService } from '../services/apiClient.js';
-import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 
-function FileUploader({ onAuthError }) {
+function FileUploader({ onAuthError, configId }) {
   const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
   const instanceAPI = useInstanceAPI();
   const [isLoading, setIsLoading] = useState(false);
@@ -18,6 +18,15 @@ function FileUploader({ onAuthError }) {
   // DM File Upload States
   const [dmFile, setDmFile] = useState(null);
   const [dmFileName, setDmFileName] = useState("");
+
+  // Helper to get auth headers with instance information
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return {
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      ...(selectedInstance?.id && { 'X-ProSBC-Instance-ID': selectedInstance.id.toString() })
+    };
+  };
 
   // Instance check
   if (!hasSelectedInstance) {
@@ -60,19 +69,35 @@ function FileUploader({ onAuthError }) {
       return;
     }
 
+    if (!selectedInstance?.id) {
+      setMessage("❌ No ProSBC instance selected");
+      return;
+    }
+
+    if (!configId) {
+      setMessage(`❌ No config selected. Please select a config from the sidebar first. Current instance: ${selectedInstance?.id || 'none'}`);
+      return;
+    }
+
+    const instanceId = selectedInstance.id;
+    // Use configId prop passed from App.jsx
+
     setIsLoading(true);
     setMessage("🔄 Uploading DF file...");
 
     try {
-      // Upload DF file to backend endpoint
+      // Upload DF file to instance-aware backend endpoint
       const formData = new FormData();
       formData.append('file', dfFile, dfFileName);
-      const token = localStorage.getItem('dashboard_token');
-      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      const response = await fetch('/backend/api/prosbc-upload/df', {
+      
+      const response = await fetch('/backend/api/prosbc-files/df/upload-form', {
         method: 'POST',
-        body: formData,
-        headers
+        headers: {
+          'X-ProSBC-Instance-ID': String(instanceId),
+          'X-Config-ID': String(configId),
+          ...getAuthHeaders()
+        },
+        body: formData
       });
 
       let result = null;
@@ -137,19 +162,35 @@ function FileUploader({ onAuthError }) {
       return;
     }
 
+    if (!selectedInstance?.id) {
+      setMessage("❌ No ProSBC instance selected");
+      return;
+    }
+
+    if (!configId) {
+      setMessage(`❌ No config selected. Please select a config from the sidebar first. Current instance: ${selectedInstance?.id || 'none'}`);
+      return;
+    }
+
+    const instanceId = selectedInstance.id;
+    // Use configId prop passed from App.jsx
+
     setIsLoading(true);
     setMessage("🔄 Uploading DM file...");
 
     try {
-      // Upload DM file to backend endpoint
+      // Upload DM file to instance-aware backend endpoint
       const formData = new FormData();
       formData.append('file', dmFile, dmFileName);
-      const token = localStorage.getItem('dashboard_token');
-      const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-      const response = await fetch('/backend/api/prosbc-upload/dm', {
+      
+      const response = await fetch('/backend/api/prosbc-files/dm/upload-form', {
         method: 'POST',
-        body: formData,
-        headers
+        headers: {
+          'X-ProSBC-Instance-ID': String(instanceId),
+          'X-Config-ID': String(configId),
+          ...getAuthHeaders()
+        },
+        body: formData
       });
 
       let result = null;

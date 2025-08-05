@@ -18,6 +18,52 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
     try {
       // Get authentication headers and instance-specific headers
       const token = localStorage.getItem('dashboard_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` }),
+        ...(selectedInstance?.id && { 'X-ProSBC-Instance-ID': selectedInstance.id.toString() })
+      };
+
+      console.log('[Sidebar] Fetching configs for instance:', selectedInstance?.id);
+      const res = await fetch('/backend/api/prosbc-files/test-configs', { headers });
+      const data = await res.json();
+      setConfigs(data.configs || []);
+      const active = (data.configs || []).find(cfg => cfg.active);
+      if (active) {
+        setSelectedConfig(active.id);
+        onConfigChange?.(active.id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch configs:', error);
+    } finally {
+      setLoadingConfigs(false);
+    }
+  };
+
+  // Add instance refresh hook to reload configs when instance changes
+  useInstanceRefresh(
+    async (instance) => {
+      console.log('[Sidebar] Refreshing configs for instance:', instance?.id);
+      // Clear existing configs first
+      setConfigs([]);
+      setSelectedConfig('');
+      await fetchConfigs(instance);
+    },
+    [], // No additional dependencies
+    {
+      refreshOnMount: true,
+      refreshOnInstanceChange: true
+    }
+  );
+  const [selectedConfig, setSelectedConfig] = useState('');
+  const [loadingConfigs, setLoadingConfigs] = useState(true);
+
+  // Function to fetch configs
+  const fetchConfigs = async (instance = null) => {
+    setLoadingConfigs(true);
+    try {
+      // Get authentication headers and instance-specific headers
+      const token = localStorage.getItem('dashboard_token');
       const targetInstance = instance || selectedInstance;
       const headers = {
         'Content-Type': 'application/json',
@@ -30,20 +76,10 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       const data = await res.json();
       console.log('[Sidebar] Received configs:', data);
       setConfigs(data.configs || []);
-      
-      // Always select a valid config when configs change
-      if (data.configs && data.configs.length > 0) {
-        // Try to find active config first
-        const active = data.configs.find(cfg => cfg.active);
-        const configToSelect = active || data.configs[0]; // Fallback to first config
-        console.log('[Sidebar] Selecting config:', configToSelect.id, 'for instance:', targetInstance?.id);
-        setSelectedConfig(configToSelect.id);
-        onConfigChange?.(configToSelect.id);
-      } else {
-        // No configs available, clear selection
-        console.log('[Sidebar] No configs available for instance:', targetInstance?.id);
-        setSelectedConfig('');
-        onConfigChange?.('');
+      const active = (data.configs || []).find(cfg => cfg.active);
+      if (active) {
+        setSelectedConfig(active.id);
+        onConfigChange?.(active.id);
       }
     } catch (error) {
       console.error('Failed to fetch configs:', error);

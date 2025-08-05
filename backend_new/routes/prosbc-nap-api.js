@@ -27,10 +27,12 @@ router.use(async (req, res, next) => {
 router.get('/instances/:instanceId/configurations/:configId/naps', async (req, res) => {
   try {
     const { instanceId, configId } = req.params;
-    console.log(`[API] Fetching NAPs for instance ${instanceId}, config ${configId}`);
+    console.log(`[NAP API] Fetching NAPs for instance ${instanceId}, config ${configId}`);
     const naps = await fetchExistingNapsByInstance(configId, parseInt(instanceId));
+    console.log(`[NAP API] Retrieved ${naps?.length || 0} NAPs for instance ${instanceId}`);
     res.json({ success: true, naps, instanceId: parseInt(instanceId), configId });
   } catch (err) {
+    console.error(`[NAP API] Error fetching NAPs for instance ${req.params.instanceId}:`, err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

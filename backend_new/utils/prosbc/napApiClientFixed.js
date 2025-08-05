@@ -56,14 +56,20 @@ const ensureConfigSelected = async (configId, client = null) => {
     const checkRes = await apiClient.get(`/configurations/${configId}/edit`, {
       headers: { 'Accept': 'text/html' }
     });
-    const match = checkRes.data.match(/<td class="edit_link">(config_[^<]+)<\/td>/);
-    if (match && match[1]) {
-      console.log(`[ProSBC] Confirmed config switched to: ${match[1]}`);
-      if (match[1] !== configId) {
-        console.warn(`[ProSBC] WARNING: Active config in HTML is ${match[1]}, expected ${configId}`);
+    
+    // Ensure checkRes.data is a string before calling match
+    if (typeof checkRes.data === 'string') {
+      const match = checkRes.data.match(/<td class="edit_link">(config_[^<]+)<\/td>/);
+      if (match && match[1]) {
+        console.log(`[ProSBC] Confirmed config switched to: ${match[1]}`);
+        if (match[1] !== configId) {
+          console.warn(`[ProSBC] WARNING: Active config in HTML is ${match[1]}, expected ${configId}`);
+        }
+      } else {
+        console.warn('[ProSBC] Could not confirm active config from HTML - no match found');
       }
     } else {
-      console.warn('[ProSBC] Could not confirm active config from HTML');
+      console.warn(`[ProSBC] Could not confirm active config - response data is not a string (type: ${typeof checkRes.data})`);
     }
   } catch (error) {
     console.error(`Failed to select config ${configId}:`, error.message);
