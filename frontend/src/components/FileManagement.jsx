@@ -8,9 +8,6 @@ import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 
-import AddProSBCFilesButton from './AddProSBCFilesButton';
-import DeleteAllFilesButton from './DeleteAllFilesButton';
-
 function FileManagement({ onAuthError, configId }) {
   const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
   const instanceAPI = useInstanceAPI();
@@ -839,15 +836,6 @@ function FileManagement({ onAuthError, configId }) {
     setSelectedCSVFile(file);
   };
 
-  // Handler to refresh files after adding ProSBC files
-  const handleProSBCFilesAdded = (results) => {
-    loadStoredFiles();
-    loadDatabaseStats();
-    loadFiles();
-    setMessage('✅ ProSBC files added to database!');
-    setTimeout(() => setMessage(''), 3000);
-  };
-
   // Utility functions
   const getFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
@@ -980,10 +968,6 @@ function FileManagement({ onAuthError, configId }) {
           <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-6">
             Manage, update, export, and delete Definition Files (DF) and Digit Map Files (DM)
           </p>
-           <div className="mb-6 flex flex-row items-center">
-                  <AddProSBCFilesButton onComplete={handleProSBCFilesAdded} />
-                  <DeleteAllFilesButton onComplete={loadFiles} />
-                </div>
           
         </div>
 
