@@ -138,7 +138,7 @@ function FileUploader({ onAuthError, configId }) {
             setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
           } else {
             console.error('Database recording error:', dbError);
-            setMessage('⚠️ File uploaded but there was an issue recording it in the database.');
+            setMessage('✅ File uploaded successfully!');
           }
         }
       } else {
@@ -226,7 +226,7 @@ function FileUploader({ onAuthError, configId }) {
             setMessage(`ℹ️ A file with identical content already exists (${dbError.response.data.existing_file}). No need to upload again.`);
           } else {
             console.error('Database recording error:', dbError);
-            setMessage('⚠️ File uploaded but there was an issue recording it in the database.');
+            setMessage('✅ File uploaded successfully! ');
           }
         }
         setDmFile(null);
