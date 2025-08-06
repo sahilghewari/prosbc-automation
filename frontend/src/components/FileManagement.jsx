@@ -139,32 +139,67 @@ function FileManagement({ onAuthError, configId }) {
     }
   };
 
-  // Export file
-  const handleExport = async (fileType, fileId, fileName, configId) => {
+  // Export file using backend with proper authentication
+  const handleExport = async (file) => {
     setIsLoading(true);
-    setMessage(`🔄 Exporting ${fileName}...`);
+    setMessage(`🔄 Exporting ${file.name}...`);
+    
     try {
-      // Use the working backend export endpoint
-      const params = new URLSearchParams({
-        fileType,
-        fileId,
-        fileName,
-        configId: configId || ''
+      if (!selectedInstance) {
+        setMessage('❌ No ProSBC instance selected');
+        return;
+      }
+
+      if (!file.exportUrl) {
+        setMessage('❌ Export URL not available for this file');
+        return;
+      }
+
+      console.log('[Export] Using backend export with URL:', file.exportUrl);
+
+      // Use the backend to handle export with proper authentication
+      const res = await fetch('/backend/api/prosbc-files/export-direct', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        },
+        body: JSON.stringify({
+          exportUrl: file.exportUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileId: file.id,
+          configId: file.configId
+        })
       });
-      const url = `/backend/api/prosbc-files/export?${params.toString()}`;
-      // Use fetch to support auth headers if needed, fallback to link for browser download
-      const res = await fetch(url, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error('Export failed: ' + (await res.text()));
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-      setMessage(`✅ File download started.`);
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Export failed: ${errorText}`);
+      }
+
+      // Check if the response is JSON (error) or binary (file)
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const result = await res.json();
+        if (!result.success) {
+          throw new Error(result.error || 'Export failed');
+        }
+      } else {
+        // It's a file download
+        const blob = await res.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      }
+      
+      setMessage(`✅ Export completed for ${file.name}`);
     } catch (error) {
       console.error('Export error:', error);
       setMessage(`❌ Export failed: ${error.message}`);
@@ -173,24 +208,37 @@ function FileManagement({ onAuthError, configId }) {
     }
   };
 
-  // Delete file
-  const handleDelete = async (fileType, fileId, fileName, configId) => {
-    if (!window.confirm(`Are you sure you want to delete '${fileName}'?\n\nThis action cannot be undone.`)) {
+  // Delete file using ProSBC REST API
+  const handleDelete = async (file) => {
+    if (!window.confirm(`Are you sure you want to delete '${file.name}'?\n\nThis action cannot be undone.`)) {
       return;
     }
+
     setIsLoading(true);
-    setMessage(`🔄 Deleting ${fileName}...`);
+    setMessage(`🔄 Deleting ${file.name}...`);
+    
     try {
-      const res = await fetch('/backend/api/prosbc-files/delete', {
+      if (!selectedInstance) {
+        setMessage('❌ No ProSBC instance selected');
+        return;
+      }
+
+      // Use the backend REST API to delete the file
+      const res = await fetch('/backend/api/prosbc-files/delete-direct', {
         method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        headers: { 
+          ...getAuthHeaders(), 
+          'Content-Type': 'application/json',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        },
         body: JSON.stringify({
-          fileType,
-          fileId,
-          fileName,
-          configId
+          fileName: file.name,
+          fileType: file.type,
+          fileId: file.id,
+          configId: file.configId
         })
       });
+
       let result;
       if (!res.ok) {
         let errorText;
@@ -203,6 +251,7 @@ function FileManagement({ onAuthError, configId }) {
         setIsLoading(false);
         return;
       }
+
       try {
         result = await res.json();
       } catch (jsonErr) {
@@ -211,12 +260,9 @@ function FileManagement({ onAuthError, configId }) {
         setIsLoading(false);
         return;
       }
+
       if (result.success) {
-        let successMessage = `✅ ${result.message}`;
-        if (result.note && result.note.includes('CORS')) {
-          successMessage += '\n📌 Note: Delete completed but redirect confirmation was blocked by browser security.';
-        }
-        setMessage(successMessage);
+        setMessage(`✅ ${file.name} deleted successfully`);
         setTimeout(() => loadFiles(), 1000);
       } else {
         setMessage(`❌ Delete failed: ${result.message || 'Unknown error'}`);
@@ -224,16 +270,16 @@ function FileManagement({ onAuthError, configId }) {
     } catch (error) {
       console.error('Delete error:', error);
       let errorMessage = error.message;
-      if (error.message.includes('CSRF token')) {
-        errorMessage = 'Authentication failed. Please refresh the page and try again.';
-      } else if (error.message.includes('401') || error.message.includes('authentication')) {
-        errorMessage = 'Your session has expired. Please log in again.';
+      if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('Authentication failed')) {
+        errorMessage = 'Authentication failed. Please check ProSBC credentials.';
         onAuthError?.();
-      } else if (error.message.includes('404')) {
+      } else if (error.message.includes('404') || error.message.includes('not found')) {
         errorMessage = 'File not found. It may have been already deleted.';
         setTimeout(() => loadFiles(), 1000);
       } else if (error.message.includes('403')) {
         errorMessage = 'Permission denied. You may not have rights to delete this file.';
+      } else if (error.message.includes('configuration')) {
+        errorMessage = 'Could not determine ProSBC configuration for this instance.';
       }
       setMessage(`❌ Delete failed: ${errorMessage}`);
     } finally {
@@ -372,6 +418,86 @@ function FileManagement({ onAuthError, configId }) {
     } catch (error) {
       console.error('Update file error:', error);
       setMessage(`❌ Update file failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update file using ProSBC REST API (clean and reliable)
+  const handleUpdateFileRestAPI = async (fileType, fileName, file, configId) => {
+    setIsLoading(true);
+    setMessage("🔄 Updating file via REST API...");
+    
+    try {
+      if (!selectedInstance) {
+        setMessage('❌ No ProSBC instance selected');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('fileName', fileName);
+      formData.append('fileType', fileType);
+      formData.append('file', file);
+      formData.append('configId', configId || '');
+
+      const res = await fetch('/backend/api/prosbc-files/update-rest-api', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        },
+        body: formData
+      });
+
+      let result;
+      if (!res.ok) {
+        let errorText;
+        try {
+          errorText = await res.text();
+        } catch (e) {
+          errorText = 'Unknown error';
+        }
+        setMessage(`❌ Update failed: ${errorText.substring(0, 300)}`);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        result = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text();
+        setMessage(`❌ Update failed: Unexpected response from server.\n${text.substring(0, 300)}`);
+        setIsLoading(false);
+        return;
+      }
+
+      if (result.success) {
+        setMessage(`✅ ${fileName} updated successfully via REST API`);
+        loadFiles();
+        setShowUpdateModal(false);
+        setUpdateTarget(null);
+        setSelectedFile(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        setTimeout(() => loadFiles(), 1000);
+      } else {
+        setMessage(`❌ Update failed: ${result.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Update REST API error:', error);
+      let errorMessage = error.message;
+      if (error.message.includes('401') || error.message.includes('authentication') || error.message.includes('Authentication failed')) {
+        errorMessage = 'Authentication failed. Please check ProSBC credentials.';
+        onAuthError?.();
+      } else if (error.message.includes('404') || error.message.includes('not found')) {
+        errorMessage = 'File not found in ProSBC.';
+      } else if (error.message.includes('403')) {
+        errorMessage = 'Permission denied. You may not have rights to update this file.';
+      } else if (error.message.includes('configuration')) {
+        errorMessage = 'Could not determine ProSBC configuration for this instance.';
+      }
+      setMessage(`❌ Update failed: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -713,16 +839,25 @@ function FileManagement({ onAuthError, configId }) {
     }
   };
 
-  // Show update modal for a specific file
-  const showUpdateFileModal = (fileType, fileId, fileName) => {
-    const fileDbId = 1; // Default file database ID
-    const routesetId = fileId; // Use file ID as routeset ID
-    
+  // Show update modal for a specific file using direct ProSBC URL
+  const showUpdateFileModal = (file) => {
+    if (!selectedInstance) {
+      setMessage('❌ No ProSBC instance selected');
+      return;
+    }
+
+    if (!file.updateUrl) {
+      setMessage('❌ Update URL not available for this file');
+      return;
+    }
+
     setUpdateTarget({
-      fileDbId,
-      routesetId,
-      fileName,
-      fileType
+      file: file,
+      updateUrl: file.updateUrl,
+      fileName: file.name,
+      fileType: file.type,
+      fileId: file.id,
+      configId: file.configId
     });
     setShowUpdateModal(true);
     setSelectedFile(null);
@@ -730,18 +865,23 @@ function FileManagement({ onAuthError, configId }) {
     setUpdateProgress(0);
     setUpdateMessage('');
     
-    console.log('Update target set:', {
-      fileDbId,
-      routesetId,
-      fileName,
-      fileType
+    console.log('Update target set with direct URL:', {
+      updateUrl: file.updateUrl,
+      fileName: file.name,
+      fileType: file.type,
+      instance: selectedInstance.id
     });
   };
 
-  // Handle file update
+  // Handle file update using direct ProSBC URL
   const handleFileUpdate = async () => {
     if (!selectedFile || !updateTarget) {
       setMessage('❌ Please select a file first');
+      return;
+    }
+
+    if (!selectedInstance) {
+      setMessage('❌ No ProSBC instance selected');
       return;
     }
 
@@ -752,19 +892,38 @@ function FileManagement({ onAuthError, configId }) {
     setMessage(`🔄 Updating ${updateTarget.fileName} with ${selectedFile.name}...`);
 
     try {
-      const result = await updateFile(selectedFile, {
-        fileDbId: updateTarget.fileDbId,
-        routesetId: updateTarget.routesetId,
-        fileType: updateTarget.fileType,
-        onProgress: (progress, message) => {
-          setUpdateProgress(Math.round(progress));
-          setUpdateMessage(message);
-          console.log(`Progress: ${progress}% - ${message}`);
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('updateUrl', updateTarget.updateUrl);
+      formData.append('fileName', updateTarget.fileName);
+      formData.append('fileType', updateTarget.fileType);
+      formData.append('fileId', updateTarget.fileId);
+      formData.append('configId', updateTarget.configId || '');
+      formData.append('uploadFileName', selectedFile.name);
+
+      // Use the backend to handle the update operation since it requires CSRF token
+      const res = await fetch('/backend/api/prosbc-files/update-direct', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
         },
-        validateBeforeUpdate: true,
-        retryOnSessionExpired: true,
-        maxRetries: 3
+        body: formData
       });
+
+      let result;
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Update failed: ${errorText}`);
+      }
+
+      try {
+        result = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text();
+        throw new Error(`Unexpected response: ${text.substring(0, 300)}`);
+      }
 
       setUpdateResult(result);
       
@@ -772,10 +931,6 @@ function FileManagement({ onAuthError, configId }) {
         setUpdateMessage('File updated successfully!');
         setUpdateProgress(100);
         setMessage(`✅ Successfully updated ${updateTarget.fileName}`);
-        
-        // Refresh update history
-        const history = getUpdateHistory();
-        setUpdateHistory(history);
         
         // Close modal and refresh file lists
         setShowUpdateModal(false);
@@ -785,15 +940,14 @@ function FileManagement({ onAuthError, configId }) {
           fileInputRef.current.value = '';
         }
         
-        // Refresh both ProSBC and database files
+        // Refresh files
         setTimeout(() => {
           loadFiles();
-          loadStoredFiles();
         }, 1000);
         
       } else {
-        setUpdateMessage(`Update failed: ${result.error}`);
-        setMessage(`❌ Update failed: ${result.error}`);
+        setUpdateMessage(`Update failed: ${result.error || result.message}`);
+        setMessage(`❌ Update failed: ${result.error || result.message}`);
       }
 
     } catch (error) {
@@ -895,20 +1049,7 @@ function FileManagement({ onAuthError, configId }) {
           <td className="py-4 px-4">
             <div className="flex justify-center space-x-2">
               <button
-                onClick={() => handleCSVEditor(file)}
-                disabled={isLoading}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isLoading 
-                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                    : 'bg-purple-600 text-white hover:bg-purple-700'
-                }`}
-                title="View & Edit CSV file"
-              >
-                📝 View & Edit
-              </button>
-              
-              <button
-                onClick={() => showUpdateFileModal(file.type, file.id, file.name)}
+                onClick={() => showUpdateFileModal(file)}
                 disabled={isLoading}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isLoading 
@@ -921,7 +1062,7 @@ function FileManagement({ onAuthError, configId }) {
               </button>
               
               <button
-                onClick={() => handleExport(file.type, file.id, file.name, file.configId || file.config_id)}
+                onClick={() => handleExport(file)}
                 disabled={isLoading}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isLoading 
@@ -934,7 +1075,7 @@ function FileManagement({ onAuthError, configId }) {
               </button>
               
               <button
-                onClick={() => handleDelete(file.type, file.id, file.name, file.configId || file.config_id)}
+                onClick={() => handleDelete(file)}
                 disabled={isLoading}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isLoading 
@@ -1189,7 +1330,25 @@ function FileManagement({ onAuthError, configId }) {
       : 'bg-green-600 text-white hover:bg-green-700'
   }`}
 >
-  {isUpdating ? 'Updating...' : 'Update File'}
+  {isUpdating ? 'Updating...' : 'Update File (CSRF)'}
+</button>
+                <button
+  onClick={() => {
+    if (!selectedFile || !updateTarget) {
+      setMessage('❌ Please select a file first');
+      return;
+    }
+    handleUpdateFileRestAPI(updateTarget.fileType, updateTarget.fileName, selectedFile, updateTarget.configId);
+  }}
+  disabled={!selectedFile || isUpdating}
+  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+    !selectedFile || isUpdating
+      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+      : 'bg-blue-600 text-white hover:bg-blue-700'
+  }`}
+  title="Update file using REST API (recommended)"
+>
+  {isUpdating ? 'Updating...' : 'Update File (REST API)'}
 </button>
                 <button
                   onClick={async () => {

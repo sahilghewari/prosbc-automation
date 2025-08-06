@@ -78,6 +78,371 @@ class ProSBCFileAPI {
     return this.sessionCookie;
   }
 
+  // Helper to get configuration name for REST API
+  async getConfigName(configId) {
+    if (!configId) return null;
+    
+    // Ensure we have fetched the live configs
+    if (!this.configs) {
+      const sessionCookie = await this.getSessionCookie();
+      this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
+    }
+    
+    // Try to find a config that matches the provided configId
+    const matchingConfig = this.configs.find(cfg => {
+      // Direct match by name or ID
+      if (cfg.name === configId || cfg.id === configId) {
+        return true;
+      }
+      // Try pattern matching for config names like "config_062425"
+      if (cfg.name.toLowerCase().includes(configId.toLowerCase()) || 
+          configId.toLowerCase().includes(cfg.name.toLowerCase())) {
+        return true;
+      }
+      return false;
+    });
+    
+    if (matchingConfig) {
+      console.log(`[Config Name Mapping] Mapped '${configId}' to config name '${matchingConfig.name}'`);
+      return matchingConfig.name;
+    }
+    
+    // If no match found, try to use the configId as the config name directly
+    console.warn(`[Config Name Mapping] Could not map '${configId}' to any ProSBC config, using as-is`);
+    return configId;
+  }
+
+  // REST API-based delete method using file ID and standard ProSBC REST endpoints
+  async deleteFileRestAPI(fileType, fileName, configId = null, fileId = null) {
+    try {
+      // Ensure instance context is loaded
+      await this.loadInstanceContext();
+      
+      // Ensure config is selected and get the actual config ID (same logic as file listing)
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId;
+      
+      // If we don't have fileId, we need to find it by looking up the file
+      if (!fileId) {
+        console.log(`[Delete REST API] Looking up file ID for: ${fileName}`);
+        // Use the appropriate file listing method
+        const files = fileType === 'routesets_definitions' ? 
+          await this.listDfFiles(configId) : 
+          await this.listDmFiles(configId);
+        const file = files.files?.find(f => f.name === fileName);
+        if (!file) {
+          throw new Error(`File '${fileName}' not found in file listing`);
+        }
+        fileId = file.id;
+        console.log(`[Delete REST API] Found file ID: ${fileId} for ${fileName}`);
+      }
+      
+      // Use the same endpoint format as the web interface
+      const endpoint = `/file_dbs/${dbId}/${fileType}/${fileId}`;
+      const deleteUrl = `${this.baseURL}${endpoint}`;
+      
+      console.log(`[Delete REST API] Instance: ${this.instanceId}, File: ${fileName}, ID: ${fileId}, Type: ${fileType}, DB ID: ${dbId}`);
+      console.log(`[Delete REST API] Deleting: ${deleteUrl}`);
+      
+      // Try REST API DELETE first
+      const response = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': this.getBasicAuthHeader(),
+          'User-Agent': 'Mozilla/5.0 (Node.js)',
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`[Delete REST API] Response status: ${response.status}`);
+      
+      if (response.ok) {
+        console.log(`[Delete REST API] Successfully deleted: ${fileName}`);
+        return { 
+          success: true, 
+          message: `File '${fileName}' deleted successfully`,
+          status: response.status
+        };
+      } else {
+        // If REST API DELETE doesn't work, fall back to form-based POST delete
+        console.log(`[Delete REST API] DELETE method failed (${response.status}), trying form-based approach...`);
+        return await this.deleteFileFormBased(fileType, fileId, fileName, configId);
+      }
+    } catch (error) {
+      console.error('[Delete REST API] Error:', error);
+      throw error;
+    }
+  }
+
+  // Form-based delete using Basic Auth (no CSRF needed for REST API)
+  async deleteFileFormBased(fileType, fileId, fileName, configId = null) {
+    try {
+      const dbId = configId || '1';
+      const endpoint = `/file_dbs/${dbId}/${fileType}/${fileId}`;
+      const deleteUrl = `${this.baseURL}${endpoint}`;
+      
+      console.log(`[Delete Form API] Trying form-based delete: ${deleteUrl}`);
+      
+      // Use form-based POST with _method=delete (common Rails pattern)
+      const params = new URLSearchParams();
+      params.append('_method', 'delete');
+      
+      const response = await fetch(deleteUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': this.getBasicAuthHeader(),
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Node.js)'
+        },
+        body: params.toString()
+      });
+      
+      console.log(`[Delete Form API] Response status: ${response.status}`);
+      
+      if (response.ok || response.status === 302) {
+        console.log(`[Delete Form API] Successfully deleted: ${fileName}`);
+        return { 
+          success: true, 
+          message: `File '${fileName}' deleted successfully`,
+          status: response.status
+        };
+      } else {
+        const responseText = await response.text();
+        console.error(`[Delete Form API] Delete failed:`, responseText.substring(0, 300));
+        
+        if (response.status === 404) {
+          throw new Error(`File '${fileName}' not found`);
+        } else if (response.status === 401) {
+          throw new Error('Authentication failed');
+        } else {
+          throw new Error(`Delete failed: ${response.status} - ${responseText.substring(0, 200)}`);
+        }
+      }
+    } catch (error) {
+      console.error('[Delete Form API] Error:', error);
+      throw error;
+    }
+  }
+
+  // REST API-based update method using PUT with file content
+  async updateFileRestAPI(fileType, fileName, fileContent, configId = null) {
+    try {
+      // Ensure instance context is loaded
+      await this.loadInstanceContext();
+      
+      // Ensure config is selected and get the actual config ID (same logic as file listing)
+      await this.ensureConfigSelected(configId);
+      let dbId = this.selectedConfigId || '3';
+      
+      // Find which database ID actually contains the file and get the file details
+      let actualDbId = null;
+      let fileDetails = null;
+      
+      // Try all possible database IDs more thoroughly
+      for (const testDbId of ['1', '2', '3', '4', '5']) {
+        try {
+          console.log(`[Update REST API] Searching for '${fileName}' in DB ID ${testDbId}...`);
+          const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+            method: 'GET',
+            headers: await this.getCommonHeaders()
+          });
+          
+          if (testResponse.ok) {
+            const testHtml = await testResponse.text();
+            console.log(`[Update REST API] DB ID ${testDbId} response length: ${testHtml.length}`);
+            
+            // Check if this response contains any content
+            if (testHtml.length < 1000) {
+              console.log(`[Update REST API] DB ID ${testDbId} appears to be empty (too short)`);
+              continue;
+            }
+            
+            const sectionTitle = fileType === 'routesets_definitions' ? 'Routesets Definition' : 'Routesets Digitmap';
+            const testFiles = this.parseFileTable(testHtml, sectionTitle, fileType);
+            console.log(`[Update REST API] DB ID ${testDbId} contains ${testFiles.length} ${fileType} files`);
+            
+            if (testFiles.length > 0) {
+              console.log(`[Update REST API] DB ID ${testDbId} file names:`, testFiles.map(f => f.name).slice(0, 5));
+            }
+            
+            const foundFile = testFiles.find(f => f.name === fileName);
+            if (foundFile) {
+              actualDbId = testDbId;
+              fileDetails = foundFile;
+              console.log(`[Update REST API] ✓ Found '${fileName}' in DB ID ${testDbId} with file ID: ${foundFile.id}`);
+              break;
+            }
+          } else {
+            console.log(`[Update REST API] DB ID ${testDbId} returned status: ${testResponse.status}`);
+          }
+        } catch (err) {
+          console.log(`[Update REST API] Error checking DB ID ${testDbId}:`, err.message);
+        }
+      }
+      
+      if (actualDbId && fileDetails) {
+        dbId = actualDbId;
+        console.log(`[Update REST API] ✓ Using DB ID ${dbId} where file was found`);
+      } else {
+        // Let's also try to search by listing files with the correct API
+        console.log(`[Update REST API] File not found via direct search, trying file listing APIs...`);
+        try {
+          const files = fileType === 'routesets_definitions' ? 
+            await this.listDfFiles(configId) : 
+            await this.listDmFiles(configId);
+          
+          console.log(`[Update REST API] File listing API returned ${files.files?.length || 0} files`);
+          const foundFile = files.files?.find(f => f.name === fileName);
+          if (foundFile) {
+            fileDetails = foundFile;
+            dbId = foundFile.configId;
+            console.log(`[Update REST API] ✓ Found '${fileName}' via file listing API in DB ID ${dbId} with file ID: ${foundFile.id}`);
+          } else {
+            throw new Error(`File '${fileName}' not found in any database ID or file listing API`);
+          }
+        } catch (apiError) {
+          console.error(`[Update REST API] File listing API error:`, apiError.message);
+          throw new Error(`File '${fileName}' not found in any database ID`);
+        }
+      }
+      
+      // Get configuration name for REST API
+      const configName = await this.getConfigName(configId);
+      if (!configName) {
+        throw new Error('Could not determine configuration name for REST API');
+      }
+      
+      // Use the file ID instead of file name in the REST API endpoint
+      let endpoint;
+      if (fileType === 'routesets_digitmaps' || fileType === 'dm') {
+        endpoint = `/configurations/${configName}/file_dbs/${dbId}/routesets_digitmaps/${fileDetails.id}`;
+      } else if (fileType === 'routesets_definitions' || fileType === 'df') {
+        endpoint = `/configurations/${configName}/file_dbs/${dbId}/routesets_definitions/${fileDetails.id}`;
+      } else {
+        throw new Error(`Unsupported file type: ${fileType}`);
+      }
+      
+      const updateUrl = `${this.baseURL}${endpoint}`;
+      console.log(`[Update REST API] Instance: ${this.instanceId}, Config: ${configName}, DB ID: ${dbId}, File ID: ${fileDetails.id}, Endpoint: ${endpoint}`);
+      console.log(`[Update REST API] Updating: ${updateUrl}`);
+      
+      // Prepare the REST API payload
+      const payload = {
+        name: fileName,
+        content: fileContent,
+        type: 'csv'
+      };
+      
+      const response = await fetch(updateUrl, {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': this.getBasicAuthHeader(),
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Node.js)'
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      console.log(`[Update REST API] Response status: ${response.status}`);
+      const responseText = await response.text();
+      console.log(`[Update REST API] Response body:`, responseText);
+      
+      if (response.ok) {
+        console.log(`[Update REST API] REST API reports success, but let's verify the file was actually updated...`);
+        
+        // Verify the update by fetching the file content to see if it changed
+        try {
+          const verifyResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileDetails.id}/export`, {
+            method: 'GET',
+            headers: await this.getCommonHeaders()
+          });
+          if (verifyResponse.ok) {
+            const updatedContent = await verifyResponse.text();
+            if (updatedContent.trim() === fileContent.trim()) {
+              console.log(`[Update REST API] ✓ Verification successful: File content matches what we sent`);
+              return { 
+                success: true, 
+                message: `File '${fileName}' updated successfully via REST API`,
+                status: response.status
+              };
+            } else {
+              console.warn(`[Update REST API] ✗ Verification failed: File content doesn't match what we sent`);
+              console.log(`[Update REST API] Expected content length: ${fileContent.length}, Actual: ${updatedContent.length}`);
+              // Fall back to CSRF-based update
+              console.log(`[Update REST API] Falling back to CSRF-based update method...`);
+              return await this.updateFileCSRF(fileType, fileDetails.id, fileContent, fileName, dbId);
+            }
+          } else {
+            console.warn(`[Update REST API] Could not verify update (export failed: ${verifyResponse.status}), assuming success`);
+            return { 
+              success: true, 
+              message: `File '${fileName}' updated successfully via REST API (unverified)`,
+              status: response.status
+            };
+          }
+        } catch (verifyError) {
+          console.warn(`[Update REST API] Verification error:`, verifyError.message);
+          return { 
+            success: true, 
+            message: `File '${fileName}' updated successfully via REST API (verification failed)`,
+            status: response.status
+          };
+        }
+      } else {
+        const responseText = await response.text();
+        console.error(`[Update REST API] Update failed:`, responseText.substring(0, 300));
+        
+        if (response.status === 404) {
+          throw new Error(`File '${fileName}' not found`);
+        } else if (response.status === 401) {
+          throw new Error('Authentication failed');
+        } else {
+          throw new Error(`Update failed: ${response.status} - ${responseText.substring(0, 200)}`);
+        }
+      }
+    } catch (error) {
+      console.error('[Update REST API] Error:', error);
+      throw error;
+    }
+  }
+
+  // CSRF-based update method as fallback when REST API doesn't work
+  async updateFileCSRF(fileType, fileId, fileContent, fileName, dbId) {
+    try {
+      console.log(`[Update CSRF] Attempting CSRF-based update for file ID: ${fileId}, DB ID: ${dbId}`);
+      
+      // Create a temporary file with the content
+      const tempDir = path.join(process.cwd(), 'temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      const tempFilePath = path.join(tempDir, `temp_${Date.now()}_${fileName}`);
+      fs.writeFileSync(tempFilePath, fileContent);
+      
+      try {
+        // Use the existing updateFile method which uses CSRF
+        const result = await this.updateFile(fileType, fileId, tempFilePath, null, dbId);
+        console.log(`[Update CSRF] CSRF update result:`, result);
+        return result;
+      } finally {
+        // Clean up temp file
+        try {
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+        } catch (cleanupError) {
+          console.warn(`[Update CSRF] Could not clean up temp file:`, cleanupError.message);
+        }
+      }
+    } catch (error) {
+      console.error('[Update CSRF] Error:', error);
+      throw error;
+    }
+  }
+
   // Helper to convert frontend config identifier to ProSBC numeric config ID
   async getNumericConfigId(configId) {
     if (!configId) return null;
@@ -528,7 +893,28 @@ class ProSBCFileAPI {
     try {
       await this.ensureConfigSelected(configId);
       const dbId = this.selectedConfigId || '3';
-      console.log('[ProSBC] Fetching DF files list...');
+      console.log(`[ProSBC] Fetching DF files list... (DB ID: ${dbId}, Config ID: ${configId})`);
+      
+      // Debug: Try multiple database IDs to see where files actually are
+      for (const testDbId of ['1', '2', '3']) {
+        try {
+          console.log(`[ProSBC Debug] Checking DB ID ${testDbId} for files...`);
+          const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+            method: 'GET',
+            headers: await this.getCommonHeaders()
+          });
+          if (testResponse.ok) {
+            const testHtml = await testResponse.text();
+            const testFiles = this.parseFileTable(testHtml, 'Routesets Definition', 'routesets_definitions');
+            console.log(`[ProSBC Debug] DB ID ${testDbId} contains ${testFiles.length} DF files:`, testFiles.map(f => f.name));
+          } else {
+            console.log(`[ProSBC Debug] DB ID ${testDbId} returned status: ${testResponse.status}`);
+          }
+        } catch (err) {
+          console.log(`[ProSBC Debug] DB ID ${testDbId} error:`, err.message);
+        }
+      }
+      
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
@@ -552,7 +938,28 @@ class ProSBCFileAPI {
     try {
       await this.ensureConfigSelected(configId);
       const dbId = this.selectedConfigId || '3';
-      console.log('[ProSBC] Fetching DM files list...');
+      console.log(`[ProSBC] Fetching DM files list... (DB ID: ${dbId}, Config ID: ${configId})`);
+      
+      // Debug: Try multiple database IDs to see where files actually are
+      for (const testDbId of ['1', '2', '3']) {
+        try {
+          console.log(`[ProSBC Debug] Checking DB ID ${testDbId} for DM files...`);
+          const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+            method: 'GET',
+            headers: await this.getCommonHeaders()
+          });
+          if (testResponse.ok) {
+            const testHtml = await testResponse.text();
+            const testFiles = this.parseFileTable(testHtml, 'Routesets Digitmap', 'routesets_digitmaps');
+            console.log(`[ProSBC Debug] DB ID ${testDbId} contains ${testFiles.length} DM files:`, testFiles.map(f => f.name));
+          } else {
+            console.log(`[ProSBC Debug] DB ID ${testDbId} returned status: ${testResponse.status}`);
+          }
+        } catch (err) {
+          console.log(`[ProSBC Debug] DB ID ${testDbId} error:`, err.message);
+        }
+      }
+      
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
@@ -664,7 +1071,6 @@ class ProSBCFileAPI {
         return files;
       }
       const sectionHtml = sectionMatch[1];
-      console.log('[ProSBC] Section HTML preview:', sectionHtml.substring(0, 500));
       // Robustly parse file rows for all configIds
       // Clear the files array since we found the section
       files.length = 0;
