@@ -20,7 +20,7 @@ import { ProSBCInstanceProvider } from './contexts/ProSBCInstanceContext';
 import './App.css';
 
 function App() {
-  const [activeSection, setActiveSection] = useState('nap-creation');
+  const [activeSection, setActiveSection] = useState('dm-df-upload');
   const [isReady, setIsReady] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -154,13 +154,13 @@ function App() {
       case 'activation-generation':
         return <ActivationGeneration onAuthError={handleAuthError} />;
       case 'database-dashboard':
-        return <DatabaseDashboard onClose={() => setActiveSection('nap-creation')} />;
+        return <DatabaseDashboard onClose={() => setActiveSection('dm-df-upload')} />;
       case 'system-dashboard':
         return <EnhancedDatabaseDashboard />;
       case 'prosbc-instances':
         return <ProSBCInstanceManager />;
       default:
-        return <NapCreatorEnhanced onAuthError={handleAuthError} />;
+        return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
     }
   };
 
