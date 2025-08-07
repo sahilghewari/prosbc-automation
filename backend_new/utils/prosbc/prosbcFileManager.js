@@ -27,20 +27,24 @@ class ProSBCFileAPI {
     this.configSelectionDone = false;
     
     // Hardcoded config mappings for ProSBC1 to avoid HTML parsing issues
+    // Each mapping includes:
+    // - id: configuration ID (used for /configurations/{id}/choose_redirect)
+    // - dbId: database ID (used for /file_dbs/{dbId}/edit after redirect)
+    // - name: configuration name
     this.prosbc1ConfigMappings = {
-      'config_052421-1': { id: '2', name: 'config_052421-1' },
-      'config_060620221': { id: '3', name: 'config_060620221' },
-      'config_1': { id: '1', name: 'config_1' },
-      'config_1-BU': { id: '5', name: 'config_1-BU' },
-      'config_301122-1': { id: '4', name: 'config_301122-1' },
-      'config_demo': { id: '6', name: 'config_demo' },
+      'config_052421-1': { id: '2', dbId: '2', name: 'config_052421-1' },
+      'config_060620221': { id: '3', dbId: '3', name: 'config_060620221' },
+      'config_1': { id: '1', dbId: '1', name: 'config_1' },
+      'config_1-BU': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
+      'config_301122-1': { id: '4', dbId: '4', name: 'config_301122-1' },
+      'config_demo': { id: '6', dbId: '6', name: 'config_demo' },
       // Also support lookup by ID
-      '1': { id: '1', name: 'config_1' },
-      '2': { id: '2', name: 'config_052421-1' },
-      '3': { id: '3', name: 'config_060620221' },
-      '4': { id: '4', name: 'config_301122-1' },
-      '5': { id: '5', name: 'config_1-BU' },
-      '6': { id: '6', name: 'config_demo' }
+      '1': { id: '1', dbId: '1', name: 'config_1' },
+      '2': { id: '2', dbId: '2', name: 'config_052421-1' },
+      '3': { id: '3', dbId: '3', name: 'config_060620221' },
+      '4': { id: '4', dbId: '4', name: 'config_301122-1' },
+      '5': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
+      '6': { id: '6', dbId: '6', name: 'config_demo' }
     };
   }
 
@@ -593,23 +597,24 @@ class ProSBCFileAPI {
       const mappedConfig = this.resolveProsbc1Config(configId);
       if (mappedConfig) {
         // If we already have the same config selected, no need to reselect
-        if (this.configSelectionDone && this.selectedConfigId === mappedConfig.id) {
-          console.log(`[ProSBC1 Config] Config ${mappedConfig.id} (${mappedConfig.name}) already selected`);
+        if (this.configSelectionDone && this.selectedConfigId === mappedConfig.dbId) {
+          console.log(`[ProSBC1 Config] Config ${mappedConfig.id} (${mappedConfig.name}) already selected, using DB ID: ${mappedConfig.dbId}`);
           return;
         }
         
-        console.log(`[ProSBC1 Config] Using hardcoded config: ID=${mappedConfig.id}, Name=${mappedConfig.name}`);
+        console.log(`[ProSBC1 Config] Using hardcoded config: ID=${mappedConfig.id}, DB ID=${mappedConfig.dbId}, Name=${mappedConfig.name}`);
         
         // Ensure instance context is loaded
         await this.loadInstanceContext();
         const sessionCookie = await this.getSessionCookie();
         
         try {
-          // Select the configuration using the hardcoded ID
+          // Select the configuration using the hardcoded configuration ID
           await selectConfiguration(mappedConfig.id, this.baseURL, sessionCookie);
-          this.selectedConfigId = mappedConfig.id;
+          // After configuration selection, use the database ID for file operations
+          this.selectedConfigId = mappedConfig.dbId;
           this.configSelectionDone = true;
-          console.log(`[ProSBC1 Config] ✓ Successfully selected hardcoded config ${mappedConfig.id} (${mappedConfig.name})`);
+          console.log(`[ProSBC1 Config] ✓ Successfully selected config ${mappedConfig.id} (${mappedConfig.name}), using database ID: ${mappedConfig.dbId}`);
           return;
         } catch (selectError) {
           console.error(`[ProSBC1 Config] Failed to select hardcoded config ${mappedConfig.id}:`, selectError);
@@ -1421,9 +1426,11 @@ class ProSBCFileAPI {
       let dbId = this.selectedConfigId;
       console.log(`[ProSBC] Instance: ${this.instanceId}, Fetching DF files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
-      // For ProSBC1, we already have the correct database ID from hardcoded mappings
-      // For other instances, try to get the correct database ID by checking the file_dbs index
-      if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
+      // For ProSBC1, the database ID is already correctly set by ensureConfigSelected
+      if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
+        console.log(`[ProSBC1] Using database ID: ${dbId} for config ${configId}`);
+      } else {
+        // For other instances, try to get the correct database ID by checking the file_dbs index
         try {
           const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
@@ -1442,8 +1449,6 @@ class ProSBCFileAPI {
         } catch (indexError) {
           console.log(`[ProSBC] Could not check file_dbs index: ${indexError.message}`);
         }
-      } else {
-        console.log(`[ProSBC1] Using hardcoded database ID: ${dbId} for config ${configId}`);
       }
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
@@ -1477,9 +1482,11 @@ class ProSBCFileAPI {
       let dbId = this.selectedConfigId;
       console.log(`[ProSBC] Instance: ${this.instanceId}, Fetching DM files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
-      // For ProSBC1, we already have the correct database ID from hardcoded mappings
-      // For other instances, try to get the correct database ID by checking the file_dbs index
-      if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
+      // For ProSBC1, the database ID is already correctly set by ensureConfigSelected
+      if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
+        console.log(`[ProSBC1] Using database ID: ${dbId} for config ${configId}`);
+      } else {
+        // For other instances, try to get the correct database ID by checking the file_dbs index
         try {
           const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
@@ -1498,8 +1505,6 @@ class ProSBCFileAPI {
         } catch (indexError) {
           console.log(`[ProSBC] Could not check file_dbs index: ${indexError.message}`);
         }
-      } else {
-        console.log(`[ProSBC1] Using hardcoded database ID: ${dbId} for config ${configId}`);
       }
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
