@@ -30,7 +30,21 @@ export async function fetchLiveConfigIds(baseURL, sessionCookie) {
   let match;
   while ((match = optionRegex.exec(selectHtml)) !== null) {
     const id = match[1];
-    const name = match[2].trim();
+    let name = match[2].trim();
+    
+    console.log(`[Config Fetcher] Raw config name for ID ${id}: "${name}"`);
+    
+    // Decode HTML entities from the config name
+    name = name
+      .replace(/&nbsp;/g, ' ')   // Replace HTML non-breaking spaces with regular spaces
+      .replace(/&amp;/g, '&')   // Decode HTML ampersands
+      .replace(/&lt;/g, '<')    // Decode HTML less-than
+      .replace(/&gt;/g, '>')    // Decode HTML greater-than
+      .replace(/&quot;/g, '"')  // Decode HTML quotes
+      .trim();                  // Remove any extra whitespace
+    
+    console.log(`[Config Fetcher] Cleaned config name for ID ${id}: "${name}"`);
+    
     // Check if this option is in the 'Active' optgroup
     const before = selectHtml.substring(0, match.index);
     const active = /<optgroup label=['"]Active['"]>/i.test(before) && !/<optgroup/i.test(before.split(/<option/).pop());

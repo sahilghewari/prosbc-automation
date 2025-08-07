@@ -100,7 +100,7 @@ class ProSBCFileAPI {
     if (!configId) return null;
     
     // For ProSBC1, use hardcoded mappings
-    if (this.instanceId === 'ProSBC1') {
+    if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
       const mappedConfig = this.resolveProsbc1Config(configId);
       if (mappedConfig) {
         console.log(`[ProSBC1 Config Name] Using hardcoded mapping: '${configId}' → Name: ${mappedConfig.name}`);
@@ -268,7 +268,7 @@ class ProSBCFileAPI {
       
       // Try all possible database IDs more thoroughly
       // For ProSBC1 with many configs, check more database IDs
-      const dbIdsToSearch = this.instanceId === 'ProSBC1' ? 
+      const dbIdsToSearch = (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') ? 
         ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] : 
         ['1', '2', '3', '4', '5'];
       
@@ -500,7 +500,7 @@ class ProSBCFileAPI {
   }
   // Helper method specifically for ProSBC1 to resolve config using hardcoded mappings
   resolveProsbc1Config(configId) {
-    if (this.instanceId !== 'ProSBC1') {
+    if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
       return null; // Only works for ProSBC1
     }
     
@@ -539,7 +539,7 @@ class ProSBCFileAPI {
     if (!configId) return null;
     
     // For ProSBC1, use hardcoded mappings instead of HTML parsing
-    if (this.instanceId === 'ProSBC1') {
+    if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
       const mappedConfig = this.resolveProsbc1Config(configId);
       if (mappedConfig) {
         console.log(`[ProSBC1 Config] Using hardcoded mapping: '${configId}' → ID: ${mappedConfig.id}`);
@@ -589,7 +589,7 @@ class ProSBCFileAPI {
   // Accepts configId (string/number) to override selection for this operation
   async ensureConfigSelected(configId = null) {
     // For ProSBC1, use hardcoded mappings and skip complex HTML parsing
-    if (this.instanceId === 'ProSBC1') {
+    if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
       const mappedConfig = this.resolveProsbc1Config(configId);
       if (mappedConfig) {
         // If we already have the same config selected, no need to reselect
@@ -718,7 +718,7 @@ class ProSBCFileAPI {
 
   // Debug method specifically for ProSBC1 to analyze configuration and database structure
   async debugProSBC1Configuration() {
-    if (this.instanceId !== 'ProSBC1') {
+    if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
       console.log(`[Debug] This method is specifically for ProSBC1, current instance: ${this.instanceId}`);
       return;
     }
@@ -1080,7 +1080,7 @@ class ProSBCFileAPI {
               
               // Try to find the file in any database ID as verification
               // For ProSBC1 with many configs, check more database IDs
-              const dbIdsToVerify = this.instanceId === 'ProSBC1' ? 
+              const dbIdsToVerify = (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') ? 
                 ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] : 
                 ['1', '2', '3', '4', '5'];
               
@@ -1423,7 +1423,7 @@ class ProSBCFileAPI {
       
       // For ProSBC1, we already have the correct database ID from hardcoded mappings
       // For other instances, try to get the correct database ID by checking the file_dbs index
-      if (this.instanceId !== 'ProSBC1') {
+      if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
         try {
           const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
@@ -1479,7 +1479,7 @@ class ProSBCFileAPI {
       
       // For ProSBC1, we already have the correct database ID from hardcoded mappings
       // For other instances, try to get the correct database ID by checking the file_dbs index
-      if (this.instanceId !== 'ProSBC1') {
+      if (!this.instanceId || this.instanceId.toLowerCase() !== 'prosbc1') {
         try {
           const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',

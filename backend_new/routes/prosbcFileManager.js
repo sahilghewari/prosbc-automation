@@ -10,11 +10,33 @@ const router = express.Router();
 
 // Helper to extract configId from request (query, body, or header)
 function getConfigIdFromRequest(req) {
-  return req.query.configId || 
-         req.body?.configId || 
-         req.headers['x-config-id'] || 
-         req.headers['x-prosbc-config-id'] || 
-         null;
+  const configFromQuery = req.query.configId;
+  const configFromBody = req.body?.configId;
+  const configFromHeaderId = req.headers['x-config-id'];
+  const configFromHeaderProsbcId = req.headers['x-prosbc-config-id'];
+  
+  // Debug logging to see what the frontend is sending
+  console.log(`[Config Debug] Query configId: ${configFromQuery}`);
+  console.log(`[Config Debug] Body configId: ${configFromBody}`);
+  console.log(`[Config Debug] Header x-config-id: ${configFromHeaderId}`);
+  console.log(`[Config Debug] Header x-prosbc-config-id: ${configFromHeaderProsbcId}`);
+  
+  let finalConfigId = configFromQuery || configFromBody || configFromHeaderId || configFromHeaderProsbcId || null;
+  
+  // Clean up HTML entities and whitespace
+  if (finalConfigId && typeof finalConfigId === 'string') {
+    finalConfigId = finalConfigId
+      .replace(/&nbsp;/g, '')  // Remove HTML non-breaking spaces
+      .replace(/&amp;/g, '&')  // Decode HTML ampersands
+      .replace(/&lt;/g, '<')   // Decode HTML less-than
+      .replace(/&gt;/g, '>')   // Decode HTML greater-than
+      .replace(/&quot;/g, '"') // Decode HTML quotes
+      .trim();                 // Remove leading/trailing whitespace
+  }
+  
+  console.log(`[Config Debug] Final selected configId (cleaned): ${finalConfigId}`);
+  
+  return finalConfigId;
 }
 
 // Helper to get instance-specific ProSBC configuration

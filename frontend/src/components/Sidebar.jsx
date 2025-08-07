@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 import ProSBCInstanceSelector from './ProSBCInstanceSelector';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+import { cleanConfigs, cleanConfigName } from '../utils/htmlUtils';
 
 const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange, onConfigChange }) => {
   const { hasSelectedInstance, selectedInstance } = useProSBCInstance();
@@ -29,16 +30,22 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       const res = await fetch('/backend/api/prosbc-files/test-configs', { headers });
       const data = await res.json();
       console.log('[Sidebar] Received configs:', data);
-      setConfigs(data.configs || []);
+      
+      // Clean the configs to remove HTML entities
+      const cleanedConfigs = cleanConfigs(data.configs || []);
+      setConfigs(cleanedConfigs);
       
       // Always select a valid config when configs change
-      if (data.configs && data.configs.length > 0) {
+      if (cleanedConfigs && cleanedConfigs.length > 0) {
         // Try to find active config first
-        const active = data.configs.find(cfg => cfg.active);
-        const configToSelect = active || data.configs[0]; // Fallback to first config
+        const active = cleanedConfigs.find(cfg => cfg.active);
+        const configToSelect = active || cleanedConfigs[0]; // Fallback to first config
         console.log('[Sidebar] Selecting config:', configToSelect.id, 'for instance:', targetInstance?.id);
         setSelectedConfig(configToSelect.id);
-        onConfigChange?.(configToSelect.id);
+        
+        // Send the clean config name
+        onConfigChange?.(configToSelect.name);
+        console.log(`[Sidebar] Auto-selected config: ID=${configToSelect.id}, Name=${configToSelect.name}, Sent: ${configToSelect.name}`);
       } else {
         // No configs available, clear selection
         console.log('[Sidebar] No configs available for instance:', targetInstance?.id);
@@ -71,8 +78,23 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
   }, []);
 
   const handleConfigChange = (e) => {
-    setSelectedConfig(e.target.value);
-    onConfigChange?.(e.target.value);
+    const selectedId = e.target.value;
+    setSelectedConfig(selectedId);
+    
+    // Find the config object to get the name
+    const configToSelect = configs.find(cfg => cfg.id === selectedId);
+    if (configToSelect) {
+      // The config name should already be cleaned since we cleaned configs when setting them
+      // But clean it again as a safety measure
+      const cleanName = cleanConfigName(configToSelect.name);
+      
+      // Send the cleaned config name instead of numeric ID
+      onConfigChange?.(cleanName);
+      console.log(`[Sidebar] Config selected: ID=${configToSelect.id}, Name=${configToSelect.name}, Cleaned=${cleanName}, Sending: ${cleanName}`);
+    } else {
+      onConfigChange?.(selectedId);
+      console.log(`[Sidebar] Config not found for ID=${selectedId}, sending ID as-is`);
+    }
   };
 
   const handleCollapseToggle = () => {
