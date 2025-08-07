@@ -9,6 +9,20 @@ const sessionCookies = new Map();
 const lastLoginTimes = new Map();
 const SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
+// Clear session cache for a specific instance or all instances
+const clearSessionCache = (instanceId = null) => {
+  if (instanceId) {
+    const sessionKey = instanceId || 'default';
+    sessionCookies.delete(sessionKey);
+    lastLoginTimes.delete(sessionKey);
+    console.log(`[RoutesetMapping] Cleared session cache for instance: ${sessionKey}`);
+  } else {
+    sessionCookies.clear();
+    lastLoginTimes.clear();
+    console.log('[RoutesetMapping] Cleared all session caches');
+  }
+};
+
 async function getApiClient(instanceId = null) {
   let baseURL, username, password;
   
@@ -148,10 +162,11 @@ const parseNapEditForm = (html) => {
 };
 
 // Get all routeset mappings
-const getRoutesetMappings = async (configId = 'config_1', instanceId = null) => {
+const getRoutesetMappings = async (configId = null, instanceId = null) => {
   try {
-    console.log(`Fetching routeset mappings for config: ${configId}, instance: ${instanceId || 'default'}`);
+    console.log(`[RoutesetMapping] Fetching routeset mappings for config: ${configId || 'default'}, instance: ${instanceId || 'default'}`);
     const apiClient = await getApiClient(instanceId);
+    console.log(`[RoutesetMapping] Using base URL: ${apiClient.defaults.baseURL}`);
     const response = await apiClient.get('/routesets');
     if (response.status === 200) {
       const mappings = parseRoutesetMappings(response.data);
@@ -170,9 +185,9 @@ const getRoutesetMappings = async (configId = 'config_1', instanceId = null) => 
 };
 
 // Get NAP edit form data (including available files)
-const getNapEditData = async (napName, configId = 'config_1', instanceId = null) => {
+const getNapEditData = async (napName, configId = null, instanceId = null) => {
   try {
-    console.log(`Fetching edit data for NAP: ${napName}, config: ${configId}, instance: ${instanceId || 'default'}`);
+    console.log(`Fetching edit data for NAP: ${napName}, config: ${configId || 'default'}, instance: ${instanceId || 'default'}`);
     const apiClient = await getApiClient(instanceId);
     const editUrl = `/nap_columns_values/${napName}/edit?from_controller=tbgw_routesets`;
     const response = await apiClient.get(editUrl);
@@ -193,11 +208,11 @@ const getNapEditData = async (napName, configId = 'config_1', instanceId = null)
 };
 
 // Update NAP mapping
-const updateNapMapping = async (napName, mappingData) => {
+const updateNapMapping = async (napName, mappingData, configId = null, instanceId = null) => {
   try {
     console.log(`Updating NAP mapping for: ${napName}`, mappingData);
     // First get the current form data to extract hidden fields
-    const editData = await getNapEditData(napName);
+    const editData = await getNapEditData(napName, configId, instanceId);
     // Prepare form data
     const formData = new URLSearchParams();
     formData.append('_method', 'put');
@@ -211,12 +226,11 @@ const updateNapMapping = async (napName, mappingData) => {
     formData.append('tbgw_nap[nap_id]', editData.formData.napId);
     formData.append('tbgw_nap[from_controller]', 'tbgw_routesets');
     formData.append('commit', 'Save');
-    const apiClient = await getApiClient();
+    const apiClient = await getApiClient(instanceId);
     const response = await apiClient.post(`/nap_columns_values/${napName}`, formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'text/html, application/json, */*',
-        'Cookie': `_WebOAMP_session=${sessionCookie}`,
         'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
       },
       maxRedirects: 0, // Don't follow redirects automatically
@@ -249,9 +263,9 @@ const updateNapMapping = async (napName, mappingData) => {
 };
 
 // Get available files for dropdowns
-const getAvailableFiles = async (configId = 'config_1', instanceId = null) => {
+const getAvailableFiles = async (configId = null, instanceId = null) => {
   try {
-    console.log(`Fetching available files for config: ${configId}, instance: ${instanceId || 'default'}`);
+    console.log(`Fetching available files for config: ${configId || 'default'}, instance: ${instanceId || 'default'}`);
     const mappings = await getRoutesetMappings(configId, instanceId);
     if (mappings.length === 0) {
       return { definitions: [], digitmaps: [] };
@@ -281,10 +295,10 @@ const getAvailableFiles = async (configId = 'config_1', instanceId = null) => {
 };
 
 // Generate routing database
-const generateRoutingDatabase = async () => {
+const generateRoutingDatabase = async (systemId = '1', instanceId = null) => {
   try {
-    console.log('Generating routing database...');
-    const apiClient = await getApiClient();
+    console.log(`Generating routing database for system: ${systemId}...`);
+    const apiClient = await getApiClient(instanceId);
     // First get the routesets page to extract the CSRF token and session info
     const response = await apiClient.get('/routesets');
     const dom = new JSDOM(response.data);
@@ -349,9 +363,9 @@ const generateRoutingDatabase = async () => {
     if (!authenticityToken) {
       console.log('Token not found in routesets page, trying to get from NAP edit page...');
       try {
-        const mappings = await getRoutesetMappings();
+        const mappings = await getRoutesetMappings(null, instanceId);
         if (mappings.length > 0) {
-          const editData = await getNapEditData(mappings[0].napName);
+          const editData = await getNapEditData(mappings[0].napName, null, instanceId);
           authenticityToken = editData.formData.authenticityToken;
           console.log('Found token from NAP edit page:', authenticityToken);
         }
@@ -373,14 +387,13 @@ const generateRoutingDatabase = async () => {
     formData.append('_', ''); // Empty underscore parameter as shown in network log
     console.log('Sending generate request with payload:', formData.toString());
     // Make the AJAX request to generate routes with exact headers from network log
-    const generateResponse = await apiClient.post('/tbgw_routesets/ajax_generate_routes/1', formData, {
+    const generateResponse = await apiClient.post(`/tbgw_routesets/ajax_generate_routes/${systemId}`, formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Accept': 'text/javascript, text/html, application/xml, text/xml, */*',
         'X-Requested-With': 'XMLHttpRequest',
         'X-Prototype-Version': '1.6.0.3',
         'Cache-Control': 'no-cache',
-        'Cookie': `_WebOAMP_session=${sessionCookie}`,
         'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
       },
       timeout: 60000, // Increased timeout to 60 seconds for generation
@@ -471,12 +484,13 @@ const generateRoutingDatabase = async () => {
 };
 
 // Activate configuration
-const activateConfiguration = async (configurationId = 1) => {
+const activateConfiguration = async (configurationId = null, systemId = '1', instanceId = null) => {
   try {
-    console.log(`Activating configuration with ID: ${configurationId}`);
+    console.log(`Activating configuration with ID: ${configurationId} for system: ${systemId}`);
+    const apiClient = await getApiClient(instanceId);
     
     // First get the systems page to extract the CSRF token
-    const response = await apiClient.get('/systems/1/edit');
+    const response = await apiClient.get(`/systems/${systemId}/edit`);
     const dom = new JSDOM(response.data);
     const doc = dom.window.document;
     
@@ -496,7 +510,7 @@ const activateConfiguration = async (configurationId = 1) => {
     formData.append('_', '');
     
     // Make the AJAX request to activate configuration
-    const activateResponse = await apiClient.post('/system_info/activate_configuration/1', formData, {
+    const activateResponse = await apiClient.post(`/system_info/activate_configuration/${systemId}`, formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Accept': 'text/javascript, text/html, application/xml, text/xml, */*',
@@ -615,33 +629,33 @@ const activateConfiguration = async (configurationId = 1) => {
 };
 
 // Get available configurations
-const getAvailableConfigurations = async () => {
+const getAvailableConfigurations = async (systemId = '1', instanceId = null) => {
   try {
-    console.log('Fetching available configurations...');
-    const apiClient = await getApiClient();
+    console.log(`Fetching available configurations for system: ${systemId}...`);
+    const apiClient = await getApiClient(instanceId);
     let response;
     try {
-      response = await apiClient.get('/systems/1/edit');
+      response = await apiClient.get(`/systems/${systemId}/edit`);
     } catch (err) {
       // Axios error: log details
       if (err.response) {
-        console.error('Failed to fetch /systems/1/edit:', {
+        console.error(`Failed to fetch /systems/${systemId}/edit:`, {
           status: err.response.status,
           statusText: err.response.statusText,
           headers: err.response.headers,
           dataPreview: typeof err.response.data === 'string' ? err.response.data.substring(0, 500) : err.response.data
         });
       } else if (err.request) {
-        console.error('No response received from /systems/1/edit:', err.request);
+        console.error(`No response received from /systems/${systemId}/edit:`, err.request);
       } else {
-        console.error('Error setting up request to /systems/1/edit:', err.message);
+        console.error(`Error setting up request to /systems/${systemId}/edit:`, err.message);
       }
-      throw new Error('Failed to fetch /systems/1/edit from ProSBC. See logs for details.');
+      throw new Error(`Failed to fetch /systems/${systemId}/edit from ProSBC. See logs for details.`);
     }
 
     if (!response.data) {
-      console.error('No response data received from /systems/1/edit.');
-      throw new Error('No response data received from ProSBC /systems/1/edit.');
+      console.error(`No response data received from /systems/${systemId}/edit.`);
+      throw new Error(`No response data received from ProSBC /systems/${systemId}/edit.`);
     }
 
     // If response is JSON (object), extract configurations from it
@@ -701,8 +715,8 @@ const getAvailableConfigurations = async () => {
     }
 
     // If neither JSON nor HTML, throw error
-    console.error('Unknown response type from /systems/1/edit:', typeof response.data);
-    throw new Error('Unknown response type from ProSBC /systems/1/edit.');
+    console.error(`Unknown response type from /systems/${systemId}/edit:`, typeof response.data);
+    throw new Error(`Unknown response type from ProSBC /systems/${systemId}/edit.`);
   } catch (error) {
     console.error('Error fetching available configurations:', error);
     if (error.response?.status === 401) {
@@ -713,12 +727,12 @@ const getAvailableConfigurations = async () => {
 };
 
 // Validate configuration
-const validateConfiguration = async (configurationId = 1) => {
+const validateConfiguration = async (configurationId = null, systemId = '1', instanceId = null) => {
   try {
-    console.log(`Validating configuration with ID: ${configurationId}`);
-    const apiClient = await getApiClient();
+    console.log(`Validating configuration with ID: ${configurationId} for system: ${systemId}`);
+    const apiClient = await getApiClient(instanceId);
     // First get the systems page to extract the CSRF token
-    const response = await apiClient.get('/systems/1/edit');
+    const response = await apiClient.get(`/systems/${systemId}/edit`);
     const dom = new JSDOM(response.data);
     const doc = dom.window.document;
     // Extract CSRF token from the form
@@ -734,7 +748,7 @@ const validateConfiguration = async (configurationId = 1) => {
     formData.append('authenticity_token', authenticityToken);
     formData.append('_', '');
     // Make the AJAX request to validate configuration
-    const validateResponse = await apiClient.post('/system_info/validate_configuration/1', formData, {
+    const validateResponse = await apiClient.post(`/system_info/validate_configuration/${systemId}`, formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'Accept': 'text/javascript, text/html, application/xml, text/xml, */*',
@@ -777,5 +791,6 @@ export default {
   generateRoutingDatabase,
   activateConfiguration,
   getAvailableConfigurations,
-  validateConfiguration
+  validateConfiguration,
+  clearSessionCache
 };

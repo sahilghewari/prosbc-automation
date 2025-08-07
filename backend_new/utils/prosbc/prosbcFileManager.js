@@ -178,7 +178,7 @@ class ProSBCFileAPI {
   // Form-based delete using Basic Auth (no CSRF needed for REST API)
   async deleteFileFormBased(fileType, fileId, fileName, configId = null) {
     try {
-      const dbId = configId || '1';
+      const dbId = configId ;
       const endpoint = `/file_dbs/${dbId}/${fileType}/${fileId}`;
       const deleteUrl = `${this.baseURL}${endpoint}`;
       
@@ -234,7 +234,7 @@ class ProSBCFileAPI {
       
       // Ensure config is selected and get the actual config ID (same logic as file listing)
       await this.ensureConfigSelected(configId);
-      let dbId = this.selectedConfigId || '3';
+      let dbId = this.selectedConfigId ;
       
       // Find which database ID actually contains the file and get the file details
       let actualDbId = null;
@@ -713,7 +713,7 @@ class ProSBCFileAPI {
   async uploadDmFile(filePath, onProgress, configId = null, originalFileName = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId || '1';
+      const dbId = this.selectedConfigId;
       const fileName = originalFileName || path.basename(filePath);
       console.log(`[Upload DM] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
       onProgress?.(25, 'Getting upload form...');
@@ -892,7 +892,7 @@ class ProSBCFileAPI {
   async listDfFiles(configId = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId || '3';
+      const dbId = this.selectedConfigId ;
       console.log(`[ProSBC] Fetching DF files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
       // Debug: Try multiple database IDs to see where files actually are
@@ -937,7 +937,7 @@ class ProSBCFileAPI {
   async listDmFiles(configId = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId || '3';
+      const dbId = this.selectedConfigId ;
       console.log(`[ProSBC] Fetching DM files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
       // Debug: Try multiple database IDs to see where files actually are
@@ -1112,7 +1112,7 @@ class ProSBCFileAPI {
   async exportFile(fileType, fileId, fileName, outputPath, configId = null) {
     try {
       // Use configId if provided, else default to 1 (legacy fallback)
-      const dbId = configId || '1';
+      const dbId = configId ;
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/export`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
@@ -1130,7 +1130,7 @@ class ProSBCFileAPI {
     try {
       console.log('[deleteFile] Params:', { fileType, fileId, fileName, configId });
       let csrfToken = null;
-      const dbId = configId || '1';
+      const dbId = configId ;
       let uploadFormUrl = fileType === 'routesets_definitions'
         ? `${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`
         : `${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`;
@@ -1211,7 +1211,7 @@ class ProSBCFileAPI {
 
   async getFileContent(fileType, fileId, configId = null) {
     try {
-      const dbId = configId || '1';
+      const dbId = configId;
       const exportResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileId}/export`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
@@ -1281,7 +1281,7 @@ class ProSBCFileAPI {
 
   async updateFile(fileType, fileId, updatedFilePath, onProgress = null, configId = null) {
     try {
-      const dbId = configId || '1';
+      const dbId = configId;
       const updatedFileName = updatedFilePath.split('/').pop();
       onProgress?.(10, 'Getting edit form...');
       const editUrl = `/file_dbs/${dbId}/${fileType}/${fileId}/edit`;
