@@ -185,8 +185,10 @@ router.post('/df/upload-form', upload.single('file'), async (req, res) => {
     
     const instanceId = req.headers['x-prosbc-instance-id'];
     const configId = getConfigIdFromRequest(req);
+    // Get upload mode from request body or query params
+    const uploadMode = req.body.uploadMode || req.query.uploadMode || 'auto';
     
-    console.log(`[Upload DF] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}`);
+    console.log(`[Upload DF] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}, Mode: ${uploadMode}`);
     
     // Create instance-specific ProSBC file manager
     const fileManager = await createProSBCFileAPI(instanceId);
@@ -196,7 +198,7 @@ router.post('/df/upload-form', upload.single('file'), async (req, res) => {
       console.log(`[Upload DF Progress] ${percent}% - ${message}`);
     };
     
-    const result = await fileManager.uploadDfFile(req.file.path, onProgress, configId, req.file.originalname);
+    const result = await fileManager.uploadDfFile(req.file.path, onProgress, configId, req.file.originalname, uploadMode);
     
     // Clean up uploaded file
     try {
@@ -221,8 +223,10 @@ router.post('/dm/upload-form', upload.single('file'), async (req, res) => {
     
     const instanceId = req.headers['x-prosbc-instance-id'];
     const configId = getConfigIdFromRequest(req);
+    // Get upload mode from request body or query params
+    const uploadMode = req.body.uploadMode || req.query.uploadMode || 'auto';
     
-    console.log(`[Upload DM] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}`);
+    console.log(`[Upload DM] Instance: ${instanceId}, Config: ${configId}, File: ${req.file.originalname}, Mode: ${uploadMode}`);
     
     // Create instance-specific ProSBC file manager
     const fileManager = await createProSBCFileAPI(instanceId);
@@ -232,7 +236,7 @@ router.post('/dm/upload-form', upload.single('file'), async (req, res) => {
       console.log(`[Upload DM Progress] ${percent}% - ${message}`);
     };
     
-    const result = await fileManager.uploadDmFile(req.file.path, onProgress, configId, req.file.originalname);
+    const result = await fileManager.uploadDmFile(req.file.path, onProgress, configId, req.file.originalname, uploadMode);
     
     // Clean up uploaded file
     try {
@@ -581,6 +585,44 @@ router.post('/update-direct', upload.single('file'), async (req, res) => {
   } catch (err) {
     console.error('[Update Direct] Error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Debug route specifically for ProSBC1 configuration analysis
+router.get('/debug/prosbc1', async (req, res) => {
+  try {
+    const instanceId = req.headers['x-prosbc-instance-id'] || 'ProSBC1';
+    
+    if (instanceId !== 'ProSBC1') {
+      return res.json({ 
+        success: false, 
+        error: 'This debug endpoint is specifically for ProSBC1',
+        requestedInstance: instanceId
+      });
+    }
+    
+    console.log(`[Debug Route] Starting ProSBC1 configuration analysis...`);
+    
+    // Create ProSBC1 file manager
+    const fileManager = await createProSBCFileAPI('ProSBC1');
+    
+    // Run the debug analysis
+    const debugResult = await fileManager.debugProSBC1Configuration();
+    
+    res.json({
+      success: true,
+      instance: 'ProSBC1',
+      analysis: debugResult,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (err) {
+    console.error('[Debug ProSBC1] Error:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      stack: err.stack
+    });
   }
 });
 

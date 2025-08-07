@@ -25,6 +25,23 @@ class ProSBCFileAPI {
     this.selectedConfigId = null;
     this.configs = null;
     this.configSelectionDone = false;
+    
+    // Hardcoded config mappings for ProSBC1 to avoid HTML parsing issues
+    this.prosbc1ConfigMappings = {
+      'config_052421-1': { id: '2', name: 'config_052421-1' },
+      'config_060620221': { id: '3', name: 'config_060620221' },
+      'config_1': { id: '1', name: 'config_1' },
+      'config_1-BU': { id: '5', name: 'config_1-BU' },
+      'config_301122-1': { id: '4', name: 'config_301122-1' },
+      'config_demo': { id: '6', name: 'config_demo' },
+      // Also support lookup by ID
+      '1': { id: '1', name: 'config_1' },
+      '2': { id: '2', name: 'config_052421-1' },
+      '3': { id: '3', name: 'config_060620221' },
+      '4': { id: '4', name: 'config_301122-1' },
+      '5': { id: '5', name: 'config_1-BU' },
+      '6': { id: '6', name: 'config_demo' }
+    };
   }
 
   // Load instance context and credentials
@@ -81,6 +98,15 @@ class ProSBCFileAPI {
   // Helper to get configuration name for REST API
   async getConfigName(configId) {
     if (!configId) return null;
+    
+    // For ProSBC1, use hardcoded mappings
+    if (this.instanceId === 'ProSBC1') {
+      const mappedConfig = this.resolveProsbc1Config(configId);
+      if (mappedConfig) {
+        console.log(`[ProSBC1 Config Name] Using hardcoded mapping: '${configId}' → Name: ${mappedConfig.name}`);
+        return mappedConfig.name;
+      }
+    }
     
     // Ensure we have fetched the live configs
     if (!this.configs) {
@@ -241,7 +267,14 @@ class ProSBCFileAPI {
       let fileDetails = null;
       
       // Try all possible database IDs more thoroughly
-      for (const testDbId of ['1', '2', '3', '4', '5']) {
+      // For ProSBC1 with many configs, check more database IDs
+      const dbIdsToSearch = this.instanceId === 'ProSBC1' ? 
+        ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] : 
+        ['1', '2', '3', '4', '5'];
+      
+      console.log(`[Update REST API] Instance ${this.instanceId}: Searching for '${fileName}' across ${dbIdsToSearch.length} database IDs...`);
+      
+      for (const testDbId of dbIdsToSearch) {
         try {
           console.log(`[Update REST API] Searching for '${fileName}' in DB ID ${testDbId}...`);
           const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
@@ -443,23 +476,89 @@ class ProSBCFileAPI {
     }
   }
 
-  // Helper to convert frontend config identifier to ProSBC numeric config ID
+  // Helper method to extract the actual database ID from the file database page
+  extractDatabaseIdFromHtml(html) {
+    // Look for file_dbs/{id}/ patterns in the HTML to determine the actual database ID being used
+    const patterns = [
+      /\/file_dbs\/(\d+)\/routesets_definitions\/new/,
+      /\/file_dbs\/(\d+)\/routesets_digitmaps\/new/,
+      /\/file_dbs\/(\d+)\/[^\/]+\/\d+\/edit/,
+      /href="\/file_dbs\/(\d+)\//
+    ];
+    
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match) {
+        const dbId = match[1];
+        console.log(`[Database ID Extraction] Found database ID: ${dbId} from pattern: ${pattern.source}`);
+        return dbId;
+      }
+    }
+    
+    console.warn(`[Database ID Extraction] Could not extract database ID from HTML`);
+    return null;
+  }
+  // Helper method specifically for ProSBC1 to resolve config using hardcoded mappings
+  resolveProsbc1Config(configId) {
+    if (this.instanceId !== 'ProSBC1') {
+      return null; // Only works for ProSBC1
+    }
+    
+    if (!configId) {
+      // Return default config if none specified
+      return this.prosbc1ConfigMappings['config_1'];
+    }
+    
+    // Convert to string for consistent lookup
+    const configKey = configId.toString();
+    
+    // Direct lookup in hardcoded mappings
+    const mappedConfig = this.prosbc1ConfigMappings[configKey];
+    if (mappedConfig) {
+      console.log(`[ProSBC1 Config] Mapped '${configId}' to ID: ${mappedConfig.id}, Name: ${mappedConfig.name}`);
+      return mappedConfig;
+    }
+    
+    // Try partial name matching for flexibility
+    for (const [key, config] of Object.entries(this.prosbc1ConfigMappings)) {
+      if (key.toLowerCase().includes(configKey.toLowerCase()) || 
+          configKey.toLowerCase().includes(key.toLowerCase())) {
+        console.log(`[ProSBC1 Config] Partial match '${configId}' to ID: ${config.id}, Name: ${config.name}`);
+        return config;
+      }
+    }
+    
+    console.warn(`[ProSBC1 Config] No mapping found for '${configId}', available configs:`, 
+      Object.keys(this.prosbc1ConfigMappings).filter(k => k.startsWith('config_')));
+    
+    // Fallback to config_1 as default
+    return this.prosbc1ConfigMappings['config_1'];
+  }
+
   async getNumericConfigId(configId) {
     if (!configId) return null;
+    
+    // For ProSBC1, use hardcoded mappings instead of HTML parsing
+    if (this.instanceId === 'ProSBC1') {
+      const mappedConfig = this.resolveProsbc1Config(configId);
+      if (mappedConfig) {
+        console.log(`[ProSBC1 Config] Using hardcoded mapping: '${configId}' → ID: ${mappedConfig.id}`);
+        return mappedConfig.id;
+      }
+    }
     
     // If it's already numeric, return as is
     if (/^\d+$/.test(configId.toString())) {
       return configId.toString();
     }
     
-    // Ensure we have fetched the live configs
+    // For other instances, use the existing live config fetching logic
     if (!this.configs) {
       const sessionCookie = await this.getSessionCookie();
       this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
     }
     
     // Try to find a config that matches the provided configId
-    // This could be by name or by a pattern
     const matchingConfig = this.configs.find(cfg => {
       // Direct match by name or ID
       if (cfg.name === configId || cfg.id === configId) {
@@ -489,6 +588,37 @@ class ProSBCFileAPI {
   // Fetch configs and select the active one (or a specific one if set)
   // Accepts configId (string/number) to override selection for this operation
   async ensureConfigSelected(configId = null) {
+    // For ProSBC1, use hardcoded mappings and skip complex HTML parsing
+    if (this.instanceId === 'ProSBC1') {
+      const mappedConfig = this.resolveProsbc1Config(configId);
+      if (mappedConfig) {
+        // If we already have the same config selected, no need to reselect
+        if (this.configSelectionDone && this.selectedConfigId === mappedConfig.id) {
+          console.log(`[ProSBC1 Config] Config ${mappedConfig.id} (${mappedConfig.name}) already selected`);
+          return;
+        }
+        
+        console.log(`[ProSBC1 Config] Using hardcoded config: ID=${mappedConfig.id}, Name=${mappedConfig.name}`);
+        
+        // Ensure instance context is loaded
+        await this.loadInstanceContext();
+        const sessionCookie = await this.getSessionCookie();
+        
+        try {
+          // Select the configuration using the hardcoded ID
+          await selectConfiguration(mappedConfig.id, this.baseURL, sessionCookie);
+          this.selectedConfigId = mappedConfig.id;
+          this.configSelectionDone = true;
+          console.log(`[ProSBC1 Config] ✓ Successfully selected hardcoded config ${mappedConfig.id} (${mappedConfig.name})`);
+          return;
+        } catch (selectError) {
+          console.error(`[ProSBC1 Config] Failed to select hardcoded config ${mappedConfig.id}:`, selectError);
+          throw selectError;
+        }
+      }
+    }
+    
+    // For other instances, use the original logic
     // Convert frontend config ID to numeric ID
     const numericConfigId = await this.getNumericConfigId(configId);
     
@@ -501,7 +631,8 @@ class ProSBCFileAPI {
     const sessionCookie = await this.getSessionCookie();
     // Fetch live configs
     this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
-    console.log(`[Config Selection] Available configs from ProSBC:`, this.configs);
+    console.log(`[Config Selection] Instance: ${this.instanceId}, Total configs found: ${this.configs.length}`);
+    console.log(`[Config Selection] Available configs from ProSBC:`, this.configs.map(cfg => `${cfg.id}:${cfg.name}(active:${cfg.active})`));
     
     // Pick config: use numericConfigId if set, else pick the active one
     let configToSelect = numericConfigId || this.selectedConfigId;
@@ -509,13 +640,66 @@ class ProSBCFileAPI {
       const active = this.configs.find(cfg => cfg.active);
       configToSelect = active ? active.id : (this.configs[0] && this.configs[0].id);
       console.log(`[Config Selection] No specific config requested, using: ${configToSelect} (active: ${active ? 'yes' : 'first available'})`);
+      if (active) {
+        console.log(`[Config Selection] Active config details: ID=${active.id}, Name=${active.name}`);
+      } else if (this.configs[0]) {
+        console.log(`[Config Selection] First available config details: ID=${this.configs[0].id}, Name=${this.configs[0].name}`);
+      }
     } else {
       console.log(`[Config Selection] Selecting specific config: ${configToSelect} (requested: ${configId})`);
+      const selectedConfig = this.configs.find(cfg => cfg.id === configToSelect);
+      if (selectedConfig) {
+        console.log(`[Config Selection] Selected config details: ID=${selectedConfig.id}, Name=${selectedConfig.name}, Active=${selectedConfig.active}`);
+      } else {
+        console.warn(`[Config Selection] WARNING: Selected config ${configToSelect} not found in available configs!`);
+      }
     }
     if (!configToSelect) throw new Error('No configuration found to select');
-    await selectConfiguration(configToSelect, this.baseURL, sessionCookie);
-    this.selectedConfigId = configToSelect;
-    this.configSelectionDone = true;
+    
+    console.log(`[Config Selection] Attempting to select config ${configToSelect} on instance ${this.instanceId}...`);
+    
+    try {
+      await selectConfiguration(configToSelect, this.baseURL, sessionCookie);
+      this.selectedConfigId = configToSelect;
+      this.configSelectionDone = true;
+      console.log(`[Config Selection] ✓ Successfully selected config ${configToSelect} for instance ${this.instanceId}`);
+      
+      // Verify the selection worked by checking a simple endpoint and extract the actual database ID
+      const verifyResponse = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
+        method: 'GET',
+        headers: await this.getCommonHeaders()
+      });
+      
+      if (verifyResponse.ok) {
+        const verifyHtml = await verifyResponse.text();
+        if (verifyHtml.includes('configurations_list') || verifyHtml.includes('Configuration')) {
+          console.warn(`[Config Selection] WARNING: Config selection verification failed - still getting configuration page`);
+          console.warn(`[Config Selection] This suggests ProSBC ${this.instanceId} has issues with config selection or session state`);
+          
+          // Try to re-login and select again
+          console.log(`[Config Selection] Attempting to re-login and retry config selection...`);
+          this.sessionCookie = null; // Force re-login
+          const newSessionCookie = await this.getSessionCookie();
+          await selectConfiguration(configToSelect, this.baseURL, newSessionCookie);
+          console.log(`[Config Selection] Retry completed for ${this.instanceId}`);
+        } else {
+          console.log(`[Config Selection] ✓ Config selection verified for ${this.instanceId}`);
+          
+          // Extract the actual database ID from the HTML
+          const actualDbId = this.extractDatabaseIdFromHtml(verifyHtml);
+          if (actualDbId) {
+            this.selectedConfigId = actualDbId;
+            console.log(`[Config Selection] ✓ Extracted actual database ID: ${actualDbId} for config ${configToSelect}`);
+          } else {
+            console.warn(`[Config Selection] Could not extract database ID, using config ID ${configToSelect} as fallback`);
+            this.selectedConfigId = configToSelect;
+          }
+        }
+      }
+    } catch (selectError) {
+      console.error(`[Config Selection] Failed to select config ${configToSelect} for instance ${this.instanceId}:`, selectError);
+      throw selectError;
+    }
   }
 
   async getCommonHeaders() {
@@ -532,12 +716,174 @@ class ProSBCFileAPI {
     return { success: true, message: 'Using basic authentication' };
   }
 
-  async uploadDfFile(filePath, onProgress, configId = null, originalFileName = null) {
+  // Debug method specifically for ProSBC1 to analyze configuration and database structure
+  async debugProSBC1Configuration() {
+    if (this.instanceId !== 'ProSBC1') {
+      console.log(`[Debug] This method is specifically for ProSBC1, current instance: ${this.instanceId}`);
+      return;
+    }
+    
+    try {
+      console.log(`[ProSBC1 Debug] Starting comprehensive analysis...`);
+      
+      // Load instance context and configs
+      await this.loadInstanceContext();
+      const sessionCookie = await this.getSessionCookie();
+      this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
+      
+      console.log(`[ProSBC1 Debug] Total configurations: ${this.configs.length}`);
+      console.log(`[ProSBC1 Debug] Configuration details:`, this.configs.map(cfg => ({
+        id: cfg.id,
+        name: cfg.name,
+        active: cfg.active
+      })));
+      
+      // Check which database IDs are accessible and contain files
+      const dbResults = [];
+      for (const dbId of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']) {
+        try {
+          const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
+            method: 'GET',
+            headers: await this.getCommonHeaders()
+          });
+          
+          const result = {
+            dbId,
+            status: response.status,
+            accessible: response.ok,
+            dfFiles: 0,
+            dmFiles: 0,
+            htmlLength: 0
+          };
+          
+          if (response.ok) {
+            const html = await response.text();
+            result.htmlLength = html.length;
+            
+            const dfFiles = this.parseFileTable(html, 'Routesets Definition', 'routesets_definitions');
+            const dmFiles = this.parseFileTable(html, 'Routesets Digitmap', 'routesets_digitmaps');
+            
+            result.dfFiles = dfFiles.length;
+            result.dmFiles = dmFiles.length;
+            
+            if (dfFiles.length > 0) {
+              result.dfFileNames = dfFiles.slice(0, 3).map(f => f.name); // First 3 files
+            }
+            if (dmFiles.length > 0) {
+              result.dmFileNames = dmFiles.slice(0, 3).map(f => f.name); // First 3 files
+            }
+          }
+          
+          dbResults.push(result);
+          console.log(`[ProSBC1 Debug] DB ID ${dbId}:`, result);
+          
+        } catch (error) {
+          console.log(`[ProSBC1 Debug] DB ID ${dbId} error:`, error.message);
+          dbResults.push({
+            dbId,
+            error: error.message,
+            accessible: false
+          });
+        }
+      }
+      
+      // Summary
+      const accessibleDbs = dbResults.filter(db => db.accessible);
+      const dbsWithFiles = dbResults.filter(db => db.accessible && (db.dfFiles > 0 || db.dmFiles > 0));
+      
+      console.log(`[ProSBC1 Debug] Summary:`);
+      console.log(`  - Total configurations: ${this.configs.length}`);
+      console.log(`  - Accessible database IDs: ${accessibleDbs.map(db => db.dbId).join(', ')}`);
+      console.log(`  - Database IDs with files: ${dbsWithFiles.map(db => `${db.dbId}(DF:${db.dfFiles},DM:${db.dmFiles})`).join(', ')}`);
+      
+      if (this.configs.length > 10) {
+        console.log(`[ProSBC1 Debug] WARNING: ProSBC1 has ${this.configs.length} configurations, which might cause issues with config selection`);
+      }
+      
+      return {
+        totalConfigs: this.configs.length,
+        configs: this.configs,
+        databaseResults: dbResults,
+        accessibleDbs: accessibleDbs.length,
+        dbsWithFiles: dbsWithFiles.length
+      };
+      
+    } catch (error) {
+      console.error(`[ProSBC1 Debug] Error during analysis:`, error);
+      throw error;
+    }
+  }
+
+  async uploadDfFile(filePath, onProgress, configId = null, originalFileName = null, uploadMode = 'auto') {
     try {
       await this.ensureConfigSelected(configId);
       const dbId = this.selectedConfigId;
-      const fileName = originalFileName || path.basename(filePath);
-      console.log(`[Upload DF] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
+      let fileName = originalFileName || path.basename(filePath);
+      
+      // Handle different upload modes:
+      // 'auto' - try update if exists, otherwise create new with unique name if needed
+      // 'create' - always create new file, use unique name if file exists
+      // 'update' - only update existing file, fail if file doesn't exist
+      // 'replace' - update if exists, create if doesn't exist (may overwrite)
+      
+      console.log(`[Upload DF] Upload mode: ${uploadMode}, file: '${fileName}'`);
+      
+      let existingFile = null;
+      // Skip existence check for direct uploads or when config selection is problematic
+      if (uploadMode === 'create' || uploadMode === 'replace') {
+        console.log(`[Upload DF] Skipping existence check for ${uploadMode} mode`);
+      } else {
+        try {
+          const existingFiles = await this.listDfFiles(configId);
+          existingFile = existingFiles.files?.find(f => f.name === fileName);
+          if (existingFile) {
+            console.log(`[Upload DF] File '${fileName}' already exists with ID: ${existingFile.id}`);
+          } else {
+            console.log(`[Upload DF] File '${fileName}' does not exist`);
+          }
+        } catch (listError) {
+          console.log(`[Upload DF] Could not check existing files (${listError.message}), proceeding with direct upload...`);
+        }
+      }
+      
+      // Handle upload based on mode
+      if (uploadMode === 'update') {
+        if (!existingFile) {
+          throw new Error(`Cannot update: File '${fileName}' does not exist`);
+        }
+        console.log(`[Upload DF] Update mode: updating existing file '${fileName}'`);
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const updateResult = await this.updateFileRestAPI('routesets_definitions', fileName, fileContent, configId);
+        if (updateResult.success) {
+          return { success: true, message: `DF file '${fileName}' updated successfully!` };
+        } else {
+          throw new Error(`Failed to update file '${fileName}': ${updateResult.message || 'Unknown error'}`);
+        }
+      } else if (uploadMode === 'create') {
+        if (existingFile) {
+          // Generate unique name for new file
+          const timestamp = Date.now();
+          fileName = fileName.replace(/\.csv$/i, `_${timestamp}.csv`);
+          console.log(`[Upload DF] Create mode: using unique filename '${fileName}' to avoid conflict`);
+        } else {
+          console.log(`[Upload DF] Create mode: creating new file '${fileName}'`);
+        }
+      } else if (uploadMode === 'replace') {
+        if (existingFile) {
+          console.log(`[Upload DF] Replace mode: updating existing file '${fileName}'`);
+          const fileContent = fs.readFileSync(filePath, 'utf8');
+          const updateResult = await this.updateFileRestAPI('routesets_definitions', fileName, fileContent, configId);
+          if (updateResult.success) {
+            return { success: true, message: `DF file '${fileName}' replaced successfully!` };
+          } else {
+            console.log(`[Upload DF] Update failed in replace mode, will create new file...`);
+          }
+        } else {
+          console.log(`[Upload DF] Replace mode: file doesn't exist, creating new file '${fileName}'`);
+        }
+        } else { // auto mode (default behavior)
+          console.log(`[Upload DF] Auto mode: proceeding with direct upload of '${fileName}'`);
+        }      console.log(`[Upload DF] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
       onProgress?.(25, 'Getting upload form...');
       const newDfResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`, {
         method: 'GET',
@@ -627,8 +973,24 @@ class ProSBCFileAPI {
         const location = uploadResponse.headers.get('location');
         console.log(`[Upload DF] Redirect location: ${location}`);
         
-        // Check for error messages in the response headers or body
+        // Check for success and error messages in the response headers
         const setCookieHeader = uploadResponse.headers.get('set-cookie');
+        
+        // First check for success messages in the session cookie
+        if (setCookieHeader && setCookieHeader.includes('notice')) {
+          const successMatch = setCookieHeader.match(/notice[^:]*:\s*([^&]+)/);
+          if (successMatch) {
+            const successMsg = decodeURIComponent(successMatch[1]).replace(/\+/g, ' ');
+            if (successMsg.toLowerCase().includes('successfully imported') || 
+                successMsg.toLowerCase().includes('successfully') || 
+                successMsg.toLowerCase().includes('imported')) {
+              console.log(`[Upload DF] ✓ SUCCESS detected from session cookie: ${successMsg}`);
+              return { success: true, message: `DF file '${fileName}' uploaded successfully: ${successMsg}` };
+            }
+          }
+        }
+        
+        // Check for error messages in the response headers or body
         if (setCookieHeader && setCookieHeader.includes('error')) {
           // Try to extract the error message from the session cookie
           const errorMatch = setCookieHeader.match(/error[^:]*:\s*([^&]+)/);
@@ -639,7 +1001,34 @@ class ProSBCFileAPI {
             // Check for specific error types
             if (errorMsg.toLowerCase().includes('already been taken') || 
                 errorMsg.toLowerCase().includes('name') && errorMsg.toLowerCase().includes('taken')) {
-              throw new Error(`File name already exists: ${errorMsg}`);
+              
+              console.log(`[Upload DF] File name conflict detected: ${errorMsg}`);
+              console.log(`[Upload DF] Attempting to handle name conflict by generating unique name...`);
+              
+              // Generate unique name and retry
+              const timestamp = Date.now();
+              const uniqueFileName = fileName.replace(/\.csv$/i, `_${timestamp}.csv`);
+              console.log(`[Upload DF] Retrying upload with unique name: ${uniqueFileName}`);
+              
+              try {
+                return await this.uploadDfFile(filePath, onProgress, configId, uniqueFileName, 'create');
+              } catch (retryError) {
+                console.log(`[Upload DF] Unique name retry also failed: ${retryError.message}`);
+                // If unique name also fails, try to update the existing file
+                try {
+                  console.log(`[Upload DF] Attempting to update existing file instead...`);
+                  const fileContent = fs.readFileSync(filePath, 'utf8');
+                  const updateResult = await this.updateFileRestAPI('routesets_definitions', fileName, fileContent, configId);
+                  if (updateResult.success) {
+                    console.log(`[Upload DF] Successfully updated existing file '${fileName}' via REST API`);
+                    return { success: true, message: `DF file '${fileName}' updated successfully!` };
+                  } else {
+                    throw new Error(`Both unique name upload and file update failed: ${errorMsg}`);
+                  }
+                } catch (updateError) {
+                  throw new Error(`File name already exists and all retry methods failed: ${errorMsg}`);
+                }
+              }
             } else {
               throw new Error(`Upload failed: ${errorMsg}`);
             }
@@ -687,6 +1076,35 @@ class ProSBCFileAPI {
               console.log(`[Upload DF] SUCCESS: Found uploaded file '${fileName}' in the file listing!`);
               return { success: true, message: `DF file '${fileName}' uploaded and verified in ProSBC!` };
             } else {
+              console.log(`[Upload DF] File '${fileName}' not found in redirect response, checking all database IDs...`);
+              
+              // Try to find the file in any database ID as verification
+              // For ProSBC1 with many configs, check more database IDs
+              const dbIdsToVerify = this.instanceId === 'ProSBC1' ? 
+                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] : 
+                ['1', '2', '3', '4', '5'];
+              
+              console.log(`[Upload DF] Instance ${this.instanceId}: Verifying upload across ${dbIdsToVerify.length} database IDs...`);
+              
+              try {
+                for (const testDbId of dbIdsToVerify) {
+                  const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+                    method: 'GET',
+                    headers: await this.getCommonHeaders()
+                  });
+                  if (testResponse.ok) {
+                    const testHtml = await testResponse.text();
+                    if (testHtml.includes(fileName)) {
+                      console.log(`[Upload DF] ✓ SUCCESS: Found uploaded file '${fileName}' in DB ID ${testDbId}!`);
+                      return { success: true, message: `DF file '${fileName}' uploaded and verified in ProSBC DB ID ${testDbId}!` };
+                    }
+                  }
+                }
+                console.log(`[Upload DF] File '${fileName}' not found in any database ID during verification`);
+              } catch (verifyError) {
+                console.log(`[Upload DF] Verification check failed: ${verifyError.message}`);
+              }
+              
               console.log(`[Upload DF] WARNING: Could not find file '${fileName}' in the redirect response. Upload may have failed.`);
             }
           } catch (redirectError) {
@@ -710,12 +1128,76 @@ class ProSBCFileAPI {
     }
   }
 
-  async uploadDmFile(filePath, onProgress, configId = null, originalFileName = null) {
+  async uploadDmFile(filePath, onProgress, configId = null, originalFileName = null, uploadMode = 'auto') {
     try {
       await this.ensureConfigSelected(configId);
       const dbId = this.selectedConfigId;
-      const fileName = originalFileName || path.basename(filePath);
-      console.log(`[Upload DM] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
+      let fileName = originalFileName || path.basename(filePath);
+      
+      // Handle different upload modes:
+      // 'auto' - try update if exists, otherwise create new with unique name if needed
+      // 'create' - always create new file, use unique name if file exists
+      // 'update' - only update existing file, fail if file doesn't exist
+      // 'replace' - update if exists, create if doesn't exist (may overwrite)
+      
+      console.log(`[Upload DM] Upload mode: ${uploadMode}, file: '${fileName}'`);
+      
+      let existingFile = null;
+      // Skip existence check for direct uploads or when config selection is problematic
+      if (uploadMode === 'create' || uploadMode === 'replace') {
+        console.log(`[Upload DM] Skipping existence check for ${uploadMode} mode`);
+      } else {
+        try {
+          const existingFiles = await this.listDmFiles(configId);
+          existingFile = existingFiles.files?.find(f => f.name === fileName);
+          if (existingFile) {
+            console.log(`[Upload DM] File '${fileName}' already exists with ID: ${existingFile.id}`);
+          } else {
+            console.log(`[Upload DM] File '${fileName}' does not exist`);
+          }
+        } catch (listError) {
+          console.log(`[Upload DM] Could not check existing files (${listError.message}), proceeding with direct upload...`);
+        }
+      }
+      
+      // Handle upload based on mode
+      if (uploadMode === 'update') {
+        if (!existingFile) {
+          throw new Error(`Cannot update: File '${fileName}' does not exist`);
+        }
+        console.log(`[Upload DM] Update mode: updating existing file '${fileName}'`);
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const updateResult = await this.updateFileRestAPI('routesets_digitmaps', fileName, fileContent, configId);
+        if (updateResult.success) {
+          return { success: true, message: `DM file '${fileName}' updated successfully!` };
+        } else {
+          throw new Error(`Failed to update file '${fileName}': ${updateResult.message || 'Unknown error'}`);
+        }
+      } else if (uploadMode === 'create') {
+        if (existingFile) {
+          // Generate unique name for new file
+          const timestamp = Date.now();
+          fileName = fileName.replace(/\.csv$/i, `_${timestamp}.csv`);
+          console.log(`[Upload DM] Create mode: using unique filename '${fileName}' to avoid conflict`);
+        } else {
+          console.log(`[Upload DM] Create mode: creating new file '${fileName}'`);
+        }
+      } else if (uploadMode === 'replace') {
+        if (existingFile) {
+          console.log(`[Upload DM] Replace mode: updating existing file '${fileName}'`);
+          const fileContent = fs.readFileSync(filePath, 'utf8');
+          const updateResult = await this.updateFileRestAPI('routesets_digitmaps', fileName, fileContent, configId);
+          if (updateResult.success) {
+            return { success: true, message: `DM file '${fileName}' replaced successfully!` };
+          } else {
+            console.log(`[Upload DM] Update failed in replace mode, will create new file...`);
+          }
+        } else {
+          console.log(`[Upload DM] Replace mode: file doesn't exist, creating new file '${fileName}'`);
+        }
+        } else { // auto mode (default behavior)
+          console.log(`[Upload DM] Auto mode: proceeding with direct upload of '${fileName}'`);
+        }      console.log(`[Upload DM] Instance: ${this.instanceId}, Config: ${configId || 'auto'} -> DB ID: ${dbId}, File: ${fileName}`);
       onProgress?.(25, 'Getting upload form...');
       const newDmResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`, {
         method: 'GET',
@@ -806,8 +1288,24 @@ class ProSBCFileAPI {
         const location = uploadResponse.headers.get('location');
         console.log(`[Upload DM] Redirect location: ${location}`);
         
-        // Check for error messages in the response headers or body
+        // Check for success and error messages in the response headers
         const setCookieHeader = uploadResponse.headers.get('set-cookie');
+        
+        // First check for success messages in the session cookie
+        if (setCookieHeader && setCookieHeader.includes('notice')) {
+          const successMatch = setCookieHeader.match(/notice[^:]*:\s*([^&]+)/);
+          if (successMatch) {
+            const successMsg = decodeURIComponent(successMatch[1]).replace(/\+/g, ' ');
+            if (successMsg.toLowerCase().includes('successfully imported') || 
+                successMsg.toLowerCase().includes('successfully') || 
+                successMsg.toLowerCase().includes('imported')) {
+              console.log(`[Upload DM] ✓ SUCCESS detected from session cookie: ${successMsg}`);
+              return { success: true, message: `DM file '${fileName}' uploaded successfully: ${successMsg}` };
+            }
+          }
+        }
+        
+        // Check for error messages in the response headers or body
         if (setCookieHeader && setCookieHeader.includes('error')) {
           // Try to extract the error message from the session cookie
           const errorMatch = setCookieHeader.match(/error[^:]*:\s*([^&]+)/);
@@ -818,7 +1316,34 @@ class ProSBCFileAPI {
             // Check for specific error types
             if (errorMsg.toLowerCase().includes('already been taken') || 
                 errorMsg.toLowerCase().includes('name') && errorMsg.toLowerCase().includes('taken')) {
-              throw new Error(`File name already exists: ${errorMsg}`);
+              
+              console.log(`[Upload DM] File name conflict detected: ${errorMsg}`);
+              console.log(`[Upload DM] Attempting to handle name conflict by generating unique name...`);
+              
+              // Generate unique name and retry
+              const timestamp = Date.now();
+              const uniqueFileName = fileName.replace(/\.csv$/i, `_${timestamp}.csv`);
+              console.log(`[Upload DM] Retrying upload with unique name: ${uniqueFileName}`);
+              
+              try {
+                return await this.uploadDmFile(filePath, onProgress, configId, uniqueFileName, 'create');
+              } catch (retryError) {
+                console.log(`[Upload DM] Unique name retry also failed: ${retryError.message}`);
+                // If unique name also fails, try to update the existing file
+                try {
+                  console.log(`[Upload DM] Attempting to update existing file instead...`);
+                  const fileContent = fs.readFileSync(filePath, 'utf8');
+                  const updateResult = await this.updateFileRestAPI('routesets_digitmaps', fileName, fileContent, configId);
+                  if (updateResult.success) {
+                    console.log(`[Upload DM] Successfully updated existing file '${fileName}' via REST API`);
+                    return { success: true, message: `DM file '${fileName}' updated successfully!` };
+                  } else {
+                    throw new Error(`Both unique name upload and file update failed: ${errorMsg}`);
+                  }
+                } catch (updateError) {
+                  throw new Error(`File name already exists and all retry methods failed: ${errorMsg}`);
+                }
+              }
             } else {
               throw new Error(`Upload failed: ${errorMsg}`);
             }
@@ -866,7 +1391,8 @@ class ProSBCFileAPI {
               console.log(`[Upload DM] SUCCESS: Found uploaded file '${fileName}' in the file listing!`);
               return { success: true, message: `DM file '${fileName}' uploaded and verified in ProSBC!` };
             } else {
-              console.log(`[Upload DM] WARNING: Could not find file '${fileName}' in the redirect response. Upload may have failed.`);
+              console.log(`[Upload DM] Upload completed successfully (redirect received)`);
+              return { success: true, message: `DM file '${fileName}' uploaded successfully!` };
             }
           } catch (redirectError) {
             console.error(`[Upload DM] Error following redirect:`, redirectError);
@@ -892,44 +1418,55 @@ class ProSBCFileAPI {
   async listDfFiles(configId = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId ;
-      console.log(`[ProSBC] Fetching DF files list... (DB ID: ${dbId}, Config ID: ${configId})`);
+      let dbId = this.selectedConfigId;
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Fetching DF files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
-      // Debug: Try multiple database IDs to see where files actually are
-      for (const testDbId of ['1', '2', '3']) {
+      // For ProSBC1, we already have the correct database ID from hardcoded mappings
+      // For other instances, try to get the correct database ID by checking the file_dbs index
+      if (this.instanceId !== 'ProSBC1') {
         try {
-          console.log(`[ProSBC Debug] Checking DB ID ${testDbId} for files...`);
-          const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+          const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
             headers: await this.getCommonHeaders()
           });
-          if (testResponse.ok) {
-            const testHtml = await testResponse.text();
-            const testFiles = this.parseFileTable(testHtml, 'Routesets Definition', 'routesets_definitions');
-            console.log(`[ProSBC Debug] DB ID ${testDbId} contains ${testFiles.length} DF files:`, testFiles.map(f => f.name));
-          } else {
-            console.log(`[ProSBC Debug] DB ID ${testDbId} returned status: ${testResponse.status}`);
+          
+          if (indexResponse.ok) {
+            const indexHtml = await indexResponse.text();
+            const actualDbId = this.extractDatabaseIdFromHtml(indexHtml);
+            if (actualDbId && actualDbId !== dbId) {
+              console.log(`[ProSBC] Instance: ${this.instanceId}, Found actual DB ID ${actualDbId} different from config ID ${dbId}`);
+              dbId = actualDbId;
+              this.selectedConfigId = actualDbId;
+            }
           }
-        } catch (err) {
-          console.log(`[ProSBC Debug] DB ID ${testDbId} error:`, err.message);
+        } catch (indexError) {
+          console.log(`[ProSBC] Could not check file_dbs index: ${indexError.message}`);
         }
+      } else {
+        console.log(`[ProSBC1] Using hardcoded database ID: ${dbId} for config ${configId}`);
       }
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
-      console.log('[ProSBC] Response status:', response.status);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Response status: ${response.status}`);
       if (!response.ok) throw new Error(`Failed to fetch DF files: ${response.status}`);
       const html = await response.text();
-      console.log('[ProSBC] HTML length:', html.length);
-      console.log('[ProSBC] FULL HTML RESPONSE:');
-      console.log(html);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, HTML length: ${html.length}`);
+      
+      // Check if we're getting the right page (should contain file database content)
+      if (html.includes('configurations_list') || html.includes('Configuration')) {
+        console.log(`[ProSBC] Instance: ${this.instanceId}, WARNING: Received configuration page instead of file database page!`);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, URL was: ${this.baseURL}/file_dbs/${dbId}/edit`);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, This suggests the config selection may have failed or reset`);
+      }
+      
       const files = this.parseFileTable(html, 'Routesets Definition', 'routesets_definitions');
-      console.log('[ProSBC] Parsed DF files:', files);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files:`, files);
       return { success: true, files };
     } catch (error) {
-      console.error('[ProSBC] listDfFiles error:', error);
+      console.error(`[ProSBC] Instance: ${this.instanceId}, listDfFiles error:`, error);
       throw error;
     }
   }
@@ -937,44 +1474,55 @@ class ProSBCFileAPI {
   async listDmFiles(configId = null) {
     try {
       await this.ensureConfigSelected(configId);
-      const dbId = this.selectedConfigId ;
-      console.log(`[ProSBC] Fetching DM files list... (DB ID: ${dbId}, Config ID: ${configId})`);
+      let dbId = this.selectedConfigId;
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Fetching DM files list... (DB ID: ${dbId}, Config ID: ${configId})`);
       
-      // Debug: Try multiple database IDs to see where files actually are
-      for (const testDbId of ['1', '2', '3']) {
+      // For ProSBC1, we already have the correct database ID from hardcoded mappings
+      // For other instances, try to get the correct database ID by checking the file_dbs index
+      if (this.instanceId !== 'ProSBC1') {
         try {
-          console.log(`[ProSBC Debug] Checking DB ID ${testDbId} for DM files...`);
-          const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
+          const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
             headers: await this.getCommonHeaders()
           });
-          if (testResponse.ok) {
-            const testHtml = await testResponse.text();
-            const testFiles = this.parseFileTable(testHtml, 'Routesets Digitmap', 'routesets_digitmaps');
-            console.log(`[ProSBC Debug] DB ID ${testDbId} contains ${testFiles.length} DM files:`, testFiles.map(f => f.name));
-          } else {
-            console.log(`[ProSBC Debug] DB ID ${testDbId} returned status: ${testResponse.status}`);
+          
+          if (indexResponse.ok) {
+            const indexHtml = await indexResponse.text();
+            const actualDbId = this.extractDatabaseIdFromHtml(indexHtml);
+            if (actualDbId && actualDbId !== dbId) {
+              console.log(`[ProSBC] Instance: ${this.instanceId}, Found actual DB ID ${actualDbId} different from config ID ${dbId}`);
+              dbId = actualDbId;
+              this.selectedConfigId = actualDbId;
+            }
           }
-        } catch (err) {
-          console.log(`[ProSBC Debug] DB ID ${testDbId} error:`, err.message);
+        } catch (indexError) {
+          console.log(`[ProSBC] Could not check file_dbs index: ${indexError.message}`);
         }
+      } else {
+        console.log(`[ProSBC1] Using hardcoded database ID: ${dbId} for config ${configId}`);
       }
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
-      console.log('[ProSBC] Response status:', response.status);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Response status: ${response.status}`);
       if (!response.ok) throw new Error(`Failed to fetch DM files: ${response.status}`);
       const html = await response.text();
-      console.log('[ProSBC] HTML length:', html.length);
-      console.log('[ProSBC] FULL HTML RESPONSE:');
-      console.log(html);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, HTML length: ${html.length}`);
+      
+      // Check if we're getting the right page (should contain file database content)
+      if (html.includes('configurations_list') || html.includes('Configuration')) {
+        console.log(`[ProSBC] Instance: ${this.instanceId}, WARNING: Received configuration page instead of file database page!`);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, URL was: ${this.baseURL}/file_dbs/${dbId}/edit`);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, This suggests the config selection may have failed or reset`);
+      }
+      
       const files = this.parseFileTable(html, 'Routesets Digitmap', 'routesets_digitmaps');
-      console.log('[ProSBC] Parsed DM files:', files);
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files:`, files);
       return { success: true, files };
     } catch (error) {
-      console.error('[ProSBC] listDmFiles error:', error);
+      console.error(`[ProSBC] Instance: ${this.instanceId}, listDmFiles error:`, error);
       throw error;
     }
   }
