@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 
 
 const ActivationGeneration = ({ onAuthError }) => {
-  // Helper to get auth headers
+  const { selectedInstance } = useProSBCInstance();
+  
+  // Helper to get auth headers with instance ID
   const getAuthHeaders = () => {
     const token = localStorage.getItem('dashboard_token');
-    return token ? { 'Authorization': 'Bearer ' + token } : {};
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    
+    // Add ProSBC instance header if an instance is selected
+    if (selectedInstance?.id) {
+      headers['X-ProSBC-Instance-ID'] = selectedInstance.id.toString();
+    }
+    
+    return headers;
   };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,15 +29,21 @@ const ActivationGeneration = ({ onAuthError }) => {
   const [validating, setValidating] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  // Load initial data
+  // Load initial data and reload when instance changes
   useEffect(() => {
-    loadData();
-  }, []);
+    if (selectedInstance) {
+      console.log(`[ActivationGeneration] Loading data for instance: ${selectedInstance.name} (${selectedInstance.id})`);
+      loadData();
+    }
+  }, [selectedInstance]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
+      setSuccessMessage(''); // Clear any previous messages when loading new data
+      
+      console.log(`[ActivationGeneration] Loading configurations and mappings for instance: ${selectedInstance?.name || 'default'}`);
       
       // Load configurations
       const configsRes = await fetch('/backend/api/routeset-mapping/configurations', { headers: getAuthHeaders() });
@@ -35,17 +51,21 @@ const ActivationGeneration = ({ onAuthError }) => {
       const configsJson = await configsRes.json();
       const configsArr = Array.isArray(configsJson.configurations) ? configsJson.configurations : [];
       setConfigurations(configsArr);
+      
       // Set the currently selected configuration
       const activeConfig = configsArr.find(config => config.isSelected);
       if (activeConfig) {
         setSelectedConfig(activeConfig.id);
       }
+      
       // Load mappings
       const mappingsRes = await fetch('/backend/api/routeset-mapping/mappings', { headers: getAuthHeaders() });
       if (!mappingsRes.ok) throw new Error(await mappingsRes.text());
       const mappingsJson = await mappingsRes.json();
       const mappingsArr = Array.isArray(mappingsJson.mappings) ? mappingsJson.mappings : [];
       setMappings(mappingsArr);
+      
+      console.log(`[ActivationGeneration] Loaded ${configsArr.length} configurations and ${mappingsArr.length} mappings`);
     } catch (err) {
       console.error('Error loading data:', err);
       setError(err.message);
@@ -227,8 +247,25 @@ const ActivationGeneration = ({ onAuthError }) => {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-white mb-2">Activation and  Generation</h2>
+        <h2 className="text-2xl font-bold text-white mb-2">Activation and Generation</h2>
         <p className="text-gray-300">Manage configuration activation and routing database generation</p>
+        
+        {/* ProSBC Instance Indicator */}
+        {selectedInstance && (
+          <div className="mt-3 p-3 bg-blue-900/30 border border-blue-700 rounded-lg backdrop-blur-sm">
+            <div className="flex items-center">
+              <svg className="w-4 h-4 text-blue-400 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm text-blue-300">
+                <strong>Active ProSBC:</strong> {selectedInstance.name}
+                {selectedInstance.baseUrl && (
+                  <span className="text-blue-400 ml-2">({selectedInstance.baseUrl})</span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Success Message */}

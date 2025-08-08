@@ -31,7 +31,8 @@ router.get('/nap-edit-data/:napName', async (req, res) => {
 });
 router.post('/activate-configuration/:id', async (req, res) => {
   try {
-    const result = await routesetService.validateConfiguration(req.params.id);
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const result = await routesetService.activateConfiguration(req.params.id, '1', instanceId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -41,7 +42,8 @@ router.post('/activate-configuration/:id', async (req, res) => {
 // POST /api/routeset-mapping/validate-configuration/:id
 router.post('/validate-configuration/:id', async (req, res) => {
   try {
-    const result = await routesetService.validateConfiguration(req.params.id);
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const result = await routesetService.validateConfiguration(req.params.id, '1', instanceId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -108,7 +110,8 @@ router.post('/update-nap-mapping/:napName', async (req, res) => {
 // POST /api/routeset-mapping/generate-database
 router.post('/generate-database', async (req, res) => {
   try {
-    const { systemId = '1', instanceId } = req.query;
+    const systemId = req.query.systemId || '1';
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
     const result = await routesetService.generateRoutingDatabase(systemId, instanceId);
     res.json(result);
   } catch (err) {
@@ -118,7 +121,8 @@ router.post('/generate-database', async (req, res) => {
 // GET /api/routeset-configurations
 router.get('/configurations', async (req, res) => {
   try {
-    const { systemId = '1', instanceId } = req.query;
+    const systemId = req.query.systemId || '1';
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
     const configs = await routesetService.getAvailableConfigurations(systemId, instanceId);
     res.json({ success: true, configurations: configs });
   } catch (err) {
@@ -129,7 +133,8 @@ router.get('/configurations', async (req, res) => {
 // POST /api/routeset-configurations/:id/activate
 router.post('/configurations/:id/activate', async (req, res) => {
   try {
-    const { systemId = '1', instanceId } = req.query;
+    const systemId = req.query.systemId || '1';
+    const instanceId = req.headers['x-prosbc-instance-id'] || req.query.instanceId;
     const result = await routesetService.activateConfiguration(req.params.id, systemId, instanceId);
     res.json(result);
   } catch (err) {
