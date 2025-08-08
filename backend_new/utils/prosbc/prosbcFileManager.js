@@ -390,6 +390,9 @@ class ProSBCFileAPI {
       if (response.ok) {
         console.log(`[Update REST API] REST API reports success, but let's verify the file was actually updated...`);
         
+        // Wait a moment for the update to propagate
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // Verify the update by fetching the file content to see if it changed
         try {
           const verifyResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileDetails.id}/export`, {
@@ -398,26 +401,48 @@ class ProSBCFileAPI {
           });
           if (verifyResponse.ok) {
             const updatedContent = await verifyResponse.text();
-            if (updatedContent.trim() === fileContent.trim()) {
+            const originalContentTrimmed = fileContent.trim();
+            const updatedContentTrimmed = updatedContent.trim();
+            
+            // More robust content comparison
+            if (updatedContentTrimmed === originalContentTrimmed) {
               console.log(`[Update REST API] ✓ Verification successful: File content matches what we sent`);
               return { 
                 success: true, 
                 message: `File '${fileName}' updated successfully via REST API`,
-                status: response.status
+                status: response.status,
+                verified: true
               };
             } else {
               console.warn(`[Update REST API] ✗ Verification failed: File content doesn't match what we sent`);
-              console.log(`[Update REST API] Expected content length: ${fileContent.length}, Actual: ${updatedContent.length}`);
-              // Fall back to CSRF-based update
+              console.log(`[Update REST API] Expected content length: ${originalContentTrimmed.length}, Actual: ${updatedContentTrimmed.length}`);
+              console.log(`[Update REST API] Expected first 100 chars:`, originalContentTrimmed.substring(0, 100));
+              console.log(`[Update REST API] Actual first 100 chars:`, updatedContentTrimmed.substring(0, 100));
+              
+              // Try the CSRF-based update as fallback
               console.log(`[Update REST API] Falling back to CSRF-based update method...`);
-              return await this.updateFileCSRF(fileType, fileDetails.id, fileContent, fileName, dbId);
+              const fallbackResult = await this.updateFileCSRF(fileType, fileDetails.id, fileContent, fileName, dbId);
+              if (fallbackResult.success) {
+                return {
+                  ...fallbackResult,
+                  fallbackUsed: true,
+                  message: `File '${fileName}' updated successfully using fallback method`
+                };
+              } else {
+                return { 
+                  success: false, 
+                  message: `File '${fileName}' update verification failed and fallback also failed`,
+                  verified: false
+                };
+              }
             }
           } else {
             console.warn(`[Update REST API] Could not verify update (export failed: ${verifyResponse.status}), assuming success`);
             return { 
               success: true, 
               message: `File '${fileName}' updated successfully via REST API (unverified)`,
-              status: response.status
+              status: response.status,
+              verified: null
             };
           }
         } catch (verifyError) {
@@ -425,7 +450,8 @@ class ProSBCFileAPI {
           return { 
             success: true, 
             message: `File '${fileName}' updated successfully via REST API (verification failed)`,
-            status: response.status
+            status: response.status,
+            verified: null
           };
         }
       } else {

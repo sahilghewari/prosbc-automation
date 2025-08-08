@@ -425,7 +425,6 @@ function FileManagement({ onAuthError, configId }) {
 
   // Update file using ProSBC REST API (clean and reliable)
   const handleUpdateFileRestAPI = async (fileType, fileName, file, configId) => {
-    setIsLoading(true);
     setMessage("🔄 Updating file via REST API...");
     
     try {
@@ -458,7 +457,6 @@ function FileManagement({ onAuthError, configId }) {
           errorText = 'Unknown error';
         }
         setMessage(`❌ Update failed: ${errorText.substring(0, 300)}`);
-        setIsLoading(false);
         return;
       }
 
@@ -467,12 +465,23 @@ function FileManagement({ onAuthError, configId }) {
       } catch (jsonErr) {
         const text = await res.text();
         setMessage(`❌ Update failed: Unexpected response from server.\n${text.substring(0, 300)}`);
-        setIsLoading(false);
         return;
       }
 
       if (result.success) {
-        setMessage(`✅ ${fileName} updated successfully via REST API`);
+        // Show success but also verify the file was actually updated
+        let message = `✅ ${fileName} updated successfully via REST API`;
+        
+        // Check if there's verification info in the result
+        if (result.verified === false) {
+          message += '\n⚠️ Warning: Content verification failed - the file may not have been actually updated';
+        } else if (result.verified === true) {
+          message += '\n✅ Content verification passed';
+        } else if (result.fallbackUsed) {
+          message += '\n🔄 Fallback method was used for update';
+        }
+        
+        setMessage(message);
         loadFiles();
         setShowUpdateModal(false);
         setUpdateTarget(null);
@@ -498,8 +507,6 @@ function FileManagement({ onAuthError, configId }) {
         errorMessage = 'Could not determine ProSBC configuration for this instance.';
       }
       setMessage(`❌ Update failed: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -1315,30 +1322,22 @@ function FileManagement({ onAuthError, configId }) {
                 >
                   Cancel
                 </button>
+ 
                 <button
-  onClick={() => {
+  onClick={async () => {
     if (!selectedFile || !updateTarget) {
       setMessage('❌ Please select a file first');
       return;
     }
-    handleUpdateFileApi(updateTarget.fileType, updateTarget.routesetId, selectedFile);
-  }}
-  disabled={!selectedFile || isUpdating}
-  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-    !selectedFile || isUpdating
-      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-      : 'bg-green-600 text-white hover:bg-green-700'
-  }`}
->
-  {isUpdating ? 'Updating...' : 'Update File (CSRF)'}
-</button>
-                <button
-  onClick={() => {
-    if (!selectedFile || !updateTarget) {
-      setMessage('❌ Please select a file first');
-      return;
+    setIsUpdating(true);
+    try {
+      await handleUpdateFileRestAPI(updateTarget.fileType, updateTarget.fileName, selectedFile, updateTarget.configId);
+    } catch (error) {
+      console.error('Update error:', error);
+      setMessage(`❌ Update failed: ${error.message}`);
+    } finally {
+      setIsUpdating(false);
     }
-    handleUpdateFileRestAPI(updateTarget.fileType, updateTarget.fileName, selectedFile, updateTarget.configId);
   }}
   disabled={!selectedFile || isUpdating}
   className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
@@ -1348,59 +1347,8 @@ function FileManagement({ onAuthError, configId }) {
   }`}
   title="Update file using REST API (recommended)"
 >
-  {isUpdating ? 'Updating...' : 'Update File (REST API)'}
+  {isUpdating ? 'Updating...' : 'Update File'}
 </button>
-                <button
-                  onClick={async () => {
-                    if (!updateTarget) return;
-                    try {
-                      setUpdateMessage('Updating database...');
-                      setUpdateProgress(10);
-                      let fileType = updateTarget.fileType;
-                      let fileId = updateTarget.routesetId;
-                      // Fetch file content from ProSBC (export)
-                      const contentResult = await prosbcFileAPI.getFileContent(fileType, fileId);
-                      if (!contentResult.success) throw new Error('Failed to fetch file content');
-                      // Create a File object from the content
-                      const fileBlob = new Blob([contentResult.content], { type: 'text/csv' });
-                      const fileName = updateTarget.fileName || `prosbc_update_${Date.now()}.csv`;
-                      const file = new File([fileBlob], fileName, { type: 'text/csv' });
-                      // Prepare FormData for upload
-                      const formData = new FormData();
-                      formData.append('file', file);
-                      formData.append('name', fileName);
-                      formData.append('uploaded_by', 'manual-db-update');
-                      // Use correct endpoint
-                      let uploadEndpoint = fileType === 'routesets_digitmaps'
-                        ? '/backend/api/files/digit-maps/upload'
-                        : '/backend/api/files/dial-formats/upload';
-                      // POST to upload endpoint
-                      const dbRes = await fetch(uploadEndpoint, {
-                        method: 'POST',
-                        body: formData
-                      });
-                      const dbJson = await dbRes.json();
-                      if (dbRes.ok) {
-                        setUpdateMessage('Database updated successfully!');
-                        setUpdateProgress(100);
-                      } else {
-                        throw new Error(dbJson.message || 'Unknown error');
-                      }
-                    } catch (err) {
-                      setUpdateMessage('DB update failed: ' + err.message);
-                      setUpdateProgress(0);
-                    }
-                  }}
-                  disabled={isUpdating}
-                  className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                    isUpdating
-                      ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
-                  }`}
-                  title="Update only the database with the current file from ProSBC"
-                >
-                  Update to Database Only
-                </button>
               </div>
             </div>
           </div>
