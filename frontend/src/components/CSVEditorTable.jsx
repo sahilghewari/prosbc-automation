@@ -274,6 +274,54 @@ const CSVEditorTable = ({
     }
   };
 
+  // Primary save handler that prioritizes custom onSave callback
+  const handleSave = async () => {
+    if (!hasChanges) {
+      alert('No changes to save');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      console.log('[CSVEditorTable] Starting save process...');
+      console.log('[CSVEditorTable] onSave prop:', onSave);
+      console.log('[CSVEditorTable] onSave type:', typeof onSave);
+      console.log('[CSVEditorTable] fileInfo:', fileInfo);
+      onProgress?.(10, 'Converting table to CSV...');
+      const csvString = convertToCSV();
+
+      // If a custom onSave callback is provided, use it instead of backend calls
+      if (onSave && typeof onSave === 'function') {
+        console.log('[CSVEditorTable] Using custom onSave callback');
+        onProgress?.(50, 'Saving with custom handler...');
+        
+        await onSave(csvString, fileInfo);
+        
+        // Mark as saved
+        onProgress?.(100, 'File saved successfully!');
+        setOriginalData({ headers, rows });
+        setHasChanges(false);
+        console.log('[CSVEditorTable] Save completed with custom callback');
+        return;
+      }
+
+      // Fallback to built-in save methods if no custom callback
+      console.log('[CSVEditorTable] No custom onSave provided, using fallback method');
+      if (fileInfo?.id && fileInfo?.type) {
+        console.log('[CSVEditorTable] Calling handleSaveWithVersioning as fallback');
+        await handleSaveWithVersioning();
+      } else {
+        console.log('[CSVEditorTable] Calling handleSaveWithDatabase as fallback');
+        await handleSaveWithDatabase();
+      }
+    } catch (error) {
+      console.error('[CSVEditorTable] Error in save process:', error);
+      alert(`Failed to save file: ${error.message}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // Save with backend versioning (enhanced version)
   const handleSaveWithVersioning = async () => {
     if (!hasChanges) {
@@ -493,106 +541,6 @@ const CSVEditorTable = ({
     } catch (error) {
       console.error('Failed to create backup:', error);
       // Don't block the edit operation if backup fails
-    }
-  };
-
-  // Save changes
-  const handleSave = async () => {
-    if (!hasChanges) {
-      alert('No changes to save');
-      return;
-    }
-
-    if (!fileInfo) {
-      alert('File information not available');
-      return;
-    }
-
-    setIsUpdating(true);
-    
-    try {
-      console.log('🚀 Starting CSV save operation for file:', fileInfo);
-      console.log('📋 File info detailed breakdown:', {
-        id: fileInfo.id,
-        name: fileInfo.name,
-        type: fileInfo.type,
-        fileType: fileInfo.fileType,
-        prosbcId: fileInfo.prosbcId,
-        routesetId: fileInfo.routesetId,
-        fileDbId: fileInfo.fileDbId,
-        source: fileInfo.source,
-        isDigitMap: fileInfo.fileType === 'routesets_digitmaps'
-      });
-      
-      // Validate critical properties for DM files
-      if (fileInfo.fileType === 'routesets_digitmaps') {
-        console.log('🎯 DM File Update - Validation Check:', {
-          hasFileType: !!fileInfo.fileType,
-          hasProsbcId: !!fileInfo.prosbcId,
-          hasRoutesetId: !!fileInfo.routesetId,
-          hasFileDbId: !!fileInfo.fileDbId,
-          fileTypeValue: fileInfo.fileType,
-          routesetIdValue: fileInfo.routesetId,
-          prosbcIdValue: fileInfo.prosbcId
-        });
-      }
-      
-      // Create backup before saving
-      await createBackup();
-      
-      onProgress?.(10, 'Converting table to CSV...');
-      
-      // Convert table data to CSV
-      const csvString = convertToCSV();
-      console.log('Generated CSV content length:', csvString.length);
-      console.log('CSV content preview:', csvString.substring(0, 200));
-      
-      onProgress?.(30, 'Preparing file update...');
-      
-      onProgress?.(50, 'Updating file on ProSBC...');
-      
-      // Update the file using the CSV file update service
-      const result = await csvFileUpdateService.updateCSVFile(
-        csvString,
-        fileInfo,
-        onProgress
-      );
-      
-      console.log('CSV update result:', result);
-      
-      if (result.success) {
-        onProgress?.(100, 'File updated successfully!');
-        
-        // Update original data to reflect saved state
-        setOriginalData({ headers, rows });
-        setHasChanges(false);
-        
-        // Call parent callback
-        onSave?.(csvString, result);
-        
-        // Show success message
-        alert('File updated successfully on ProSBC!');
-        
-        console.log('CSV file update completed successfully');
-      } else {
-        throw new Error(result.message || 'Failed to update file');
-      }
-      
-    } catch (error) {
-      console.error('Error saving file:', error);
-      
-      // Log detailed error information for debugging
-      console.group('CSV Save Error Details');
-      console.log('Error object:', error);
-      console.log('File info:', fileInfo);
-      console.log('Has changes:', hasChanges);
-      console.log('Table data - headers:', headers);
-      console.log('Table data - rows count:', rows.length);
-      console.groupEnd();
-      
-      alert(`Failed to save file: ${error.message}`);
-    } finally {
-      setIsUpdating(false);
     }
   };
 
@@ -836,7 +784,7 @@ const CSVEditorTable = ({
               Cancel
             </button>
             <button
-              onClick={fileInfo?.id && fileInfo?.type ? handleSaveWithVersioning : handleSaveWithDatabase}
+              onClick={handleSave}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
               disabled={isUpdating || !hasChanges}
             >

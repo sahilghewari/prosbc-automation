@@ -10,6 +10,9 @@ const router = express.Router();
 
 // Helper to extract configId from request (query, body, or header)
 function getConfigIdFromRequest(req) {
+  console.log('[Config Debug] Full request body:', req.body);
+  console.log('[Config Debug] Request body keys:', Object.keys(req.body || {}));
+  
   const configFromQuery = req.query.configId;
   const configFromBody = req.body?.configId;
   const configFromHeaderId = req.headers['x-config-id'];
@@ -21,7 +24,7 @@ function getConfigIdFromRequest(req) {
   console.log(`[Config Debug] Header x-config-id: ${configFromHeaderId}`);
   console.log(`[Config Debug] Header x-prosbc-config-id: ${configFromHeaderProsbcId}`);
   
-  let finalConfigId = configFromQuery || configFromBody || configFromHeaderId || configFromHeaderProsbcId || null;
+  let finalConfigId = configFromQuery || configFromBody || configFromHeaderId || configFromHeaderProsbcId;
   
   // Clean up HTML entities and whitespace
   if (finalConfigId && typeof finalConfigId === 'string') {
@@ -32,6 +35,11 @@ function getConfigIdFromRequest(req) {
       .replace(/&gt;/g, '>')   // Decode HTML greater-than
       .replace(/&quot;/g, '"') // Decode HTML quotes
       .trim();                 // Remove leading/trailing whitespace
+      
+    // If it's just an empty string after cleanup, treat it as null
+    if (finalConfigId === '') {
+      finalConfigId = null;
+    }
   }
   
   console.log(`[Config Debug] Final selected configId (cleaned): ${finalConfigId}`);
@@ -368,14 +376,14 @@ router.post('/delete-direct', async (req, res) => {
 // Export file using direct ProSBC URL with authentication
 router.post('/export-direct', async (req, res) => {
   try {
-    const { exportUrl, fileName, fileType, fileId, configId } = req.body;
+    const { exportUrl, fileName, fileType, fileId, configId, returnContent } = req.body;
     const instanceId = req.headers['x-prosbc-instance-id'];
     
     if (!exportUrl) {
       return res.status(400).json({ success: false, error: 'Missing exportUrl' });
     }
 
-    console.log(`[Export Direct] Instance: ${instanceId}, URL: ${exportUrl}, File: ${fileName}`);
+    console.log(`[Export Direct] Instance: ${instanceId}, URL: ${exportUrl}, File: ${fileName}, ReturnContent: ${returnContent}`);
 
     // Get instance configuration
     const instanceConfig = await getInstanceConfig(req);
@@ -436,7 +444,19 @@ router.post('/export-direct', async (req, res) => {
       });
     }
 
-    // Stream the file to the client
+    // If returnContent is requested, return the content as JSON
+    if (returnContent) {
+      const content = await response.text();
+      console.log(`[Export Direct] Returning content, length: ${content.length}`);
+      return res.json({ 
+        success: true, 
+        content: content,
+        contentType: contentType,
+        fileName: fileName
+      });
+    }
+
+    // Otherwise, stream the file to the client (original behavior)
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.setHeader('Content-Type', contentType);
     response.body.pipe(res);
@@ -450,7 +470,8 @@ router.post('/export-direct', async (req, res) => {
 // Update file using ProSBC REST API (clean and reliable)
 router.post('/update-rest-api', uploadMemory.single('file'), async (req, res) => {
   try {
-    const { fileName, fileType, configId } = req.body;
+    const { fileName, fileType } = req.body;
+    const configId = getConfigIdFromRequest(req); // Use helper function
     const instanceId = req.headers['x-prosbc-instance-id'];
     
     if (!fileName || !fileType) {

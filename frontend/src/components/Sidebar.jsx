@@ -1,7 +1,7 @@
 import './Sidebar.css';
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ProSBCInstanceSelector from './ProSBCInstanceSelector';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
@@ -12,6 +12,7 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
   const [configs, setConfigs] = useState([]);
   const [selectedConfig, setSelectedConfig] = useState('');
   const [loadingConfigs, setLoadingConfigs] = useState(true);
+  const previousConfigRef = useRef(''); // Track previous config to prevent unnecessary updates
 
   // Function to fetch configs
   const fetchConfigs = async (instance = null) => {
@@ -43,14 +44,25 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
         console.log('[Sidebar] Selecting config:', configToSelect.id, 'for instance:', targetInstance?.id);
         setSelectedConfig(configToSelect.id);
         
-        // Send the clean config name
-        onConfigChange?.(configToSelect.name);
-        console.log(`[Sidebar] Auto-selected config: ID=${configToSelect.id}, Name=${configToSelect.name}, Sent: ${configToSelect.name}`);
+        // Only call onConfigChange if the config actually changed
+        if (previousConfigRef.current !== configToSelect.name) {
+          // Send the clean config name
+          onConfigChange?.(configToSelect.name);
+          previousConfigRef.current = configToSelect.name;
+          console.log(`[Sidebar] Config changed: ID=${configToSelect.id}, Name=${configToSelect.name}, Sent: ${configToSelect.name}`);
+        } else {
+          console.log(`[Sidebar] Config unchanged: ${configToSelect.name}, skipping onConfigChange call`);
+        }
       } else {
         // No configs available, clear selection
         console.log('[Sidebar] No configs available for instance:', targetInstance?.id);
         setSelectedConfig('');
-        onConfigChange?.('');
+        
+        // Only clear if we had a config before
+        if (previousConfigRef.current !== '') {
+          onConfigChange?.('');
+          previousConfigRef.current = '';
+        }
       }
     } catch (error) {
       console.error('Failed to fetch configs:', error);
@@ -88,12 +100,22 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       // But clean it again as a safety measure
       const cleanName = cleanConfigName(configToSelect.name);
       
-      // Send the cleaned config name instead of numeric ID
-      onConfigChange?.(cleanName);
-      console.log(`[Sidebar] Config selected: ID=${configToSelect.id}, Name=${configToSelect.name}, Cleaned=${cleanName}, Sending: ${cleanName}`);
+      // Only call onConfigChange if the config actually changed
+      if (previousConfigRef.current !== cleanName) {
+        // Send the cleaned config name instead of numeric ID
+        onConfigChange?.(cleanName);
+        previousConfigRef.current = cleanName;
+        console.log(`[Sidebar] Config manually changed: ID=${configToSelect.id}, Name=${configToSelect.name}, Cleaned=${cleanName}, Sending: ${cleanName}`);
+      } else {
+        console.log(`[Sidebar] Config unchanged: ${cleanName}, skipping onConfigChange call`);
+      }
     } else {
-      onConfigChange?.(selectedId);
-      console.log(`[Sidebar] Config not found for ID=${selectedId}, sending ID as-is`);
+      const fallbackValue = selectedId;
+      if (previousConfigRef.current !== fallbackValue) {
+        onConfigChange?.(fallbackValue);
+        previousConfigRef.current = fallbackValue;
+        console.log(`[Sidebar] Config not found for ID=${selectedId}, sending ID as-is`);
+      }
     }
   };
 

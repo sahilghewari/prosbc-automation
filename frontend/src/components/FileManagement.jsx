@@ -989,12 +989,168 @@ function FileManagement({ onAuthError, configId }) {
     setUpdateHistory(history);
   };
 
-  // Handle CSV editor for specific file
-  const handleCSVEditor = (file) => {
-    // Set the file to be edited in the CSV editor
-    setShowCSVEditor(true);
-    // Store the selected file details for the CSV editor
-    setSelectedCSVFile(file);
+  // Handle saving edited file content back to ProSBC
+  const handleSaveEditedFile = async (editedContent, fileInfo) => {
+    try {
+      if (!selectedInstance) {
+        throw new Error('No ProSBC instance selected');
+      }
+
+      console.log('[Save Edit] Saving edited file:', fileInfo.name);
+      console.log('[Save Edit] Current component configId:', configId);
+      console.log('[Save Edit] File configId:', fileInfo.configId);
+      
+      // Create a blob from the edited content
+      const blob = new Blob([editedContent], { type: 'text/csv' });
+      const file = new File([blob], fileInfo.name, { type: 'text/csv' });
+
+      // Use the existing REST API update function
+      const originalFile = fileInfo.originalFile || fileInfo;
+      
+      // Use the component's configId instead of file's configId for consistency
+      // If component configId is empty string, prefer the file's configId
+      const finalConfigId = (configId && configId !== '') ? configId : (originalFile.configId || '');
+      console.log('[Save Edit] Using final configId:', finalConfigId);
+      console.log('[Save Edit] ConfigId type:', typeof finalConfigId);
+      console.log('[Save Edit] ConfigId length:', finalConfigId.length);
+      
+      // Call the REST API update function
+      const formData = new FormData();
+      formData.append('fileName', originalFile.name);
+      formData.append('fileType', originalFile.type);
+      formData.append('file', file);
+      formData.append('configId', finalConfigId);
+      
+      console.log('[Save Edit] FormData contents:');
+      for (let [key, value] of formData.entries()) {
+        console.log(`  ${key}:`, value);
+      }
+
+      const res = await fetch('/backend/api/prosbc-files/update-rest-api', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        },
+        body: formData
+      });
+
+      let result;
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Update failed: ${errorText}`);
+      }
+
+      try {
+        result = await res.json();
+      } catch (jsonErr) {
+        const text = await res.text();
+        throw new Error(`Unexpected response: ${text.substring(0, 300)}`);
+      }
+
+      if (result.success) {
+        setMessage(`✅ ${originalFile.name} saved successfully!`);
+        
+        // Refresh the file list
+        setTimeout(() => {
+          loadFiles();
+        }, 1000);
+        
+        return { success: true, message: 'File saved successfully' };
+      } else {
+        throw new Error(result.message || 'Unknown error');
+      }
+      
+    } catch (error) {
+      console.error('Save edited file error:', error);
+      const errorMessage = `❌ Failed to save file: ${error.message}`;
+      setMessage(errorMessage);
+      throw error;
+    }
+  };
+
+  // Handle editing a file directly
+  const handleEditFile = async (file) => {
+    setIsLoading(true);
+    setMessage(`🔄 Loading ${file.name} for editing...`);
+    
+    try {
+      if (!selectedInstance) {
+        setMessage('❌ No ProSBC instance selected');
+        return;
+      }
+
+      if (!file.exportUrl) {
+        setMessage('❌ Export URL not available for this file');
+        return;
+      }
+
+      console.log('[Edit] Fetching file content for editing:', file.name);
+      console.log('[Edit] Component configId prop:', configId);
+      console.log('[Edit] File configId:', file.configId);
+      console.log('[Edit] File object:', file);
+
+      // Fetch the file content using the export API
+      const res = await fetch('/backend/api/prosbc-files/export-direct', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        },
+        body: JSON.stringify({
+          exportUrl: file.exportUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileId: file.id,
+          configId: file.configId,
+          returnContent: true // Request content instead of download
+        })
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Failed to fetch file content: ${errorText}`);
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      let fileContent;
+      
+      if (contentType.includes('application/json')) {
+        const result = await res.json();
+        if (result.success && result.content) {
+          fileContent = result.content;
+        } else {
+          throw new Error(result.error || 'Failed to get file content');
+        }
+      } else {
+        // It's the raw file content
+        fileContent = await res.text();
+      }
+
+      // Prepare the file object for the CSV editor
+      const fileForEditor = {
+        id: file.id,
+        name: file.name,
+        fileName: file.name,
+        type: file.type,
+        fileType: file.type,
+        configId: (configId && configId !== '') ? configId : (file.configId || ''), // Use file configId if component configId is empty
+        source: 'prosbc',
+        content: fileContent,
+        originalFile: file // Keep reference to original file for updates
+      };
+
+      setSelectedCSVFile(fileForEditor);
+      setShowCSVEditor(true);
+      setMessage(`✅ Loaded ${file.name} for editing`);
+      
+    } catch (error) {
+      console.error('Edit file error:', error);
+      setMessage(`❌ Failed to load file for editing: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Utility functions
@@ -1055,6 +1211,19 @@ function FileManagement({ onAuthError, configId }) {
           </td>
           <td className="py-4 px-4">
             <div className="flex justify-center space-x-2">
+              <button
+                onClick={() => handleEditFile(file)}
+                disabled={isLoading}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isLoading 
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700'
+                }`}
+                title="Edit file content"
+              >
+                ✏️ Edit
+              </button>
+              
               <button
                 onClick={() => showUpdateFileModal(file)}
                 disabled={isLoading}
@@ -1365,6 +1534,7 @@ function FileManagement({ onAuthError, configId }) {
                 }}
                 onAuthError={onAuthError}
                 selectedFile={selectedCSVFile}
+                onSave={handleSaveEditedFile}
               />
             </div>
           </div>

@@ -9,7 +9,7 @@ import { csvFileUpdateService } from '../utils/csvFileUpdateService';
 import { fileManagementService } from '../utils/fileManagementService';
 import CSVEditorTable from './CSVEditorTable';
 
-const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) => {
+const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile, onSave }) => {
   const [currentView, setCurrentView] = useState('select'); 
   const [availableFiles, setAvailableFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -40,7 +40,7 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       setMessage('Loading selected file...');
       
       console.log('🎯 Processing pre-selected file:', file);
-      console.log('📋 Original file properties:', {
+      console.log('📋       cd "c:\Users\anant\OneDrive\Dokumen\prosbc\prosbc-automation\frontend"; npm run dev file properties:', {
         id: file.id,
         prosbcId: file.prosbcId,
         name: file.name,
@@ -205,7 +205,11 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
       
       let content = '';
       
-      if (file.hasContent && file.source === 'database') {
+      // Check if content is already provided in the file object
+      if (file.content) {
+        console.log('[CSVEditor] Using pre-loaded content');
+        content = file.content;
+      } else if (file.hasContent && file.source === 'database') {
         // Get content from database
         const storedFiles = await fileManagementService.getStoredFiles();
         if (storedFiles.success) {
@@ -216,7 +220,7 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
         }
       }
       
-      // If no content from database, try to get from backend API
+      // If no content from database or pre-loaded, try to get from backend API
       if (!content) {
         setMessage('Fetching file content from backend...');
         try {
@@ -315,11 +319,28 @@ const CSVFileEditor = ({ onClose, onAuthError, selectedFile: preSelectedFile }) 
   const handleCSVSave = async (updatedCsvContent, result) => {
     setIsLoading(true);
     setError('');
-    setMessage('Saving file to backend...');
+    setMessage('Saving file...');
     try {
       // Determine file info
       const fileInfo = selectedFile || uploadedFile;
       if (!fileInfo) throw new Error('No file selected for update');
+
+      // If a custom onSave callback is provided, use it
+      if (onSave && typeof onSave === 'function') {
+        console.log('[CSVEditor] Using custom save callback');
+        await onSave(updatedCsvContent, fileInfo);
+        setMessage('✅ File saved successfully!');
+        // Go back to select view
+        setCurrentView('select');
+        setSelectedFile(null);
+        setCsvContent('');
+        setUploadedFile(null);
+        return;
+      }
+
+      // Otherwise, use the default save method
+      console.log('[CSVEditor] Using default save method');
+      
       // Prepare FormData
       const formData = new FormData();
       // Create a Blob from the updated CSV content
