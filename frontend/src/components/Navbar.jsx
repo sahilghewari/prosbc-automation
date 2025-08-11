@@ -21,10 +21,7 @@ const Navbar = ({ onLoginClick, isDashboardAuth, onLogout, onShowProfile }) => {
             </h1>
           </div>
 
-          {/* Center - Instance Status */}
-          <div className="flex-1 flex justify-center">
-            <InstanceStatusDisplay />
-          </div>
+          
 
           {/* Login/Logout Button and Profile */}
           <div className="flex items-center space-x-4">

@@ -512,44 +512,9 @@ function FileManagement({ onAuthError, configId }) {
 
   // Load stored files from database
   const loadStoredFiles = async (instance = null) => {
-    // Note: This function loads from local database, not instance-specific
+    // Note: This function is currently disabled as fileManagementService is not being used
     // The instance parameter is for consistency with the refresh hook
-    try {
-      let result;
-      
-      if (searchTerm) {
-        // Search files
-        const fileType = selectedFileType === 'all' ? null : selectedFileType;
-        result = await fileManagementService.searchStoredFiles(searchTerm, fileType);
-      } else if (selectedFileType === 'all') {
-        // Get all files
-        result = await fileManagementService.getStoredFiles();
-      } else {
-        // Get files by type
-        result = await fileManagementService.getStoredFilesByType(selectedFileType);
-      }
-      
-      if (result.success) {
-        let files = result.files;
-        
-        // Filter by category if selected
-        if (selectedCategory !== 'all') {
-          files = files.filter(file => {
-            if (file.fileType === 'routesets_definitions' && file.dfSpecific) {
-              return enhancedFileStorageService.categorizeDfFile(file) === selectedCategory;
-            } else if (file.fileType === 'routesets_digitmaps' && file.dmSpecific) {
-              return enhancedFileStorageService.categorizeDmFile(file) === selectedCategory;
-            }
-            return false;
-          });
-        }
-        
-        setStoredFiles(files);
-      }
-    } catch (error) {
-      console.error('Load stored files error:', error);
-      setMessage(`❌ Failed to load stored files: ${error.message}`);
-    }
+    return;
   };
 
   // Load database statistics

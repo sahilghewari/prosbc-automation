@@ -82,6 +82,47 @@
   box-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
 }
 
+/* Active Configuration Section */
+.config-section-background {
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(75, 85, 99, 0.5);
+}
+
+.config-section-background:hover {
+  background: rgba(31, 41, 55, 0.7);
+  border-color: rgba(75, 85, 99, 0.7);
+}
+
+.config-select-enhanced {
+  background: linear-gradient(135deg, #1f2937, #111827);
+  border: 1px solid #4b5563;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.config-select-enhanced:hover {
+  border-color: #6b7280;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.config-select-enhanced:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.live-indicator {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 /* Smooth transitions for all interactive elements */
 * {
   transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;

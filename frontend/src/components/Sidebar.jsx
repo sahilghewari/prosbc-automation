@@ -38,10 +38,16 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       
       // Always select a valid config when configs change
       if (cleanedConfigs && cleanedConfigs.length > 0) {
-        // Try to find active config first
-        const active = cleanedConfigs.find(cfg => cfg.active);
-        const configToSelect = active || cleanedConfigs[0]; // Fallback to first config
-        console.log('[Sidebar] Selecting config:', configToSelect.id, 'for instance:', targetInstance?.id);
+        // Try to find the selected config first (isSelected: true)
+        const selectedConfig = cleanedConfigs.find(cfg => cfg.isSelected === true);
+        // Fallback to active config or first config
+        const activeConfig = cleanedConfigs.find(cfg => cfg.active === true);
+        const configToSelect = selectedConfig || activeConfig || cleanedConfigs[0];
+        
+        console.log('[Sidebar] Found selected config:', selectedConfig);
+        console.log('[Sidebar] Found active config:', activeConfig);
+        console.log('[Sidebar] Config to select:', configToSelect.id, configToSelect.name, 'for instance:', targetInstance?.id);
+        
         setSelectedConfig(configToSelect.id);
         
         // Only call onConfigChange if the config actually changed
@@ -49,7 +55,7 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
           // Send the clean config name
           onConfigChange?.(configToSelect.name);
           previousConfigRef.current = configToSelect.name;
-          console.log(`[Sidebar] Config changed: ID=${configToSelect.id}, Name=${configToSelect.name}, Sent: ${configToSelect.name}`);
+          console.log(`[Sidebar] Config changed: ID=${configToSelect.id}, Name=${configToSelect.name}, isSelected=${configToSelect.isSelected}, Sent: ${configToSelect.name}`);
         } else {
           console.log(`[Sidebar] Config unchanged: ${configToSelect.name}, skipping onConfigChange call`);
         }
@@ -201,36 +207,71 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
             </svg>
           </button>
         </div>
-        {/* ProSBC Config Dropdown */}
-        {!isCollapsed && (
-          <div className="mt-4">
-            <label className="block text-xs text-gray-400 mb-1">ProSBC Config</label>
-            {loadingConfigs ? (
-              <div className="text-xs text-gray-500">Loading configs...</div>
-            ) : (
-              <select
-                className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={selectedConfig}
-                onChange={handleConfigChange}
-              >
-                {configs.map(cfg => (
-                  <option key={cfg.id} value={cfg.id}>
-                    {cfg.name} {cfg.active ? '(Active)' : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-        )}
         
-        {/* ProSBC Instance Selector */}
+        
+        {/* ProSBC Instance and Config Section */}
         {!isCollapsed && (
-          <div className="mt-4">
-            <ProSBCInstanceSelector
-              showDetails={false}
-              className="sidebar-instance-selector"
-              size="small"
-            />
+          <div className="mt-4 space-y-3 border-b border-gray-700 pb-4">
+            {/* Instance Selector */}
+            <div>
+              <ProSBCInstanceSelector
+                showDetails={false}
+                className="sidebar-instance-selector"
+                size="small"
+              />
+            </div>
+            
+            {/* Active Config Section */}
+            <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-medium text-gray-300 uppercase tracking-wide">
+                  Active Configuration
+                </label>
+                {hasSelectedInstance && configs.length > 0 && (
+                  <div className="flex items-center">
+                    {configs.some(cfg => cfg.isSelected) ? (
+                      <>
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-blue-400 ml-1">Selected</span>
+                      </>
+                    ) : configs.some(cfg => cfg.active) ? (
+                      <>
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-green-400 ml-1">Active</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                        <span className="text-xs text-yellow-400 ml-1">Available</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {loadingConfigs ? (
+                <div className="flex items-center text-xs text-gray-400">
+                  <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-400 mr-2"></div>
+                  Loading configs...
+                </div>
+              ) : hasSelectedInstance && configs.length > 0 ? (
+                <select
+                  className="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 hover:border-gray-500"
+                  value={selectedConfig}
+                  onChange={handleConfigChange}
+                >
+                  {configs.map(cfg => (
+                    <option key={cfg.id} value={cfg.id} className="bg-gray-900">
+                      {cfg.name} {cfg.isSelected ? '🎯 Selected' : cfg.active ? '✓ Active' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-xs text-gray-500 italic">
+                  {hasSelectedInstance ? 'No configs available' : 'Select an instance first'}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
