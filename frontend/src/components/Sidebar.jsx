@@ -28,9 +28,26 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       };
 
       console.log('[Sidebar] Fetching configs for instance:', targetInstance?.id, 'Headers:', headers);
+      
+      // Add a small delay to ensure ProSBC session is ready
+      if (instance && instance !== selectedInstance) {
+        console.log('[Sidebar] Instance changed, waiting 1s for session establishment...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       const res = await fetch('/backend/api/prosbc-files/test-configs', { headers });
+      
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
       console.log('[Sidebar] Received configs:', data);
+      
+      // Check if the response indicates an error
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch configs');
+      }
       
       // Clean the configs to remove HTML entities
       const cleanedConfigs = cleanConfigs(data.configs || []);
@@ -72,6 +89,13 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
       }
     } catch (error) {
       console.error('Failed to fetch configs:', error);
+      // Clear configs on error
+      setConfigs([]);
+      setSelectedConfig('');
+      if (previousConfigRef.current !== '') {
+        onConfigChange?.('');
+        previousConfigRef.current = '';
+      }
     } finally {
       setLoadingConfigs(false);
     }

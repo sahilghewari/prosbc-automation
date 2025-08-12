@@ -43,9 +43,10 @@ function extractToken(req) {
 }
 
 app.use((req, res, next) => {
-  // Allow unauthenticated access only to login and test-configs endpoints
+  // Allow unauthenticated access to auth endpoints and test-configs
   if (
     req.path === '/backend/api/auth/login' ||
+    req.path === '/backend/api/auth/signup' ||
     req.path === '/backend/api/prosbc-files/test-configs'
   ) return next();
   const token = extractToken(req);
@@ -158,6 +159,24 @@ app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
     res.json({ success: true, configs, instanceId: instanceId || 'default', baseURL: baseURL });
   } catch (err) {
     console.error('[test-configs] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Clear credentials cache endpoint
+app.post('/backend/api/prosbc-instances/clear-cache', async (req, res) => {
+  try {
+    const { instanceId } = req.body;
+    const { clearCredentialsCache } = await import('./utils/prosbc/multiInstanceManager.js');
+    
+    clearCredentialsCache(instanceId);
+    
+    res.json({ 
+      success: true, 
+      message: instanceId ? `Cache cleared for instance ${instanceId}` : 'All cache cleared'
+    });
+  } catch (err) {
+    console.error('[clear-cache] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

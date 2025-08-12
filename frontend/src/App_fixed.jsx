@@ -10,14 +10,13 @@ import ActivationGeneration from './components/ActivationGeneration';
 import DatabaseStatus from './components/DatabaseStatus';
 import DatabaseDashboard from './components/DatabaseDashboard';
 import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
-import DashboardAuth from './components/DashboardAuth';
+import DashboardLogin from './DashboardLogin';
 import Profile from './components/Profile';
 import ProSBCInstanceManager from './components/ProSBCInstanceManager';
 import InstanceStatusDisplay from './components/InstanceStatusDisplay';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import { ProSBCInstanceProvider, useProSBCInstance } from './contexts/ProSBCInstanceContext';
-import { sessionManager } from './utils/sessionManager';
 import './App.css';
 
 function App() {
@@ -29,7 +28,7 @@ function App() {
 }
 
 function AppContent() {
-  const { clearInstanceSelection, refreshInstances } = useProSBCInstance();
+  const { clearInstanceSelection } = useProSBCInstance();
   const [activeSection, setActiveSection] = useState('dm-df-upload');
   const [isReady, setIsReady] = useState(false);
   const [authError, setAuthError] = useState(null);
@@ -80,21 +79,11 @@ function AppContent() {
     } catch {}
   };
 
-  const handleLoginSuccess = async (token) => {
+  const handleLoginSuccess = (token) => {
     localStorage.setItem('dashboard_token', token);
     setIsDashboardAuth(true);
     setShowLoginModal(false);
-    
-    // Fetch user profile
     fetchUser(token);
-    
-    // Trigger ProSBC instances fetch after login
-    try {
-      await refreshInstances();
-      console.log('[App] ProSBC instances refreshed after login');
-    } catch (error) {
-      console.error('[App] Failed to refresh instances after login:', error);
-    }
   };
 
   // Show error state if authentication setup failed
@@ -130,7 +119,11 @@ function AppContent() {
   // Enforce login: if not authenticated, show only login page
   if (!isDashboardAuth) {
     return (
-      <DashboardAuth onSuccess={handleLoginSuccess} />
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+        <div className="bg-gray-900 p-8 rounded-xl shadow-2xl relative">
+          <DashboardLogin onSuccess={handleLoginSuccess} />
+        </div>
+      </div>
     );
   }
 
@@ -138,7 +131,6 @@ function AppContent() {
   const handleLogout = () => {
     localStorage.removeItem('dashboard_token');
     clearInstanceSelection(); // Clear ProSBC instance selection
-    sessionManager.clearSession(); // Clear ProSBC session cookies
     setIsDashboardAuth(false);
     setShowLoginModal(false);
   };
@@ -205,11 +197,9 @@ function AppContent() {
             <Profile user={user} onUpdate={u => { if (!u) setShowProfile(false); else setUser(u); }} />
           </>
         )}
-        <main className={`main-content ${sidebarCollapsed ? 'ml-16' : 'ml-64'} bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-[calc(100vh-4rem)] transition-all duration-300 pt-16`}>
-          <div className="content-container px-4 sm:px-6 lg:px-8 py-6">
-            <div className="w-full">
-              {renderContent()}
-            </div>
+        <main className={`${sidebarCollapsed ? 'ml-16' : 'ml-64'} bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 min-h-[calc(100vh-4rem)] transition-all duration-300 pt-16`}>
+          <div className="p-6">
+            {renderContent()}
           </div>
         </main>
       </div>

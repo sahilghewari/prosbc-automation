@@ -23,6 +23,54 @@ body {
   background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
 }
 
+/* Main content layout improvements */
+.main-content {
+  max-width: 100%;
+  width: 100%;
+}
+
+/* Content container with responsive max-width */
+.content-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Prevent excessive white space on large screens */
+@media (min-width: 1920px) {
+  .content-container {
+    max-width: 1600px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .content-container {
+    max-width: 2000px;
+  }
+}
+
+/* Mobile responsive design */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0 !important;
+    padding-top: 4rem;
+  }
+  
+  .content-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Tablet responsive design */
+@media (max-width: 1024px) {
+  .content-container {
+    max-width: 100%;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+}
+
 /* Enhanced Scrollbar Styling */
 ::-webkit-scrollbar {
   width: 8px;

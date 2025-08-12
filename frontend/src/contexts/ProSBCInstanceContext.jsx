@@ -3,6 +3,31 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 // Create the context
 const ProSBCInstanceContext = createContext();
 
+// Helper functions for localStorage persistence
+const SELECTED_INSTANCE_KEY = 'prosbc_selected_instance_id';
+
+const saveSelectedInstanceId = (instanceId) => {
+  try {
+    if (instanceId) {
+      localStorage.setItem(SELECTED_INSTANCE_KEY, instanceId.toString());
+    } else {
+      localStorage.removeItem(SELECTED_INSTANCE_KEY);
+    }
+  } catch (error) {
+    console.warn('[ProSBCInstanceContext] Failed to save selected instance to localStorage:', error);
+  }
+};
+
+const loadSelectedInstanceId = () => {
+  try {
+    const stored = localStorage.getItem(SELECTED_INSTANCE_KEY);
+    return stored ? parseInt(stored, 10) : null;
+  } catch (error) {
+    console.warn('[ProSBCInstanceContext] Failed to load selected instance from localStorage:', error);
+    return null;
+  }
+};
+
 // Context provider component
 export const ProSBCInstanceProvider = ({ children }) => {
   const [selectedInstanceId, setSelectedInstanceId] = useState(null);
@@ -12,23 +37,81 @@ export const ProSBCInstanceProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [refreshCallbacks, setRefreshCallbacks] = useState(new Set());
 
-  // Fetch available instances on mount
+  // Check if user is authenticated
+  const isAuthenticated = () => {
+    const token = localStorage.getItem('dashboard_token');
+    return !!token;
+  };
+
+  // Fetch available instances only when authenticated
   useEffect(() => {
-    fetchInstances();
+    if (isAuthenticated()) {
+      fetchInstances();
+    } else {
+      // If not authenticated, clear everything
+      setInstances([]);
+      setSelectedInstanceId(null);
+      setSelectedInstance(null);
+      setLoading(false);
+    }
   }, []);
 
-  // Auto-select first active instance when instances are loaded
+  // Watch for authentication changes
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'dashboard_token') {
+        if (e.newValue) {
+          // Token added - fetch instances
+          fetchInstances();
+        } else {
+          // Token removed - clear instances
+          setInstances([]);
+          setSelectedInstanceId(null);
+          setSelectedInstance(null);
+          saveSelectedInstanceId(null);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Auto-select instance when instances are loaded (with persistence)
   useEffect(() => {
     if (instances.length > 0 && !selectedInstanceId) {
-      const activeInstance = instances.find(inst => inst.isActive) || instances[0];
-      if (activeInstance) {
-        setSelectedInstanceId(activeInstance.id);
-        setSelectedInstance(activeInstance);
+      // Try to restore from localStorage first
+      const savedInstanceId = loadSelectedInstanceId();
+      let targetInstance = null;
+      
+      if (savedInstanceId) {
+        targetInstance = instances.find(inst => inst.id === savedInstanceId);
+        console.log(`[ProSBCInstanceContext] Attempting to restore saved instance: ${savedInstanceId}`, targetInstance);
+      }
+      
+      // Fall back to first active instance or first instance
+      if (!targetInstance) {
+        targetInstance = instances.find(inst => inst.isActive) || instances[0];
+        console.log(`[ProSBCInstanceContext] Using fallback instance:`, targetInstance);
+      }
+      
+      if (targetInstance) {
+        console.log(`[ProSBCInstanceContext] Auto-selecting instance: ${targetInstance.id} (${targetInstance.name})`);
+        setSelectedInstanceId(targetInstance.id);
+        setSelectedInstance(targetInstance);
+        saveSelectedInstanceId(targetInstance.id);
       }
     }
   }, [instances, selectedInstanceId]);
 
   const fetchInstances = async () => {
+    // Don't fetch if not authenticated
+    if (!isAuthenticated()) {
+      console.log('[ProSBCInstanceContext] Not authenticated, skipping instance fetch');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -39,6 +122,8 @@ export const ProSBCInstanceProvider = ({ children }) => {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` })
       };
+      
+      console.log('[ProSBCInstanceContext] Fetching instances with token:', token ? 'present' : 'missing');
       
       const response = await fetch('/backend/api/prosbc-instances', {
         headers
@@ -63,6 +148,7 @@ export const ProSBCInstanceProvider = ({ children }) => {
       const data = await response.json();
       
       if (data.success && data.instances) {
+        console.log('[ProSBCInstanceContext] Successfully fetched instances:', data.instances.length);
         setInstances(data.instances);
       } else {
         throw new Error(data.message || 'Invalid response format');
@@ -92,6 +178,9 @@ export const ProSBCInstanceProvider = ({ children }) => {
       console.log(`[ProSBCInstanceContext] Found instance:`, foundInstance);
     }
 
+    // Persist the selection
+    saveSelectedInstanceId(instanceId);
+
     // Trigger refresh callbacks if instance actually changed
     if (previousInstanceId !== instanceId && refreshCallbacks.size > 0) {
       console.log(`[ProSBCInstanceContext] Triggering ${refreshCallbacks.size} refresh callbacks for instance change`);
@@ -108,6 +197,45 @@ export const ProSBCInstanceProvider = ({ children }) => {
 
   const refreshInstances = () => {
     return fetchInstances();
+  };
+
+  // Clear instance selection (for logout)
+  const clearInstanceSelection = () => {
+    console.log('[ProSBCInstanceContext] Clearing instance selection');
+    setSelectedInstanceId(null);
+    setSelectedInstance(null);
+    saveSelectedInstanceId(null);
+    
+    // Also clear backend credentials cache
+    clearInstanceCache();
+  };
+
+  // Retry fetching instances (for error recovery)
+  const retryFetchInstances = async () => {
+    console.log('[ProSBCInstanceContext] Retrying instance fetch');
+    setError(null);
+    await fetchInstances();
+  };
+
+  // Clear backend credentials cache
+  const clearInstanceCache = async (instanceId = null) => {
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      };
+
+      await fetch('/backend/api/prosbc-instances/clear-cache', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ instanceId })
+      });
+
+      console.log(`[ProSBCInstanceContext] Cache cleared for instance: ${instanceId || 'all'}`);
+    } catch (error) {
+      console.warn('[ProSBCInstanceContext] Failed to clear cache:', error);
+    }
   };
 
   // Register a callback to be called when instance changes
@@ -198,6 +326,9 @@ export const ProSBCInstanceProvider = ({ children }) => {
     // Actions
     selectInstance,
     refreshInstances,
+    clearInstanceSelection,
+    retryFetchInstances,
+    clearInstanceCache,
     fetchInstances,
     registerRefreshCallback,
     triggerRefresh,

@@ -15,7 +15,8 @@ const ProSBCInstanceSelector = ({
     loading,
     error,
     selectInstance,
-    refreshInstances
+    refreshInstances,
+    retryFetchInstances
   } = useProSBCInstance();
   
   const [showDropdown, setShowDropdown] = useState(false);
@@ -77,7 +78,7 @@ const ProSBCInstanceSelector = ({
         <div className="error-content">
           <p>Failed to load ProSBC instances</p>
           <small>{error}</small>
-          <button onClick={refreshInstances} className="retry-btn">
+          <button onClick={retryFetchInstances} className="retry-btn">
             Retry
           </button>
         </div>
