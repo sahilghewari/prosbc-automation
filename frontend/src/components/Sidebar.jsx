@@ -14,17 +14,63 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
   const [loadingConfigs, setLoadingConfigs] = useState(true);
   const previousConfigRef = useRef(''); // Track previous config to prevent unnecessary updates
 
+  // Helper function to retry with exponential backoff
+  const retryWithBackoff = async (fn, maxRetries = 3, baseDelay = 1000) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        console.warn(`[Sidebar] Attempt ${attempt} failed:`, error.message);
+        
+        if (attempt === maxRetries) {
+          throw error; // Re-throw on final attempt
+        }
+        
+        // Wait with exponential backoff
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        console.log(`[Sidebar] Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  };
+
   // Function to fetch configs
-  const fetchConfigs = async (instance = null) => {
+  const fetchConfigs = async (instance = null, clearCache = false) => {
     setLoadingConfigs(true);
     try {
       // Get authentication headers and instance-specific headers
       const token = localStorage.getItem('dashboard_token');
       const targetInstance = instance || selectedInstance;
+      
+      // Ensure we have a valid instance
+      if (!targetInstance || !targetInstance.id) {
+        console.log('[Sidebar] No target instance available for config fetch');
+        setConfigs([]);
+        setSelectedConfig('');
+        return;
+      }
+
+      // Clear backend cache if requested
+      if (clearCache) {
+        try {
+          console.log('[Sidebar] Clearing backend credentials cache...');
+          await fetch('/backend/api/prosbc-instances/clear-cache', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token && { 'Authorization': `Bearer ${token}` })
+            },
+            body: JSON.stringify({ instanceId: targetInstance.id })
+          });
+        } catch (cacheError) {
+          console.warn('[Sidebar] Failed to clear cache:', cacheError);
+        }
+      }
+
       const headers = {
         'Content-Type': 'application/json',
         ...(token && { 'Authorization': `Bearer ${token}` }),
-        ...(targetInstance?.id && { 'X-ProSBC-Instance-ID': targetInstance.id.toString() })
+        'X-ProSBC-Instance-ID': targetInstance.id.toString()
       };
 
       console.log('[Sidebar] Fetching configs for instance:', targetInstance?.id, 'Headers:', headers);
@@ -105,7 +151,29 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
   useInstanceRefresh(
     async (instance) => {
       console.log('[Sidebar] Refreshing configs for instance:', instance?.id);
-      await fetchConfigs(instance);
+      if (instance && instance.id) {
+        try {
+          // For instance changes, try with retry mechanism to handle Ubuntu deployment timing issues
+          await retryWithBackoff(() => fetchConfigs(instance));
+        } catch (error) {
+          console.error('[Sidebar] Failed to fetch configs after retries:', error);
+          // Still clear configs on persistent failure
+          setConfigs([]);
+          setSelectedConfig('');
+          if (previousConfigRef.current !== '') {
+            onConfigChange?.('');
+            previousConfigRef.current = '';
+          }
+        }
+      } else {
+        console.log('[Sidebar] No valid instance provided, clearing configs');
+        setConfigs([]);
+        setSelectedConfig('');
+        if (previousConfigRef.current !== '') {
+          onConfigChange?.('');
+          previousConfigRef.current = '';
+        }
+      }
     },
     [], // No additional dependencies
     {
@@ -114,10 +182,15 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
     }
   );
 
-  // Fetch live configs on mount
+  // Only fetch configs when we have a selected instance
   useEffect(() => {
-    fetchConfigs();
-  }, []);
+    if (hasSelectedInstance && selectedInstance?.id) {
+      console.log('[Sidebar] useEffect - Fetching configs for selected instance:', selectedInstance.id);
+      fetchConfigs();
+    } else {
+      console.log('[Sidebar] useEffect - No instance selected, skipping config fetch');
+    }
+  }, [hasSelectedInstance, selectedInstance?.id]);
 
   const handleConfigChange = (e) => {
     const selectedId = e.target.value;
@@ -251,26 +324,39 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
                 <label className="block text-xs font-medium text-gray-300 uppercase tracking-wide">
                   Active Configuration
                 </label>
-                {hasSelectedInstance && configs.length > 0 && (
-                  <div className="flex items-center">
-                    {configs.some(cfg => cfg.isSelected) ? (
-                      <>
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                        <span className="text-xs text-blue-400 ml-1">Selected</span>
-                      </>
-                    ) : configs.some(cfg => cfg.active) ? (
-                      <>
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span className="text-xs text-green-400 ml-1">Active</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                        <span className="text-xs text-yellow-400 ml-1">Available</span>
-                      </>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center space-x-2">
+                  {hasSelectedInstance && configs.length > 0 && (
+                    <div className="flex items-center">
+                      {configs.some(cfg => cfg.isSelected) ? (
+                        <>
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                          <span className="text-xs text-blue-400 ml-1">Selected</span>
+                        </>
+                      ) : configs.some(cfg => cfg.active) ? (
+                        <>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                          <span className="text-xs text-green-400 ml-1">Active</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                          <span className="text-xs text-yellow-400 ml-1">Available</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Refresh button for configs */}
+                  <button
+                    onClick={() => {
+                      console.log('[Sidebar] Manual config refresh requested');
+                      fetchConfigs(null, true); // Clear cache on manual refresh
+                    }}
+                    className="text-xs text-gray-400 hover:text-white transition-colors"
+                    title="Refresh configurations (clears cache)"
+                  >
+                    ↻
+                  </button>
+                </div>
               </div>
               
               {loadingConfigs ? (
@@ -292,7 +378,22 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
                 </select>
               ) : (
                 <div className="text-xs text-gray-500 italic">
-                  {hasSelectedInstance ? 'No configs available' : 'Select an instance first'}
+                  {hasSelectedInstance ? (
+                    <div className="space-y-1">
+                      <div>No configs available</div>
+                      <button
+                        onClick={() => {
+                          console.log('[Sidebar] Retry loading configs with cache clear');
+                          fetchConfigs(null, true); // Clear cache on retry
+                        }}
+                        className="text-blue-400 hover:text-blue-300 underline"
+                      >
+                        Click to retry
+                      </button>
+                    </div>
+                  ) : (
+                    'Select an instance first'
+                  )}
                 </div>
               )}
             </div>

@@ -152,9 +152,50 @@ app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
 
     console.log(`[test-configs] Final baseURL: ${baseURL}`);
     const { prosbcLogin } = await import('./utils/prosbc/login.js');
-    const sessionCookie = await prosbcLogin(baseURL, username, password);
-    const configs = await fetchLiveConfigIds(baseURL, sessionCookie);
-    console.log(`[test-configs] Retrieved ${configs.length} configs`);
+    
+    // Add retry logic for ProSBC login and config fetching
+    let sessionCookie;
+    let configs;
+    
+    try {
+      console.log('[test-configs] Step 1: Attempting ProSBC login...');
+      sessionCookie = await prosbcLogin(baseURL, username, password);
+      console.log('[test-configs] Step 1: ✓ ProSBC login successful');
+      
+      console.log('[test-configs] Step 2: Fetching configurations...');
+      configs = await fetchLiveConfigIds(baseURL, sessionCookie);
+      console.log(`[test-configs] Step 2: ✓ Retrieved ${configs.length} configs`);
+      
+      if (!configs || configs.length === 0) {
+        throw new Error('No configurations found');
+      }
+      
+    } catch (firstAttemptError) {
+      console.warn('[test-configs] First attempt failed:', firstAttemptError.message);
+      console.log('[test-configs] Retrying with fresh session...');
+      
+      try {
+        // Wait a bit for ProSBC to stabilize
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        console.log('[test-configs] Retry: Attempting ProSBC login...');
+        sessionCookie = await prosbcLogin(baseURL, username, password);
+        console.log('[test-configs] Retry: ✓ ProSBC login successful');
+        
+        console.log('[test-configs] Retry: Fetching configurations...');
+        configs = await fetchLiveConfigIds(baseURL, sessionCookie);
+        console.log(`[test-configs] Retry: ✓ Retrieved ${configs.length} configs`);
+        
+        if (!configs || configs.length === 0) {
+          throw new Error('No configurations found on retry');
+        }
+        
+      } catch (retryError) {
+        console.error('[test-configs] Retry also failed:', retryError.message);
+        throw new Error(`Failed to fetch configs after retry: ${retryError.message}`);
+      }
+    }
+    
     res.json({ success: true, configs, instanceId: instanceId || 'default', baseURL: baseURL });
   } catch (err) {
     console.error('[test-configs] Error:', err);

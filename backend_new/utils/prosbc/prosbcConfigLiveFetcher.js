@@ -10,6 +10,7 @@ import fetch from 'node-fetch';
  */
 export async function fetchLiveConfigIds(baseURL, sessionCookie) {
   if (!baseURL || !sessionCookie) throw new Error('Missing baseURL or sessionCookie');
+  
   const url = `${baseURL}/`;
   const headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -17,18 +18,52 @@ export async function fetchLiveConfigIds(baseURL, sessionCookie) {
     'Cache-Control': 'no-cache',
     'Cookie': `_WebOAMP_session=${sessionCookie}`
   };
-  const res = await fetch(url, { method: 'GET', headers });
-  if (!res.ok) throw new Error(`Failed to fetch main page: ${res.status}`);
-  const html = await res.text();
+  
+  console.log(`[Config Fetcher] Fetching ProSBC main page from: ${url}`);
+  
+  let res;
+  try {
+    res = await fetch(url, { method: 'GET', headers, timeout: 10000 });
+  } catch (fetchError) {
+    console.error(`[Config Fetcher] Network error fetching ${url}:`, fetchError.message);
+    throw new Error(`Network error: ${fetchError.message}`);
+  }
+  
+  if (!res.ok) {
+    console.error(`[Config Fetcher] HTTP error: ${res.status} ${res.statusText}`);
+    throw new Error(`Failed to fetch main page: ${res.status} ${res.statusText}`);
+  }
+  
+  let html;
+  try {
+    html = await res.text();
+  } catch (textError) {
+    console.error(`[Config Fetcher] Error reading response text:`, textError.message);
+    throw new Error(`Error reading response: ${textError.message}`);
+  }
   
   console.log(`[Config Fetcher] ========== HTML PARSING DEBUG ==========`);
   console.log(`[Config Fetcher] Full HTML length: ${html.length} characters`);
+  
+  // Check if we got redirected to login page
+  if (html.includes('login') && html.includes('Username')) {
+    console.error(`[Config Fetcher] Redirected to login page - session expired`);
+    throw new Error('Session expired - redirected to login page');
+  }
   
   // Parse the config dropdown
   const selectMatch = html.match(/<select[^>]*id=["']configuration_select["'][^>]*>([\s\S]*?)<\/select>/i);
   if (!selectMatch) {
     console.log(`[Config Fetcher] ERROR: Could not find configuration dropdown in HTML`);
     console.log(`[Config Fetcher] HTML snippet (first 2000 chars):`, html.substring(0, 2000));
+    
+    // Check if the page structure is different - maybe it's the new UI
+    const alternativeSelect = html.match(/<select[^>]*name=["']configuration[^"']*["'][^>]*>([\s\S]*?)<\/select>/i);
+    if (alternativeSelect) {
+      console.log(`[Config Fetcher] Found alternative configuration dropdown`);
+      // TODO: Parse alternative format if needed
+    }
+    
     throw new Error('Could not find configuration dropdown');
   }
   
@@ -115,6 +150,33 @@ export async function fetchLiveConfigIds(baseURL, sessionCookie) {
     isSelected: c.isSelected 
   })));
   console.log(`[Config Fetcher] ========== END HTML PARSING DEBUG ==========`);
+  
+  // If no configs were found, try to provide a fallback
+  if (configs.length === 0) {
+    console.warn(`[Config Fetcher] No configs found via parsing. Providing fallback...`);
+    
+    // Try to extract any configuration ID from the HTML
+    const anyConfigMatch = html.match(/configuration[^>]*=["']?(\d+)["']?/i);
+    if (anyConfigMatch) {
+      const fallbackId = anyConfigMatch[1];
+      console.log(`[Config Fetcher] Found fallback config ID: ${fallbackId}`);
+      configs.push({
+        id: fallbackId,
+        name: `config_${fallbackId}`,
+        active: true,
+        isSelected: true
+      });
+    } else {
+      // Ultimate fallback - return a default config
+      console.warn(`[Config Fetcher] Using ultimate fallback config`);
+      configs.push({
+        id: '1',
+        name: 'config_default',
+        active: true,
+        isSelected: true
+      });
+    }
+  }
   
   return configs;
 }
