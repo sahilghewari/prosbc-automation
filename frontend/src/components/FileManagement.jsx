@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { enhancedFileStorageService } from '../utils/enhancedFileStorageServiceNew';
 import { updateFile, updateMultipleFiles, testConnection, getUpdateStatus, getUpdateHistory } from '../utils/fileUpdateService';
 import CSVFileEditor from './CSVFileEditor';
+import LoadingAnimation from './LoadingAnimation';
+import InlineLoadingAnimation from './InlineLoadingAnimation';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
@@ -24,6 +26,8 @@ function FileManagement({ onAuthError, configId }) {
   const [dfFiles, setDfFiles] = useState([]);
   const [dmFiles, setDmFiles] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingStartTime, setLoadingStartTime] = useState(null);
+  const [switchingInstance, setSwitchingInstance] = useState(false);
   
   // Database files
   const [storedFiles, setStoredFiles] = useState([]);
@@ -56,8 +60,19 @@ function FileManagement({ onAuthError, configId }) {
   useInstanceRefresh(
     async (instance) => {
       console.log('[FileManagement] Refreshing files for instance:', instance?.id);
-      await loadFiles(instance);
-      await loadStoredFiles(instance);
+      // Clear old data immediately when instance changes
+      setSwitchingInstance(true);
+      setDfFiles([]);
+      setDmFiles([]);
+      setStoredFiles([]);
+      setMessage('Switching to new ProSBC instance...');
+      
+      try {
+        await loadFiles(instance);
+        await loadStoredFiles(instance);
+      } finally {
+        setSwitchingInstance(false);
+      }
     },
     [configId], // Dependencies - reload when configId changes too
     {
@@ -92,6 +107,25 @@ function FileManagement({ onAuthError, configId }) {
     }
   }, [configId, hasSelectedInstance]);
 
+  // Clear data immediately when selectedInstance changes
+  useEffect(() => {
+    if (selectedInstance) {
+      console.log('[FileManagement] Instance changed, clearing old data:', selectedInstance.id);
+      setSwitchingInstance(true);
+      setDfFiles([]);
+      setDmFiles([]);
+      setStoredFiles([]);
+      setMessage(`Loading files for ${selectedInstance.name}...`);
+      
+      // Set a timeout to clear the switching state if loadFiles doesn't get called
+      const timeout = setTimeout(() => {
+        setSwitchingInstance(false);
+      }, 5000);
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [selectedInstance?.id]);
+
   // Load stored files when search term or file type changes
   useEffect(() => {
     if (hasSelectedInstance) {
@@ -104,7 +138,12 @@ function FileManagement({ onAuthError, configId }) {
     const targetInstance = instance || selectedInstance;
     if (!targetInstance) return;
     
+    // Clear existing data immediately to prevent showing old data
+    setDfFiles([]);
+    setDmFiles([]);
     setRefreshing(true);
+    setLoadingStartTime(Date.now());
+    
     try {
       // Use direct API calls since file API handles instances internally
       const token = localStorage.getItem('dashboard_token');
@@ -116,9 +155,11 @@ function FileManagement({ onAuthError, configId }) {
       
       console.log('[FileManagement] Loading files for instance:', targetInstance?.id);
       
+      // Add artificial minimum delay to ensure animation is visible
       const [dfResponse, dmResponse] = await Promise.all([
         fetch(`/backend/api/prosbc-files/df/list?configId=${configId || ''}`, { headers }),
-        fetch(`/backend/api/prosbc-files/dm/list?configId=${configId || ''}`, { headers })
+        fetch(`/backend/api/prosbc-files/dm/list?configId=${configId || ''}`, { headers }),
+        new Promise(resolve => setTimeout(resolve, 800)) // Minimum 800ms delay
       ]);
       
       const dfRes = dfResponse.ok ? await dfResponse.json() : { success: false, message: `DF API failed: ${dfResponse.status}` };
@@ -135,7 +176,12 @@ function FileManagement({ onAuthError, configId }) {
         onAuthError?.();
       }
     } finally {
-      setRefreshing(false);
+      // Add small delay before hiding animation to ensure smooth completion
+      setTimeout(() => {
+        setRefreshing(false);
+        setSwitchingInstance(false);
+        setLoadingStartTime(null);
+      }, 300);
     }
   };
 
@@ -1288,21 +1334,34 @@ function FileManagement({ onAuthError, configId }) {
                   <h2 className="text-2xl font-bold text-white">Definition Files (DF)</h2>
                   <button
                     onClick={loadFiles}
-                    disabled={refreshing}
+                    disabled={refreshing || switchingInstance}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      refreshing
+                      refreshing || switchingInstance
                         ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                         : 'bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 border border-purple-600/30'
                     }`}
                   >
-                    {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
+                    {refreshing ? '⏳ Refreshing...' : 
+                     switchingInstance ? '🔄 Switching...' : 
+                     '🔄 Refresh'}
                   </button>
                 </div>
                 
-                
-                
-                
-                {renderFileTable(dfFiles, 'routesets_definitions', 'Definition', 'purple')}
+                {(refreshing || switchingInstance) ? (
+                  <InlineLoadingAnimation 
+                    message={switchingInstance ? 
+                      `Switching to ${selectedInstance?.name || 'new instance'}...` : 
+                      "Loading Definition Files..."
+                    }
+                    isActive={refreshing || switchingInstance}
+                    minDuration={loadingStartTime ? Math.max(1200, Date.now() - loadingStartTime) : 1200}
+                    onComplete={() => {
+                      console.log('DF files loading animation completed');
+                    }}
+                  />
+                ) : (
+                  renderFileTable(dfFiles, 'routesets_definitions', 'Definition', 'purple')
+                )}
               </div>
             )}
 
@@ -1313,20 +1372,34 @@ function FileManagement({ onAuthError, configId }) {
                   <h2 className="text-2xl font-bold text-white">Digit Map Files (DM)</h2>
                   <button
                     onClick={loadFiles}
-                    disabled={refreshing}
+                    disabled={refreshing || switchingInstance}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      refreshing
+                      refreshing || switchingInstance
                         ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                         : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
                     }`}
                   >
-                    {refreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
+                    {refreshing ? '⏳ Refreshing...' : 
+                     switchingInstance ? '🔄 Switching...' : 
+                     '🔄 Refresh'}
                   </button>
                 </div>
                 
-               
-                
-                {renderFileTable(dmFiles, 'routesets_digitmaps', 'Digit Map', 'pink')}
+                {(refreshing || switchingInstance) ? (
+                  <InlineLoadingAnimation 
+                    message={switchingInstance ? 
+                      `Switching to ${selectedInstance?.name || 'new instance'}...` : 
+                      "Loading Digit Map Files..."
+                    }
+                    isActive={refreshing || switchingInstance}
+                    minDuration={loadingStartTime ? Math.max(1200, Date.now() - loadingStartTime) : 1200}
+                    onComplete={() => {
+                      console.log('DM files loading animation completed');
+                    }}
+                  />
+                ) : (
+                  renderFileTable(dmFiles, 'routesets_digitmaps', 'Digit Map', 'pink')
+                )}
               </div>
             )}
 

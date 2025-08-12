@@ -27,6 +27,44 @@ const CSVEditorTable = ({
   const tableRef = useRef(null);
   const cellRefs = useRef({});
 
+  // Check if this is a DM (Digit Map) file
+  const isDMFile = fileInfo?.fileType === 'routesets_digitmaps' || 
+                   fileInfo?.type === 'routesets_digitmaps' || 
+                   fileInfo?.name?.toLowerCase().includes('digitmap') ||
+                   fileInfo?.fileName?.toLowerCase().includes('digitmap');
+
+  // Validation functions for DM files
+  const validateDMEntry = (value, rowIndex, colIndex, allRows) => {
+    if (!isDMFile) return null; // Only validate DM files
+    
+    // Skip validation for headers or empty values
+    if (!value || value.trim() === '') return null;
+    
+    const trimmedValue = value.trim();
+    
+    // Check if value contains only digits
+    if (!/^\d+$/.test(trimmedValue)) {
+      return 'Only numeric digits are allowed in DM files';
+    }
+    
+    // Check if value is exactly 10 digits
+    if (trimmedValue.length !== 10) {
+      return 'DM entries must be exactly 10 digits long';
+    }
+    
+    // Check for duplicates in the same column
+    const currentColumnValues = allRows
+      .map((row, idx) => ({ value: row.data[colIndex]?.trim(), rowIdx: idx }))
+      .filter(item => item.value && item.value !== '' && item.rowIdx !== rowIndex);
+    
+    const isDuplicate = currentColumnValues.some(item => item.value === trimmedValue);
+    if (isDuplicate) {
+      return 'Duplicate numbers are not allowed in DM files';
+    }
+    
+    return null; // Valid
+  };
+
   // Initialize API client
   useEffect(() => {
     const initializeApi = async () => {
@@ -281,6 +319,14 @@ const CSVEditorTable = ({
       return;
     }
 
+    // Check for validation errors before saving
+    const hasValidationErrors = Object.keys(errors).length > 0;
+    if (hasValidationErrors) {
+      const errorMessages = Object.values(errors);
+      alert(`Cannot save file due to validation errors:\n\n${errorMessages.join('\n')}\n\nPlease fix all errors before saving.`);
+      return;
+    }
+
     setIsUpdating(true);
     try {
       console.log('[CSVEditorTable] Starting save process...');
@@ -437,16 +483,22 @@ const CSVEditorTable = ({
   const handleCellChange = (rowIndex, colIndex, value) => {
     const newRows = [...rows];
     newRows[rowIndex].data[colIndex] = value;
-    setRows(newRows);
-    setHasChanges(true);
     
-    // Clear any errors for this cell
+    // Validate the input for DM files
+    const validationError = validateDMEntry(value, rowIndex, colIndex, newRows);
     const errorKey = `${rowIndex}-${colIndex}`;
-    if (errors[errorKey]) {
-      const newErrors = { ...errors };
+    
+    // Update errors state
+    const newErrors = { ...errors };
+    if (validationError) {
+      newErrors[errorKey] = validationError;
+    } else {
       delete newErrors[errorKey];
-      setErrors(newErrors);
     }
+    
+    setRows(newRows);
+    setErrors(newErrors);
+    setHasChanges(true);
   };
 
   // Handle header change
@@ -593,60 +645,87 @@ const CSVEditorTable = ({
   }
 
   return (
-    <div className="h-full bg-gray-900 text-white flex flex-col">
-      {/* Action Controls - Sticky at top */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4 flex-shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="text-sm text-gray-300">
+    <div className="fixed inset-0 bg-gray-900 text-white flex flex-col z-50">
+      {/* Action Controls - Compact */}
+      <div className="bg-gray-800 border-b border-gray-700 p-2 flex-shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2 text-xs">
+            <div className="text-gray-300">
               <span className="font-medium">{rows.length}</span> rows × <span className="font-medium">{headers.length}</span> columns
             </div>
+            {isDMFile && (
+              <span className="inline-flex items-center px-2 py-0.5 bg-purple-600 text-white text-xs rounded-full">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.031 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                DM Validation
+              </span>
+            )}
+            {Object.keys(errors).length > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 bg-red-600 text-white text-xs rounded-full">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {Object.keys(errors).length} Error{Object.keys(errors).length > 1 ? 's' : ''}
+              </span>
+            )}
             {hasChanges && (
-              <span className="inline-flex items-center px-3 py-1 bg-yellow-600 text-white text-sm rounded-full">
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="inline-flex items-center px-2 py-0.5 bg-yellow-600 text-white text-xs rounded-full">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 16.5c-.77.833.192 2.5 1.732 2.5z" />
                 </svg>
-                Unsaved Changes
+                Unsaved
               </span>
             )}
             {backupCreated && (
-              <span className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded-full">
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span className="inline-flex items-center px-2 py-0.5 bg-green-600 text-white text-xs rounded-full">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Backup Created
+                Backup
               </span>
             )}
           </div>
+          
+          {/* Close Button */}
+          <button
+            onClick={onCancel}
+            className="inline-flex items-center px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors duration-200"
+            title="Close Editor"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
         
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 text-xs">
           <button
             onClick={addRow}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50"
+            className="inline-flex items-center px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50"
             disabled={isUpdating}
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             Add Row
           </button>
           <button
             onClick={addColumn}
-            className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 disabled:opacity-50"
+            className="inline-flex items-center px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors duration-200 disabled:opacity-50"
             disabled={isUpdating}
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             Add Column
           </button>
           <button
             onClick={handleReset}
-            className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50"
+            className="inline-flex items-center px-2 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50"
             disabled={isUpdating || !hasChanges}
           >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             Reset
@@ -656,10 +735,10 @@ const CSVEditorTable = ({
           {fileInfo?.id && fileInfo?.type && (
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors duration-200 disabled:opacity-50"
+              className="inline-flex items-center px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors duration-200 disabled:opacity-50"
               disabled={isUpdating}
             >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               History ({fileHistory.length})
@@ -668,49 +747,63 @@ const CSVEditorTable = ({
           
           {/* Backend API Status Indicator */}
           {apiClient && (
-            <span className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-full">
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <span className="inline-flex items-center px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
               </svg>
-              Backend API Connected
+              API
             </span>
           )}
         </div>
       </div>
 
-      {/* Table Container - Scrollable middle section */}
-      <div className="flex-1 overflow-auto min-h-0 bg-gray-900">
-        <div className="min-w-full inline-block align-middle">
-          <table className="min-w-full divide-y divide-gray-700">
-            {/* Headers */}
+      {/* DM File Validation Info - Compact */}
+      {isDMFile && (
+        <div className="bg-purple-900/20 border border-purple-500/30 p-1.5 mx-2 rounded text-xs">
+          <div className="flex items-center space-x-2">
+            <svg className="w-3 h-3 text-purple-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div className="text-purple-200">
+              <strong>DM Rules:</strong> 10-digit numbers only • No alphabets • No duplicates
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Table Container - Full Screen */}
+      <div className="flex-1 overflow-auto bg-gray-900">
+        <div className="w-full h-full">
+          <table className="w-full divide-y divide-gray-700 table-fixed">
+            {/* Headers - Compact */}
             <thead className="bg-gray-800 sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider bg-gray-800 border-r border-gray-700">
+                <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-300 uppercase tracking-wider bg-gray-800 border-r border-gray-700 w-16">
                   <div className="flex items-center">
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
                     </svg>
                     Row
                   </div>
                 </th>
                 {headers.map((header, index) => (
-                  <th key={index} className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider bg-gray-800 border-r border-gray-700 min-w-[200px]">
-                    <div className="flex items-center space-x-2">
+                  <th key={index} className="px-2 py-1.5 text-left text-xs font-medium text-gray-300 uppercase tracking-wider bg-gray-800 border-r border-gray-700 min-w-[100px]">
+                    <div className="flex items-center space-x-1">
                       <input
                         type="text"
                         value={header}
                         onChange={(e) => handleHeaderChange(index, e.target.value)}
-                        className="flex-1 px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="flex-1 px-1.5 py-0.5 text-xs bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                         disabled={isUpdating}
-                        placeholder={`Column ${index + 1}`}
+                        placeholder={`Col ${index + 1}`}
                       />
                       <button
                         onClick={() => deleteColumn(index)}
-                        className="text-red-400 hover:text-red-300 p-1 transition-colors duration-200 disabled:opacity-50"
+                        className="text-red-400 hover:text-red-300 p-0.5 transition-colors duration-200 disabled:opacity-50"
                         disabled={isUpdating || headers.length <= 1}
                         title="Delete Column"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
@@ -720,27 +813,27 @@ const CSVEditorTable = ({
               </tr>
             </thead>
 
-            {/* Body */}
+            {/* Body - Compact */}
             <tbody className="bg-gray-900 divide-y divide-gray-700">
               {rows.map((row, rowIndex) => (
                 <tr key={row.id} className={`hover:bg-gray-800 transition-colors duration-200 ${row.isNew ? 'bg-blue-900/30' : ''}`}>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300 bg-gray-800 border-r border-gray-700">
-                    <div className="flex items-center space-x-2">
+                  <td className="px-2 py-1.5 whitespace-nowrap text-xs text-gray-300 bg-gray-800 border-r border-gray-700">
+                    <div className="flex items-center space-x-1">
                       <span className="font-medium">{rowIndex + 1}</span>
                       <button
                         onClick={() => deleteRow(rowIndex)}
-                        className="text-red-400 hover:text-red-300 p-1 transition-colors duration-200 disabled:opacity-50"
+                        className="text-red-400 hover:text-red-300 p-0.5 transition-colors duration-200 disabled:opacity-50"
                         disabled={isUpdating || rows.length <= 1}
                         title="Delete Row"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
                     </div>
                   </td>
                   {row.data.map((cell, colIndex) => (
-                    <td key={colIndex} className="px-4 py-3 border-r border-gray-700">
+                    <td key={colIndex} className="px-2 py-1.5 border-r border-gray-700">
                       <input
                         ref={(el) => {
                           if (el) cellRefs.current[`${rowIndex}-${colIndex}`] = el;
@@ -749,14 +842,25 @@ const CSVEditorTable = ({
                         value={cell || ''}
                         onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
                         onKeyPress={(e) => handleKeyPress(e, rowIndex, colIndex)}
-                        className={`w-full px-3 py-2 text-sm bg-gray-800 border rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 ${
-                          errors[`${rowIndex}-${colIndex}`] ? 'border-red-500 bg-red-900/20' : 'border-gray-600 hover:border-gray-500'
+                        className={`w-full px-2 py-1 text-xs bg-gray-800 border rounded text-white focus:outline-none focus:ring-1 transition-colors duration-200 ${
+                          errors[`${rowIndex}-${colIndex}`] 
+                            ? 'border-red-500 bg-red-900/20 focus:ring-red-500' 
+                            : isDMFile && cell && cell.trim() && /^\d{10}$/.test(cell.trim())
+                              ? 'border-green-500 bg-green-900/20 focus:ring-green-500'
+                              : 'border-gray-600 hover:border-gray-500 focus:ring-blue-500 focus:border-transparent'
                         }`}
                         disabled={isUpdating}
-                        placeholder="Enter value..."
+                        placeholder={isDMFile ? "10-digit #" : "Enter..."}
+                        maxLength={isDMFile ? 10 : undefined}
+                        pattern={isDMFile ? "[0-9]{10}" : undefined}
+                        title={isDMFile ? "Enter exactly 10 digits (0-9)" : ""}
+                        inputMode={isDMFile ? "numeric" : "text"}
                       />
                       {errors[`${rowIndex}-${colIndex}`] && (
-                        <p className="mt-1 text-xs text-red-400">{errors[`${rowIndex}-${colIndex}`]}</p>
+                        <p className="mt-0.5 text-xs text-red-400">{errors[`${rowIndex}-${colIndex}`]}</p>
+                      )}
+                      {isDMFile && cell && cell.trim() && /^\d{10}$/.test(cell.trim()) && !errors[`${rowIndex}-${colIndex}`] && (
+                        <p className="mt-0.5 text-xs text-green-400">✓ Valid</p>
                       )}
                     </td>
                   ))}
@@ -767,41 +871,56 @@ const CSVEditorTable = ({
         </div>
       </div>
 
-      {/* Footer Controls - Always visible at bottom */}
-      <div className="bg-gray-800 border-t border-gray-700 p-4 flex-shrink-0">
+      {/* Footer Controls - Compact */}
+      <div className="bg-gray-800 border-t border-gray-700 p-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-300">
+          <div className="text-xs text-gray-300">
             <span className="font-medium">{rows.length}</span> rows × <span className="font-medium">{headers.length}</span> columns
             {hasChanges && <span className="ml-2 text-yellow-400">• Unsaved changes</span>}
+            {Object.keys(errors).length > 0 && (
+              <span className="ml-2 text-red-400">• {Object.keys(errors).length} error{Object.keys(errors).length > 1 ? 's' : ''}</span>
+            )}
           </div>
           
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             <button
               onClick={onCancel}
-              className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50"
+              className="px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50 text-xs"
               disabled={isUpdating}
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 flex items-center"
-              disabled={isUpdating || !hasChanges}
+              className={`px-3 py-1.5 text-white rounded transition-colors duration-200 disabled:opacity-50 flex items-center text-xs ${
+                Object.keys(errors).length > 0 
+                  ? 'bg-red-600 hover:bg-red-700' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+              disabled={isUpdating || !hasChanges || Object.keys(errors).length > 0}
+              title={Object.keys(errors).length > 0 ? 'Fix validation errors before saving' : ''}
             >
               {isUpdating ? (
                 <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                   Updating...
                 </>
+              ) : Object.keys(errors).length > 0 ? (
+                <>
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Fix Errors
+                </>
               ) : (
                 <>
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-                  {fileInfo?.id && fileInfo?.type ? 'Save and Upload to ProSBC' : 'Save to Database'}
+                  {fileInfo?.id && fileInfo?.type ? 'Save & Upload' : 'Save'}
                 </>
               )}
             </button>
