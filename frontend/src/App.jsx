@@ -10,7 +10,7 @@ import ActivationGeneration from './components/ActivationGeneration';
 import DatabaseStatus from './components/DatabaseStatus';
 import DatabaseDashboard from './components/DatabaseDashboard';
 import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
-import DashboardAuth from './components/DashboardAuth';
+import DashboardLogin from './DashboardLogin';
 import Profile from './components/Profile';
 import ProSBCInstanceManager from './components/ProSBCInstanceManager';
 import InstanceStatusDisplay from './components/InstanceStatusDisplay';
@@ -130,7 +130,11 @@ function AppContent() {
   // Enforce login: if not authenticated, show only login page
   if (!isDashboardAuth) {
     return (
-      <DashboardAuth onSuccess={handleLoginSuccess} />
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+        <div className="bg-gray-900 p-8 rounded-xl shadow-2xl relative">
+          <DashboardLogin onSuccess={handleLoginSuccess} />
+        </div>
+      </div>
     );
   }
 

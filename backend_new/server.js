@@ -43,10 +43,9 @@ function extractToken(req) {
 }
 
 app.use((req, res, next) => {
-  // Allow unauthenticated access to auth endpoints and test-configs
+  // Allow unauthenticated access only to login and test-configs endpoints
   if (
     req.path === '/backend/api/auth/login' ||
-    req.path === '/backend/api/auth/signup' ||
     req.path === '/backend/api/prosbc-files/test-configs'
   ) return next();
   const token = extractToken(req);
