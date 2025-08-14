@@ -4,31 +4,43 @@ import proSbcInstanceService from '../../services/proSbcInstanceService.js';
  * Multi-ProSBC Utility Wrapper
  * This wrapper allows existing ProSBC utilities to work with multiple instances
  * while maintaining backward compatibility
+ * 
+ * Enhanced with better caching and optimization integration
  */
 
-// Cache for ProSBC credentials to avoid repeated database calls
+// Enhanced cache for ProSBC credentials with better management
 const credentialsCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const instanceStatsCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes - increased for better performance
+const STATS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for stats
 
 /**
- * Get ProSBC instance credentials with caching
+ * Get ProSBC instance credentials with enhanced caching
  */
 export async function getProSBCCredentials(instanceId) {
   const cacheKey = `prosbc_${instanceId}`;
   const cached = credentialsCache.get(cacheKey);
   
   if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    // Update access timestamp for LRU behavior
+    cached.lastAccessed = Date.now();
     return cached.credentials;
   }
 
   try {
+    console.log(`[MultiInstanceManager] Fetching credentials for instance: ${instanceId}`);
     const credentials = await proSbcInstanceService.getInstanceCredentials(instanceId);
     
-    // Cache the credentials
+    // Enhanced cache entry with access tracking
     credentialsCache.set(cacheKey, {
       credentials,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      lastAccessed: Date.now(),
+      accessCount: (cached?.accessCount || 0) + 1
     });
+    
+    // Cleanup old cache entries (keep only 20 most recently used)
+    cleanupCredentialsCache();
     
     return credentials;
   } catch (error) {
@@ -168,15 +180,79 @@ export async function getInstanceContext(instanceId) {
 }
 
 /**
- * Get all available ProSBC instances for UI selection
+ * Get available ProSBC instances with enhanced caching
  */
 export async function getAvailableInstances() {
+  const cacheKey = 'available_instances';
+  const cached = instanceStatsCache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp < STATS_CACHE_TTL)) {
+    return cached.data;
+  }
+
   try {
-    return await proSbcInstanceService.getAllInstances();
+    const instances = await proSbcInstanceService.getAllInstances();
+    
+    // Cache the result
+    instanceStatsCache.set(cacheKey, {
+      data: instances,
+      timestamp: Date.now()
+    });
+    
+    return instances;
   } catch (error) {
     console.error('Failed to get available instances:', error.message);
+    
+    // Return cached data if available, even if stale
+    if (cached) {
+      console.log('Using stale instance cache due to error');
+      return cached.data;
+    }
+    
     return [];
   }
+}
+
+/**
+ * Cleanup credentials cache to prevent memory leaks
+ */
+function cleanupCredentialsCache() {
+  if (credentialsCache.size <= 20) return;
+  
+  // Convert to array and sort by last accessed time
+  const entries = Array.from(credentialsCache.entries())
+    .sort(([,a], [,b]) => b.lastAccessed - a.lastAccessed);
+  
+  // Keep only the 15 most recently used entries
+  credentialsCache.clear();
+  entries.slice(0, 15).forEach(([key, value]) => {
+    credentialsCache.set(key, value);
+  });
+  
+  console.log(`[MultiInstanceManager] Cleaned credentials cache, kept ${credentialsCache.size} entries`);
+}
+
+/**
+ * Get cache statistics
+ */
+export function getCacheStats() {
+  const credentialsStats = Array.from(credentialsCache.values());
+  const totalAccess = credentialsStats.reduce((sum, entry) => sum + entry.accessCount, 0);
+  
+  return {
+    credentialsCache: {
+      size: credentialsCache.size,
+      totalAccess,
+      avgAccessPerEntry: credentialsStats.length > 0 ? totalAccess / credentialsStats.length : 0
+    },
+    instanceStatsCache: {
+      size: instanceStatsCache.size
+    },
+    cacheSettings: {
+      credentialsTTL: CACHE_TTL,
+      statsTTL: STATS_CACHE_TTL
+    }
+  };
 }
 
 export default {
@@ -186,5 +262,6 @@ export default {
   prosbcInstanceMiddleware,
   clearCredentialsCache,
   getAvailableInstances,
-  getInstanceContext
+  getInstanceContext,
+  getCacheStats
 };
