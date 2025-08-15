@@ -31,7 +31,7 @@ class SessionPool {
     // Return existing valid session
     if (existing && this.isSessionValid(existing)) {
       existing.lastUsed = Date.now();
-      return existing.cookie;
+      return existing.cookie;       
     }
 
     // Check if we're already creating a session for this instance
