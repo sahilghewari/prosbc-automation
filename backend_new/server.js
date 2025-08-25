@@ -7,13 +7,10 @@ import jwt from 'jsonwebtoken';
 import Log from './models/Log.js';
 import proSbcInstanceService from './services/proSbcInstanceService.js';
 
-import napsRouter from './routes/naps.js';
-import filesRouter from './routes/files.js';
+// Removed unused: naps, files legacy routes
 import authRouter from './routes/auth.js';
 import profileRouter from './routes/profile.js';
-import prosbcNapRouter from './routes/prosbc-nap.js';
-import prosbcNapApiRouter from './routes/prosbc-nap-api.js';
-import napEditRoutes from './routes/napEdit.js';
+// Removed unused: prosbc-nap, prosbc-nap-api, napEdit
 import prosbcInstancesRouter from './routes/prosbcInstances.js';
 
 import prosbcUploadRouter from './routes/prosbcUpload.js';
@@ -80,20 +77,12 @@ app.use(async (req, res, next) => {
 });
 
 
-// NAP routes
-app.use('/backend/api/naps', napsRouter);
-app.use('/backend/api/prosbc-nap', prosbcNapRouter);
-// ProSBC NAP API (new, Node.js backend logic)
-app.use('/backend/api/prosbc-nap-api', prosbcNapApiRouter);
-
-
-// Files routes
-app.use('/backend/api/files', filesRouter);
+// Removed unused NAP and legacy files routes
 
 // Auth routes
 app.use('/backend/api/auth', authRouter);
 app.use('/backend/api/auth', profileRouter);
-app.use('/backend/api/nap-edit', napEditRoutes);
+// Removed unused nap-edit routes
 
 // ProSBC Instance Management routes
 app.use('/backend/api/prosbc-instances', prosbcInstancesRouter);

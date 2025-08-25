@@ -23,6 +23,9 @@ const CSVEditorTable = ({
   const [fileHistory, setFileHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [currentFileId, setCurrentFileId] = useState(null);
+  const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkInput, setBulkInput] = useState('');
+  const [bulkTargetColumn, setBulkTargetColumn] = useState(0);
   
   const tableRef = useRef(null);
   const cellRefs = useRef({});
@@ -520,6 +523,81 @@ const CSVEditorTable = ({
     setHasChanges(true);
   };
 
+  // Bulk add values into a selected column
+  const handleBulkAdd = () => {
+    if (!bulkInput.trim()) {
+      alert('Please paste one or more values to add.');
+      return;
+    }
+
+    const columnIndex = Math.max(0, Math.min(bulkTargetColumn, headers.length - 1));
+    // Split by newline, comma, or whitespace
+    const rawValues = bulkInput
+      .split(/\r?\n|,|\s+/)
+      .map(v => v.trim())
+      .filter(v => v.length > 0);
+
+    if (rawValues.length === 0) {
+      alert('No valid values found to add.');
+      return;
+    }
+
+    // Deduplicate input values while preserving order
+    const seen = new Set();
+    const values = rawValues.filter(v => {
+      if (seen.has(v)) return false;
+      seen.add(v);
+      return true;
+    });
+
+    // Collect existing values in target column to prevent duplicates
+    const existingValues = new Set(
+      rows
+        .map(r => (r.data[columnIndex] || '').trim())
+        .filter(v => v !== '')
+    );
+
+    const newRowsToAdd = [];
+    const newErrors = { ...errors };
+
+    for (const value of values) {
+      // DM files: enforce 10-digit numbers
+      if (isDMFile) {
+        if (!/^\d{10}$/.test(value)) {
+          // Mark error but continue processing others
+          newErrors[`bulk-${value}`] = `Invalid DM entry '${value}': must be exactly 10 digits`;
+          continue;
+        }
+      }
+
+      if (existingValues.has(value)) {
+        // Skip duplicates already present in column
+        continue;
+      }
+
+      const newRow = {
+        id: Date.now() + Math.random(),
+        data: new Array(headers.length).fill(''),
+        isNew: true
+      };
+      newRow.data[columnIndex] = value;
+      newRowsToAdd.push(newRow);
+      existingValues.add(value);
+    }
+
+    if (newRowsToAdd.length === 0) {
+      setErrors(newErrors);
+      alert('No new values to add (all were invalid or duplicates).');
+      return;
+    }
+
+    setRows([...rows, ...newRowsToAdd]);
+    setErrors(newErrors);
+    setHasChanges(true);
+    setShowBulkAdd(false);
+    setBulkInput('');
+  };
+
   // Delete row
   const deleteRow = (rowIndex) => {
     if (rows.length <= 1) {
@@ -709,6 +787,17 @@ const CSVEditorTable = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             Add Row
+          </button>
+          <button
+            onClick={() => setShowBulkAdd(true)}
+            className="inline-flex items-center px-2 py-1 bg-cyan-600 text-white rounded hover:bg-cyan-700 transition-colors duration-200 disabled:opacity-50"
+            disabled={isUpdating}
+            title={isDMFile ? 'Paste multiple 10-digit numbers at once' : 'Paste multiple values at once'}
+          >
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Bulk Add
           </button>
           <button
             onClick={addColumn}
@@ -942,6 +1031,65 @@ const CSVEditorTable = ({
               <li key={key}>• {error}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Bulk Add Modal */}
+      {showBulkAdd && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 w-full max-w-xl mx-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold text-lg">Bulk Add {isDMFile ? 'Numbers' : 'Values'}</h3>
+              <button
+                onClick={() => setShowBulkAdd(false)}
+                className="text-gray-400 hover:text-white"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs text-gray-300">
+                {isDMFile ? 'Paste one 10-digit number per line, or separated by commas/spaces. Duplicates and invalid entries will be skipped.' : 'Paste values separated by newlines, commas, or spaces.'}
+              </div>
+              <div>
+                <label className="block text-xs text-gray-300 mb-1">Target Column</label>
+                <select
+                  value={bulkTargetColumn}
+                  onChange={(e) => setBulkTargetColumn(parseInt(e.target.value, 10))}
+                  className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                >
+                  {headers.map((h, idx) => (
+                    <option key={idx} value={idx}>{h || `Column ${idx + 1}`}</option>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                value={bulkInput}
+                onChange={(e) => setBulkInput(e.target.value)}
+                rows={8}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white text-sm"
+                placeholder={isDMFile ? 'e.g.\n1234567890\n0987654321\n...' : 'Paste values here'}
+              />
+              <div className="flex items-center justify-end space-x-2">
+                <button
+                  onClick={() => setShowBulkAdd(false)}
+                  className="px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkAdd}
+                  className="px-3 py-1.5 bg-cyan-600 text-white rounded hover:bg-cyan-700 text-sm"
+                >
+                  Add Values
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

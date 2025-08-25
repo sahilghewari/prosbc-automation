@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
-import NapCreatorEnhanced from './components/NapCreatorEnhanced';
-import NapManagerEnhanced from './components/NapManagerEnhanced';
 import FileUploader from './components/FileUploader';
 import FileManagement from './components/FileManagement';
 import RoutesetMapping from './components/RoutesetMapping';
 import ActivationGeneration from './components/ActivationGeneration';
-import DatabaseStatus from './components/DatabaseStatus';
-import DatabaseDashboard from './components/DatabaseDashboard';
-import EnhancedDatabaseDashboard from './components/EnhancedDatabaseDashboard';
 import DashboardLogin from './DashboardLogin';
 import Profile from './components/Profile';
 import ProSBCInstanceManager from './components/ProSBCInstanceManager';
-import InstanceStatusDisplay from './components/InstanceStatusDisplay';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import { ProSBCInstanceProvider, useProSBCInstance } from './contexts/ProSBCInstanceContext';
@@ -150,12 +144,6 @@ function AppContent() {
   // Render different content based on active section
   const renderContent = () => {
     switch (activeSection) {
-      case 'database-status':
-        return <DatabaseStatus showDetails={true} />;
-      case 'nap-creation':
-        return <NapCreatorEnhanced onAuthError={handleAuthError} />;
-      case 'nap-management':
-        return <NapManagerEnhanced onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-upload':
         return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-management':
