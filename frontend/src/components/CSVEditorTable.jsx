@@ -26,6 +26,7 @@ const CSVEditorTable = ({
   const [showBulkAdd, setShowBulkAdd] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
   const [bulkTargetColumn, setBulkTargetColumn] = useState(0);
+  const [bulkCustomerName, setBulkCustomerName] = useState('');
   
   const tableRef = useRef(null);
   const cellRefs = useRef({});
@@ -557,6 +558,13 @@ const CSVEditorTable = ({
         .filter(v => v !== '')
     );
 
+    // Find routeset_name column index
+    const routesetNameIndex = headers.findIndex(h => 
+      h.toLowerCase().includes('routeset_name') || 
+      h.toLowerCase().includes('customer') || 
+      h.toLowerCase().includes('name')
+    );
+
     const newRowsToAdd = [];
     const newErrors = { ...errors };
 
@@ -580,7 +588,15 @@ const CSVEditorTable = ({
         data: new Array(headers.length).fill(''),
         isNew: true
       };
+      
+      // Set the main value in target column
       newRow.data[columnIndex] = value;
+      
+      // Set customer name in routeset_name column if found and customer name provided
+      if (routesetNameIndex !== -1 && bulkCustomerName.trim()) {
+        newRow.data[routesetNameIndex] = bulkCustomerName.trim();
+      }
+      
       newRowsToAdd.push(newRow);
       existingValues.add(value);
     }
@@ -596,6 +612,7 @@ const CSVEditorTable = ({
     setHasChanges(true);
     setShowBulkAdd(false);
     setBulkInput('');
+    setBulkCustomerName('');
   };
 
   // Delete row
@@ -1067,10 +1084,25 @@ const CSVEditorTable = ({
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-xs text-gray-300 mb-1">Customer Name (for routeset_name column)</label>
+                <input
+                  type="text"
+                  value={bulkCustomerName}
+                  onChange={(e) => setBulkCustomerName(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                  placeholder="Enter customer name to apply to all rows"
+                />
+                <div className="text-xs text-gray-400 mt-1">
+                  {headers.findIndex(h => h.toLowerCase().includes('routeset_name') || h.toLowerCase().includes('customer') || h.toLowerCase().includes('name')) !== -1 
+                    ? `✓ Will fill "${headers[headers.findIndex(h => h.toLowerCase().includes('routeset_name') || h.toLowerCase().includes('customer') || h.toLowerCase().includes('name'))]}" column`
+                    : '⚠ No routeset_name/customer/name column detected'}
+                </div>
+              </div>
               <textarea
                 value={bulkInput}
                 onChange={(e) => setBulkInput(e.target.value)}
-                rows={8}
+                rows={6}
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-white text-sm"
                 placeholder={isDMFile ? 'e.g.\n1234567890\n0987654321\n...' : 'Paste values here'}
               />

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
 // Create the context
 const ProSBCInstanceContext = createContext();
@@ -35,7 +35,8 @@ export const ProSBCInstanceProvider = ({ children }) => {
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [refreshCallbacks, setRefreshCallbacks] = useState(new Set());
+  // Use ref to avoid re-renders when registering callbacks
+  const refreshCallbacksRef = useRef(new Set());
 
   // Check if user is authenticated
   const isAuthenticated = () => {
@@ -182,10 +183,10 @@ export const ProSBCInstanceProvider = ({ children }) => {
     saveSelectedInstanceId(instanceId);
 
     // Trigger refresh callbacks if instance actually changed
-    if (previousInstanceId !== instanceId && refreshCallbacks.size > 0) {
-      console.log(`[ProSBCInstanceContext] Triggering ${refreshCallbacks.size} refresh callbacks for instance change`);
+    if (previousInstanceId !== instanceId && refreshCallbacksRef.current.size > 0) {
+      console.log(`[ProSBCInstanceContext] Triggering ${refreshCallbacksRef.current.size} refresh callbacks for instance change`);
       const targetInstance = instance || instances.find(inst => inst.id === instanceId);
-      refreshCallbacks.forEach(callback => {
+      refreshCallbacksRef.current.forEach(callback => {
         try {
           callback(instanceId, targetInstance);
         } catch (error) {
@@ -238,23 +239,19 @@ export const ProSBCInstanceProvider = ({ children }) => {
     }
   };
 
-  // Register a callback to be called when instance changes
-  const registerRefreshCallback = (callback) => {
-    setRefreshCallbacks(prev => new Set([...prev, callback]));
+  // Register a callback to be called when instance changes (stable identity)
+  const registerRefreshCallback = useCallback((callback) => {
+    refreshCallbacksRef.current.add(callback);
     return () => {
-      setRefreshCallbacks(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(callback);
-        return newSet;
-      });
+      refreshCallbacksRef.current.delete(callback);
     };
-  };
+  }, []);
 
   // Manually trigger all refresh callbacks
   const triggerRefresh = () => {
-    if (refreshCallbacks.size > 0 && selectedInstance) {
-      console.log(`[ProSBCInstanceContext] Manually triggering ${refreshCallbacks.size} refresh callbacks`);
-      refreshCallbacks.forEach(callback => {
+    if (refreshCallbacksRef.current.size > 0 && selectedInstance) {
+      console.log(`[ProSBCInstanceContext] Manually triggering ${refreshCallbacksRef.current.size} refresh callbacks`);
+      refreshCallbacksRef.current.forEach(callback => {
         try {
           callback(selectedInstanceId, selectedInstance);
         } catch (error) {
