@@ -5,6 +5,7 @@ import './models/index.js';
 
 import jwt from 'jsonwebtoken';
 import Log from './models/Log.js';
+import ActiveUser from './models/ActiveUser.js';
 import proSbcInstanceService from './services/proSbcInstanceService.js';
 
 // Removed unused: naps, files legacy routes
@@ -227,8 +228,10 @@ const PORT = process.env.PORT || 3001;
 (async () => {
   try {
     await database.connect();
-    // Sync Log table (does not drop existing data)
-    await Log.sync();
+  // Sync Log table (does not drop existing data)
+  await Log.sync();
+  // Sync ActiveUser table
+  await ActiveUser.sync();
     
     // Initialize default ProSBC instances
     await proSbcInstanceService.initializeDefaultInstances();
