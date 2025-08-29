@@ -134,6 +134,16 @@ export const ProSBCInstanceProvider = ({ children }) => {
         let errorMessage = `Failed to fetch instances: ${response.status}`;
         try {
           const errorData = await response.json();
+          // Forced logout detection
+          if (
+            response.status === 401 &&
+            errorData && typeof errorData.message === 'string' &&
+            errorData.message.toLowerCase().includes('session expired')
+          ) {
+            localStorage.removeItem('dashboard_token');
+            window.location.href = '/login';
+            return;
+          }
           if (errorData.error) {
             errorMessage += ` - ${errorData.error}`;
           }
@@ -306,6 +316,16 @@ export const ProSBCInstanceProvider = ({ children }) => {
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      // Forced logout detection
+      if (
+        response.status === 401 &&
+        errorData && typeof errorData.message === 'string' &&
+        errorData.message.toLowerCase().includes('session expired')
+      ) {
+        localStorage.removeItem('dashboard_token');
+        window.location.href = '/login';
+        return;
+      }
       throw new Error(errorData.message || `API call failed: ${response.status}`);
     }
 

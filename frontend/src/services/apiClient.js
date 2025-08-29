@@ -43,16 +43,25 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     console.error('API Response Error:', error);
-    
     if (error.response) {
       // Server responded with error status
       const { status, data } = error.response;
       console.error(`Server Error ${status}:`, data);
+      // Forced logout detection
+      if (
+        status === 401 &&
+        data && typeof data.message === 'string' &&
+        data.message.toLowerCase().includes('session expired')
+      ) {
+        // Clear token and redirect to login
+        localStorage.removeItem('prosbc_token');
+        window.location.href = '/login';
+        return;
+      }
     } else if (error.request) {
       // Network error
       console.error('Network Error:', error.message);
     }
-    
     return Promise.reject(error);
   }
 );

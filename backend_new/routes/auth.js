@@ -37,9 +37,9 @@ router.post('/login', async (req, res) => {
       if (activeUser) {
         await ActiveUser.destroy({ where: {} }); // Remove previous active user
       }
-      await ActiveUser.create({ userId: user.id, username: user.username });
       // Generate JWT
       const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
+      await ActiveUser.create({ userId: user.id, username: user.username, token });
       return res.json({ token });
     } else {
       return res.status(401).json({ message: 'Invalid username or password.' });

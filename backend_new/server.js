@@ -5,7 +5,7 @@ import './models/index.js';
 
 import jwt from 'jsonwebtoken';
 import Log from './models/Log.js';
-import ActiveUser from './models/ActiveUser.js';
+// ...existing code...
 import proSbcInstanceService from './services/proSbcInstanceService.js';
 
 // Removed unused: naps, files legacy routes
@@ -40,7 +40,9 @@ function extractToken(req) {
   return null;
 }
 
-app.use((req, res, next) => {
+import ActiveUser from './models/ActiveUser.js';
+
+app.use(async (req, res, next) => {
   // Allow unauthenticated access only to login and test-configs endpoints
   if (
     req.path === '/backend/api/auth/login' ||
@@ -48,8 +50,13 @@ app.use((req, res, next) => {
   ) return next();
   const token = extractToken(req);
   if (!token) return res.status(401).json({ message: 'Missing or invalid token' });
-  jwt.verify(token, process.env.JWT_SECRET || 'secret', (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET || 'secret', async (err, user) => {
     if (err) return res.status(401).json({ message: 'Invalid or expired token' });
+    // Check if token matches the active user's token
+    const activeUser = await ActiveUser.findOne();
+    if (!activeUser || activeUser.token !== token) {
+      return res.status(401).json({ message: 'Session expired or overridden. Please login again.' });
+    }
     req.user = user;
     next();
   });

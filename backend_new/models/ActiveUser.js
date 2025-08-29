@@ -23,6 +23,10 @@ const ActiveUser = database.sequelize.define('ActiveUser', {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   },
+  token: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
 });
 
 export default ActiveUser;
