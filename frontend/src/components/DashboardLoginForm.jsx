@@ -22,7 +22,7 @@ const DashboardLoginForm = ({ onLogin, isLoading, error }) => {
   return (
     <div className="w-full max-w-md mx-auto">
       <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-700 rounded-xl p-6 shadow-2xl">
-        <h2 className="text-2xl font-bold text-white">Dashboard Login</h2>
+        <h2 className="text-2xl font-bold text-white">Dashboard Login-single</h2>
         <p className="text-gray-300 mt-1 text-sm">
           Enter your dashboard credentials to access the management system.
         </p>
