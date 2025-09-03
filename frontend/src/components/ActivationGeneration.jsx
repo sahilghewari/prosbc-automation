@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 
 
@@ -28,13 +28,6 @@ const ActivationGeneration = ({ onAuthError }) => {
   const [activating, setActivating] = useState(false);
   const [validating, setValidating] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [generateAllResults, setGenerateAllResults] = useState(null);
-  const [showGenerateAllModal, setShowGenerateAllModal] = useState(false);
-  const [jobId, setJobId] = useState(null);
-  const [polling, setPolling] = useState(false);
-  const pollRef = useRef(null);
-  const [singleGenerateResult, setSingleGenerateResult] = useState(null);
-  const [showSingleGenerateModal, setShowSingleGenerateModal] = useState(false);
 
   // Load initial data and reload when instance changes
   useEffect(() => {
@@ -43,16 +36,6 @@ const ActivationGeneration = ({ onAuthError }) => {
       loadData();
     }
   }, [selectedInstance]);
-
-  // cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) {
-        clearTimeout(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, []);
 
   const loadData = async () => {
     try {
@@ -152,8 +135,6 @@ const ActivationGeneration = ({ onAuthError }) => {
     }
   };
 
-  // Modal render will be placed near the return JSX bottom via an effect of returning JSX later
-
   const handleValidateConfiguration = async () => {
     try {
       setValidating(true);
@@ -208,17 +189,8 @@ const ActivationGeneration = ({ onAuthError }) => {
       
       console.log('Starting routing database generation...');
       const res = await fetch('/backend/api/routeset-mapping/generate-database', { method: 'POST', headers: getAuthHeaders() });
-      if (!res.ok) {
-        const text = await res.text();
-        // show modal with failure details
-        setSingleGenerateResult({ success: false, message: text || `HTTP ${res.status}` , instance: selectedInstance?.id, url: selectedInstance?.baseUrl });
-        setShowSingleGenerateModal(true);
-        throw new Error(text || `HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(await res.text());
       const result = await res.json();
-      // show modal with detailed result for this particular instance
-      setSingleGenerateResult({ ...result, instance: selectedInstance?.id, url: selectedInstance?.baseUrl });
-      setShowSingleGenerateModal(true);
       if (result.success) {
         setSuccessMessage(result.message || 'Route database was generated successfully');
         console.log('Generation completed successfully:', result);
@@ -226,7 +198,6 @@ const ActivationGeneration = ({ onAuthError }) => {
           console.log('Server response:', result.response);
         }
       } else {
-        // keep existing error handling below to set error state as well
         throw new Error(result.message || 'Generation failed with unknown error');
       }
       
@@ -469,206 +440,6 @@ const ActivationGeneration = ({ onAuthError }) => {
                   </>
                 )}
               </button>
-              <button
-                onClick={async () => {
-                  if (generating || activating || validating || polling) return;
-                  if (!confirm('Generate routing database on all ProSBC instances? This will run generation on each instance separately.')) return;
-
-                  try {
-                    setGenerating(true);
-                    setGenerateAllResults([]);
-                    setShowGenerateAllModal(true);
-
-                    // Start background job
-                    const res = await fetch('/backend/api/prosbc-files/generate-routing-all', {
-                      method: 'POST',
-                      credentials: 'include',
-                      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ background: true, concurrency: 5 })
-                    });
-
-                    const data = await res.json();
-                    if (!data.success || !data.jobId) {
-                      const errMsg = data.error || 'Failed to start background job';
-                      setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: errMsg }]);
-                      setGenerating(false);
-                      return;
-                    }
-
-                    const jid = data.jobId;
-                    setJobId(jid);
-                    setPolling(true);
-
-                    // Polling function
-                    const poll = async () => {
-                      try {
-                        const statusRes = await fetch(`/backend/api/prosbc-files/generate-routing-all/status/${encodeURIComponent(jid)}`, {
-                          method: 'GET',
-                          credentials: 'include',
-                          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
-                        });
-                        if (!statusRes.ok) {
-                          console.error('Poll status HTTP error', statusRes.status);
-                        } else {
-                          const statusJson = await statusRes.json();
-                          if (statusJson.success && statusJson.job) {
-                            const job = statusJson.job;
-                            // Update modal with current results
-                            setGenerateAllResults(job.results || []);
-
-                            if (job.status && job.status !== 'running') {
-                              // finished
-                              setPolling(false);
-                              setGenerating(false);
-                              // leave modal open so user can inspect results
-                              clearTimeout(pollRef.current);
-                              pollRef.current = null;
-                              return;
-                            }
-                          }
-                        }
-                      } catch (err) {
-                        console.error('Error polling job status:', err);
-                      }
-                      // schedule next poll
-                      pollRef.current = setTimeout(poll, 2500);
-                    };
-
-                    // start first poll
-                    pollRef.current = setTimeout(poll, 1000);
-                  } catch (err) {
-                    console.error('Generate for all error:', err);
-                    setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: err.message }]);
-                  } finally {
-                    // keep generating true while polling; actual clearing occurs when job completes or user closes modal
-                  }
-                }}
-                disabled={generating || activating || validating || polling}
-                className="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-              >
-                { (generating || polling) ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Generating on all...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h4l3 8 4-16 3 8h4" />
-                    </svg>
-                    Generate for All ProSBC
-                  </>
-                )}
-              </button>
-              <button
-                onClick={async () => {
-                  if (generating || activating || validating || polling) return;
-                  if (!confirm('Validate selected configuration on all ProSBC instances?')) return;
-                  try {
-                    setGenerating(true);
-                    setGenerateAllResults([]);
-                    setShowGenerateAllModal(true);
-                    const res = await fetch('/backend/api/prosbc-files/validate-configuration-all', {
-                      method: 'POST',
-                      credentials: 'include',
-                      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ background: true, concurrency: 5, configurationId: selectedConfig })
-                    });
-                    const data = await res.json();
-                    if (!data.success || !data.jobId) {
-                      setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: data.error || 'failed to start validation job' }]);
-                      setGenerating(false);
-                      return;
-                    }
-                    const jid = data.jobId; setJobId(jid); setPolling(true);
-                    const poll = async () => {
-                      try {
-                        const statusRes = await fetch(`/backend/api/prosbc-files/validate-configuration-all/status/${encodeURIComponent(jid)}`, { method: 'GET', credentials: 'include', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } });
-                        if (statusRes.ok) {
-                          const statusJson = await statusRes.json();
-                          if (statusJson.success && statusJson.job) {
-                            setGenerateAllResults(statusJson.job.results || []);
-                            if (statusJson.job.status && statusJson.job.status !== 'running') { setPolling(false); setGenerating(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } return; }
-                          }
-                        }
-                      } catch (err) { console.error('Poll validate job error', err); }
-                      pollRef.current = setTimeout(poll, 2500);
-                    };
-                    pollRef.current = setTimeout(poll, 1000);
-                  } catch (err) {
-                    console.error('Validate for all error', err);
-                    setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: err.message }]);
-                  }
-                }}
-                disabled={generating || activating || validating || polling}
-                className="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-              >
-                { (generating || polling) ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    Validate for All ProSBC
-                  </>
-                )}
-              </button>
-
-              <button
-                onClick={async () => {
-                  if (generating || activating || validating || polling) return;
-                  if (!confirm('Activate selected configuration on all ProSBC instances?')) return;
-                  try {
-                    setGenerating(true);
-                    setGenerateAllResults([]);
-                    setShowGenerateAllModal(true);
-                    const res = await fetch('/backend/api/prosbc-files/activate-configuration-all', {
-                      method: 'POST',
-                      credentials: 'include',
-                      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ background: true, concurrency: 5, configurationId: selectedConfig })
-                    });
-                    const data = await res.json();
-                    if (!data.success || !data.jobId) {
-                      setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: data.error || 'failed to start activation job' }]);
-                      setGenerating(false);
-                      return;
-                    }
-                    const jid = data.jobId; setJobId(jid); setPolling(true);
-                    const poll = async () => {
-                      try {
-                        const statusRes = await fetch(`/backend/api/prosbc-files/activate-configuration-all/status/${encodeURIComponent(jid)}`, { method: 'GET', credentials: 'include', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' } });
-                        if (statusRes.ok) {
-                          const statusJson = await statusRes.json();
-                          if (statusJson.success && statusJson.job) {
-                            setGenerateAllResults(statusJson.job.results || []);
-                            if (statusJson.job.status && statusJson.job.status !== 'running') { setPolling(false); setGenerating(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } return; }
-                          }
-                        }
-                      } catch (err) { console.error('Poll activate job error', err); }
-                      pollRef.current = setTimeout(poll, 2500);
-                    };
-                    pollRef.current = setTimeout(poll, 1000);
-                  } catch (err) {
-                    console.error('Activate for all error', err);
-                    setGenerateAllResults([{ instance: 'controller', url: null, success: false, error: err.message }]);
-                  }
-                }}
-                disabled={generating || activating || validating || polling}
-                className="mt-2 inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-              >
-                { (generating || polling) ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    Activate for All ProSBC
-                  </>
-                )}
-              </button>
             </div>
           </div>
           
@@ -707,96 +478,6 @@ const ActivationGeneration = ({ onAuthError }) => {
           )}
         </button>
       </div>
-      {/* Generate For All Results Modal */}
-      {showGenerateAllModal && generateAllResults && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
-          <div className="bg-gray-900 rounded-lg p-4 max-w-3xl w-full mx-4 max-h-[80vh] overflow-auto">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-white font-semibold">Generate on All ProSBC Results</h3>
-              <button onClick={() => { 
-                  setShowGenerateAllModal(false); 
-                  setGenerateAllResults(null);
-                  setJobId(null);
-                  setPolling(false);
-                  if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
-                }} className="text-gray-400 hover:text-white">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              {generateAllResults.length === 0 ? (
-                <div className="text-gray-400">No results returned from server.</div>
-              ) : (
-                generateAllResults.map((r, idx) => (
-                  <div key={idx} className="p-3 rounded border border-gray-700 bg-gray-800">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-gray-200">
-                        <div><strong>Instance:</strong> {r.instance}</div>
-                        <div className="text-xs text-gray-400">URL: {r.url || 'N/A'}</div>
-                      </div>
-                      <div className="text-sm">
-                        {r.success ? (
-                          <span className="px-2 py-0.5 bg-green-600 text-white rounded text-xs">Success</span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-red-600 text-white rounded text-xs">Failure</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-gray-300">
-                      {r.message || r.error || (r.details && r.details.message) || 'No message'}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-4 flex justify-end">
-              <button onClick={() => { setShowGenerateAllModal(false); setGenerateAllResults(null); setJobId(null); setPolling(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Single Instance Generate Result Modal */}
-      {showSingleGenerateModal && singleGenerateResult && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
-          <div className="bg-gray-900 rounded-lg p-4 max-w-2xl w-full mx-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-white font-semibold">Generate Routing Database - Result</h3>
-              <button onClick={() => { setShowSingleGenerateModal(false); setSingleGenerateResult(null); }} className="text-gray-400 hover:text-white">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="p-3 rounded border border-gray-700 bg-gray-800">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-200">
-                  <div><strong>Instance:</strong> {singleGenerateResult.instance || selectedInstance?.id || 'Unknown'}</div>
-                  <div className="text-xs text-gray-400">URL: {singleGenerateResult.url || selectedInstance?.baseUrl || 'N/A'}</div>
-                </div>
-                <div className="text-sm">
-                  {singleGenerateResult.success ? (
-                    <span className="px-2 py-0.5 bg-green-600 text-white rounded text-xs">Success</span>
-                  ) : (
-                    <span className="px-2 py-0.5 bg-red-600 text-white rounded text-xs">Failure</span>
-                  )}
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-gray-300">
-                {singleGenerateResult.message || singleGenerateResult.error || (singleGenerateResult.response && (typeof singleGenerateResult.response === 'string' ? singleGenerateResult.response : JSON.stringify(singleGenerateResult.response))) || 'No message'}
-              </div>
-            </div>
-
-            <div className="mt-4 flex justify-end">
-              <button onClick={() => { setShowSingleGenerateModal(false); setSingleGenerateResult(null); }} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
