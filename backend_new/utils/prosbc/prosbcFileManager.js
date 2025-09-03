@@ -637,7 +637,53 @@ class ProSBCFileAPI {
         try {
           // Select the configuration using the hardcoded configuration ID
           await selectConfiguration(mappedConfig.id, this.baseURL, sessionCookie);
-          // After configuration selection, use the database ID for file operations
+
+          // After configuration selection, verify that the expected file_dbs page returns file content
+          const verifyUrl = `${this.baseURL}/file_dbs/${mappedConfig.dbId}/edit`;
+          const verifyResp = await fetch(verifyUrl, { method: 'GET', headers: await this.getCommonHeaders() });
+          const verifyHtml = await verifyResp.text();
+
+          // If we unexpectedly received the configuration selection page or the section is missing, probe nearby DB IDs
+          const looksLikeConfigPage = verifyHtml.includes('configurations_list') || verifyHtml.includes('Configuration');
+          const hasRoutesetSection = verifyHtml.includes('Routesets Definition') || verifyHtml.includes('Routesets Definition:');
+
+          if (!verifyResp.ok || looksLikeConfigPage || !hasRoutesetSection) {
+            console.log(`[ProSBC1 Config] After selecting mapped config ${mappedConfig.id}, verification for DB ${mappedConfig.dbId} failed (looksLikeConfig=${looksLikeConfigPage}, hasRoutesetSection=${hasRoutesetSection}). Probing alternative DB IDs.`);
+
+            // Probe DB IDs 1..6 to find the actual DB with routesets_definitions present
+            let foundDb = null;
+            for (let probe = 1; probe <= 6; probe++) {
+              try {
+                const probeUrl = `${this.baseURL}/file_dbs/${probe}/edit`;
+                const resp = await fetch(probeUrl, { method: 'GET', headers: await this.getCommonHeaders() });
+                if (!resp.ok) continue;
+                const h = await resp.text();
+                const hasSection = h.includes('Routesets Definition') || h.includes('Routesets Definition:');
+                if (hasSection) {
+                  foundDb = probe;
+                  console.log(`[ProSBC1 Config] Probe success: DB ID ${probe} contains Routesets Definition section`);
+                  break;
+                }
+              } catch (probeErr) {
+                // ignore and continue
+              }
+            }
+
+            if (foundDb) {
+              this.selectedConfigId = String(foundDb);
+              this.configSelectionDone = true;
+              console.log(`[ProSBC1 Config] ✓ Found DB ID ${foundDb} after probing; using DB ID ${foundDb} for file operations`);
+              return;
+            }
+
+            // If probing failed, fallback to the mapped DB ID but surface a warning
+            console.warn(`[ProSBC1 Config] Probing DB IDs did not find a routesets_definitions section; falling back to mapped DB ID ${mappedConfig.dbId}`);
+            this.selectedConfigId = mappedConfig.dbId;
+            this.configSelectionDone = true;
+            return;
+          }
+
+          // If verification passed, use mapped DB ID
           this.selectedConfigId = mappedConfig.dbId;
           this.configSelectionDone = true;
           console.log(`[ProSBC1 Config] ✓ Successfully selected config ${mappedConfig.id} (${mappedConfig.name}), using database ID: ${mappedConfig.dbId}`);
@@ -1494,7 +1540,12 @@ class ProSBCFileAPI {
       }
       
       const files = this.parseFileTable(html, 'Routesets Definition', 'routesets_definitions');
-      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files:`, files);
+      try {
+        const sample = (files || []).slice(0, 6).map(f => f.name || f.id || '').filter(Boolean);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files: count=${(files || []).length}, sample=${JSON.stringify(sample)}`);
+      } catch (e) {
+        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files count=${(files || []).length}`);
+      }
       return { success: true, files };
     } catch (error) {
       console.error(`[ProSBC] Instance: ${this.instanceId}, listDfFiles error:`, error);
@@ -1550,7 +1601,12 @@ class ProSBCFileAPI {
       }
       
       const files = this.parseFileTable(html, 'Routesets Digitmap', 'routesets_digitmaps');
-      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files:`, files);
+      try {
+        const sample = (files || []).slice(0, 6).map(f => f.name || f.id || '').filter(Boolean);
+        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files: count=${(files || []).length}, sample=${JSON.stringify(sample)}`);
+      } catch (e) {
+        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files count=${(files || []).length}`);
+      }
       return { success: true, files };
     } catch (error) {
       console.error(`[ProSBC] Instance: ${this.instanceId}, listDmFiles error:`, error);

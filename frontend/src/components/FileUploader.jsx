@@ -248,6 +248,78 @@ function FileUploader({ onAuthError, configId }) {
     }
   };
 
+  // Upload DF file to all ProSBCs
+  const handleDfUploadAll = async () => {
+    if (!dfFile) {
+      setMessage("❌ Please select a DF file first");
+      return;
+    }
+    setIsLoading(true);
+    setMessage("🔄 Uploading DF file to all ProSBCs...");
+    try {
+      const formData = new FormData();
+      formData.append('file', dfFile, dfFileName);
+      const response = await fetch('/backend/api/prosbc-upload/df/all', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      const result = await response.json();
+      if (result.success) {
+        const details = result.results.map(r => {
+          let msg = `${r.instance}: ${r.success ? 'Success' : 'Failed'}`;
+          if (!r.success && r.error) msg += `\n  Error: ${r.error}`;
+          if (r.details && r.details.status) msg += `\n  Status: ${r.details.status}`;
+          if (r.details && r.details.data && typeof r.details.data === 'string') msg += `\n  Data: ${r.details.data.substring(0, 200)}`;
+          return msg;
+        }).join('\n\n');
+        setMessage(`✅ DF file uploaded to all ProSBCs!\n\n${details}`);
+      } else {
+        throw new Error(result.message || 'Upload failed');
+      }
+    } catch (error) {
+      setMessage(`❌ Failed to upload DF file to all: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Upload DM file to all ProSBCs
+  const handleDmUploadAll = async () => {
+    if (!dmFile) {
+      setMessage("❌ Please select a DM file first");
+      return;
+    }
+    setIsLoading(true);
+    setMessage("🔄 Uploading DM file to all ProSBCs...");
+    try {
+      const formData = new FormData();
+      formData.append('file', dmFile, dmFileName);
+      const response = await fetch('/backend/api/prosbc-upload/dm/all', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData
+      });
+      const result = await response.json();
+      if (result.success) {
+        const details = result.results.map(r => {
+          let msg = `${r.instance}: ${r.success ? 'Success' : 'Failed'}`;
+          if (!r.success && r.error) msg += `\n  Error: ${r.error}`;
+          if (r.details && r.details.status) msg += `\n  Status: ${r.details.status}`;
+          if (r.details && r.details.data && typeof r.details.data === 'string') msg += `\n  Data: ${r.details.data.substring(0, 200)}`;
+          return msg;
+        }).join('\n\n');
+        setMessage(`✅ DM file uploaded to all ProSBCs!\n\n${details}`);
+      } else {
+        throw new Error(result.message || 'Upload failed');
+      }
+    } catch (error) {
+      setMessage(`❌ Failed to upload DM file to all: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Message styling function
   const getMessageClasses = () => {
     if (message.includes("✅") || message.includes("success")) {
@@ -370,6 +442,16 @@ function FileUploader({ onAuthError, configId }) {
                       {isLoading ? 'Uploading DF File...' : 'Upload Definition File'}
                     </span>
                   </button>
+
+                  {/* Upload to All ProSBCs Button (DF) */}
+                  <button
+                    onClick={handleDfUploadAll}
+                    disabled={isLoading || !dfFile}
+                    className="ml-4 px-8 py-4 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 flex items-center space-x-3"
+                  >
+                    <span className="text-xl">🌐</span>
+                    <span>{isLoading ? 'Uploading to All...' : 'Upload to All ProSBCs'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -434,6 +516,16 @@ function FileUploader({ onAuthError, configId }) {
                     <span>
                       {isLoading ? 'Uploading DM File...' : 'Upload Digit Map File'}
                     </span>
+                  </button>
+
+                  {/* Upload to All ProSBCs Button (DM) */}
+                  <button
+                    onClick={handleDmUploadAll}
+                    disabled={isLoading || !dmFile}
+                    className="ml-4 px-8 py-4 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 flex items-center space-x-3"
+                  >
+                    <span className="text-xl">🌐</span>
+                    <span>{isLoading ? 'Uploading to All...' : 'Upload to All ProSBCs'}</span>
                   </button>
                 </div>
               </div>

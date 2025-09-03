@@ -27,6 +27,8 @@ const CSVEditorTable = ({
   const [bulkInput, setBulkInput] = useState('');
   const [bulkTargetColumn, setBulkTargetColumn] = useState(0);
   const [bulkCustomerName, setBulkCustomerName] = useState('');
+  const [updateAllResults, setUpdateAllResults] = useState(null);
+  const [showUpdateAllModal, setShowUpdateAllModal] = useState(false);
   
   const tableRef = useRef(null);
   const cellRefs = useRef({});
@@ -1030,6 +1032,61 @@ const CSVEditorTable = ({
                 </>
               )}
             </button>
+            {/* New button: Save & Update to All ProSBC */}
+            <button
+              onClick={async () => {
+                if (!hasChanges) { alert('No changes to save'); return; }
+                if (!confirm('Save changes and update this file on all ProSBC instances where it exists?')) return;
+                setIsUpdating(true);
+                try {
+                  onProgress?.(10, 'Converting table to CSV...');
+                  const csvString = convertToCSV();
+                  onProgress?.(30, 'Preparing payload...');
+
+                  const formData = new FormData();
+                  const fileName = fileInfo?.name || fileInfo?.fileName || `updated_${Date.now()}.csv`;
+                  const blob = new Blob([csvString], { type: 'text/csv' });
+                  formData.append('file', blob, fileName);
+                  formData.append('fileType', fileInfo?.fileType || fileInfo?.type);
+                  formData.append('fileName', fileName);
+                  formData.append('fileId', fileInfo?.prosbcId || fileInfo?.id || '');
+
+                  onProgress?.(50, 'Sending to backend (update to all)...');
+                  const res = await fetch('/backend/api/prosbc-files/update-to-all', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include',
+                    headers: {
+                      ...getAuthHeaders()
+                    }
+                  });
+                  const result = await res.json();
+                  if (result.success) {
+                    onProgress?.(100, 'Update to all completed');
+                    setOriginalData({ headers, rows });
+                    setHasChanges(false);
+                    // Save per-instance results and show modal
+                    setUpdateAllResults(result.results || []);
+                    setShowUpdateAllModal(true);
+                  } else {
+                    throw new Error(result.error || 'Update to all failed');
+                  }
+                } catch (err) {
+                  console.error('Update to all error:', err);
+                  alert(`Update to all failed: ${err.message}`);
+                } finally {
+                  setIsUpdating(false);
+                }
+              }}
+              className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 transition-colors duration-200 disabled:opacity-50 text-xs"
+              disabled={isUpdating || !hasChanges || Object.keys(errors).length > 0}
+              title="Save and update this file across all ProSBC instances where it exists"
+            >
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Save & Update to All
+            </button>
           </div>
         </div>
       </div>
@@ -1133,6 +1190,53 @@ const CSVEditorTable = ({
           onClose={() => setShowHistory(false)}
           isUpdating={isUpdating}
         />
+      )}
+
+      {/* Update To All Results Modal */}
+      {showUpdateAllModal && updateAllResults && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-60">
+          <div className="bg-gray-900 rounded-lg p-4 max-w-3xl w-full mx-4 max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold">Update to All Results</h3>
+              <button onClick={() => { setShowUpdateAllModal(false); setUpdateAllResults(null); }} className="text-gray-400 hover:text-white">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {updateAllResults.length === 0 ? (
+                <div className="text-gray-400">No results returned from server.</div>
+              ) : (
+                updateAllResults.map((r, idx) => (
+                  <div key={idx} className="p-3 rounded border border-gray-700 bg-gray-800">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-gray-200">
+                        <div><strong>Instance:</strong> {r.instance}</div>
+                        <div className="text-xs text-gray-400">URL: {r.url || 'N/A'}</div>
+                      </div>
+                      <div className="text-sm">
+                        {r.success ? (
+                          <span className="px-2 py-0.5 bg-green-600 text-white rounded text-xs">Success</span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-red-600 text-white rounded text-xs">Failure</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-300">
+                      {r.message || r.error || (r.details && r.details.message) || 'No message'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => { setShowUpdateAllModal(false); setUpdateAllResults(null); }} className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

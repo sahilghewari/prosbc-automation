@@ -29,13 +29,53 @@ async function uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
   if (!resolvedBaseUrl) {
     throw new Error('ProSBC base URL is not defined. Provide baseUrl parameter, instanceId, or set PROSBC_BASE_URL in environment variables.');
   }
-  const url = `${resolvedBaseUrl}/file_dbs/1/routesets_definitions`;
-  const uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_definitions/new`;
+  // Try to discover the correct file DB id from the /file_dbs listing page.
+  // If discovery fails, fall back to the legacy /file_dbs/1/... endpoint.
+  let uploadFormUrl = null;
+  let url = null;
+  try {
+    // Allow 200 (HTML list) or 302 (redirect to a file_dbs/<id>/... URL) so discovery doesn't fail
+    const listResp = await axios.get(`${resolvedBaseUrl}/file_dbs`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Cookie: `_WebOAMP_session=${sessionCookie}`,
+      },
+      maxRedirects: 0,
+      validateStatus: status => status === 200 || status === 302,
+    });
+
+    if (listResp.status === 200) {
+      const listHtml = typeof listResp.data === 'string' ? listResp.data : '';
+      const match = listHtml.match(/\/file_dbs\/(\d+)\/routesets_definitions\/new/);
+      if (match) {
+        const discoveredId = match[1];
+        uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${discoveredId}/routesets_definitions/new`;
+        console.debug('[ProSBC DF Upload] Discovered file DB id from /file_dbs HTML:', discoveredId);
+      }
+    } else if (listResp.status === 302) {
+      // Some ProSBC installs redirect directly to the DB-specific page. Extract from Location header.
+      const location = listResp.headers && (listResp.headers.location || listResp.headers.Location);
+      if (location) {
+        const match = String(location).match(/\/file_dbs\/(\d+)\//);
+        if (match) {
+          const discoveredId = match[1];
+          uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${discoveredId}/routesets_definitions/new`;
+          console.debug('[ProSBC DF Upload] Discovered file DB id from /file_dbs redirect Location:', discoveredId);
+        }
+      }
+    }
+  } catch (err) {
+    console.debug('[ProSBC DF Upload] file_dbs discovery failed, will fallback to default:', err.message);
+  }
+  if (!uploadFormUrl) {
+    uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_definitions/new`;
+  }
   // Step 1: Fetch upload form page to get authenticity_token and tbgw_files_db_id
   let authenticityToken = null;
   let tbgwFilesDbId = null;
   try {
-    const uploadPageResp = await axios.get(uploadFormUrl, {
+  const uploadPageResp = await axios.get(uploadFormUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)',
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -60,10 +100,14 @@ async function uploadDfFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
     const dbIdMatch = uploadPageResp.data.match(/name="tbgw_routesets_definition\[tbgw_files_db_id\]" type="hidden" value="(\d+)"/);
     if (dbIdMatch) {
       tbgwFilesDbId = dbIdMatch[1];
+      // Use the extracted dbId to build the correct upload URL
+      url = `${resolvedBaseUrl}/file_dbs/${tbgwFilesDbId}/routesets_definitions`;
+      uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${tbgwFilesDbId}/routesets_definitions/new`;
     } else {
       throw new Error('tbgw_files_db_id not found in upload page');
     }
-    console.debug('[ProSBC DF Upload] Extracted fields:', { authenticityToken, tbgwFilesDbId });
+  console.debug(`[ProSBC DF Upload] Instance: ${instanceId || 'N/A'} | POST URL: ${url} | Extracted DB ID: ${tbgwFilesDbId}`);
+  console.debug('[ProSBC DF Upload] Extracted fields:', { authenticityToken, tbgwFilesDbId, url });
   } catch (err) {
     console.error('[ProSBC DF Upload] Failed to fetch upload page or extract fields:', err.message);
     return { success: false, error: err.message };
@@ -135,8 +179,48 @@ async function uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
   if (!resolvedBaseUrl) {
     throw new Error('ProSBC base URL is not defined. Provide baseUrl parameter, instanceId, or set PROSBC_BASE_URL in environment variables.');
   }
-  const url = `${resolvedBaseUrl}/file_dbs/1/routesets_digitmaps`;
-  const uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_digitmaps/new`;
+  // Try to discover the correct file DB id from the /file_dbs listing page for DM uploads.
+  // If discovery fails, fall back to the legacy /file_dbs/1/... endpoint.
+  let uploadFormUrl = null;
+  let url = null;
+  try {
+    // Allow 200 (HTML list) or 302 (redirect to a file_dbs/<id>/... URL) so discovery doesn't fail
+    const listResp = await axios.get(`${resolvedBaseUrl}/file_dbs`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Cookie: `_WebOAMP_session=${sessionCookie}`,
+      },
+      maxRedirects: 0,
+      validateStatus: status => status === 200 || status === 302,
+    });
+
+    if (listResp.status === 200) {
+      const listHtml = typeof listResp.data === 'string' ? listResp.data : '';
+      const match = listHtml.match(/\/file_dbs\/(\d+)\/routesets_digitmaps\/new/);
+      if (match) {
+        const discoveredId = match[1];
+        uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${discoveredId}/routesets_digitmaps/new`;
+        console.debug('[ProSBC DM Upload] Discovered file DB id from /file_dbs HTML:', discoveredId);
+      }
+    } else if (listResp.status === 302) {
+      // Some ProSBC installs redirect directly to the DB-specific page. Extract from Location header.
+      const location = listResp.headers && (listResp.headers.location || listResp.headers.Location);
+      if (location) {
+        const match = String(location).match(/\/file_dbs\/(\d+)\//);
+        if (match) {
+          const discoveredId = match[1];
+          uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${discoveredId}/routesets_digitmaps/new`;
+          console.debug('[ProSBC DM Upload] Discovered file DB id from /file_dbs redirect Location:', discoveredId);
+        }
+      }
+    }
+  } catch (err) {
+    console.debug('[ProSBC DM Upload] file_dbs discovery failed, will fallback to default:', err.message);
+  }
+  if (!uploadFormUrl) {
+    uploadFormUrl = `${resolvedBaseUrl}/file_dbs/1/routesets_digitmaps/new`;
+  }
   // Step 1: Fetch upload form page to get authenticity_token and tbgw_files_db_id
   let authenticityToken = null;
   let tbgwFilesDbId = null;
@@ -166,10 +250,13 @@ async function uploadDmFileToProSBC(fileBuffer, fileName, sessionCookie, baseUrl
     const dbIdMatch = uploadPageResp.data.match(/name="tbgw_routesets_digitmap\[tbgw_files_db_id\]" type="hidden" value="(\d+)"/);
     if (dbIdMatch) {
       tbgwFilesDbId = dbIdMatch[1];
+      // Use the extracted dbId to build the correct upload URL
+      url = `${resolvedBaseUrl}/file_dbs/${tbgwFilesDbId}/routesets_digitmaps`;
+      uploadFormUrl = `${resolvedBaseUrl}/file_dbs/${tbgwFilesDbId}/routesets_digitmaps/new`;
     } else {
       throw new Error('tbgw_files_db_id not found in upload page');
     }
-    console.debug('[ProSBC DM Upload] Extracted fields:', { authenticityToken, tbgwFilesDbId });
+    console.debug('[ProSBC DM Upload] Extracted fields:', { authenticityToken, tbgwFilesDbId, url });
   } catch (err) {
     console.error('[ProSBC DM Upload] Failed to fetch upload page or extract fields:', err.message);
     return { success: false, error: err.message };

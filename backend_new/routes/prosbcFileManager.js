@@ -5,6 +5,7 @@ import multer from 'multer';
 import fs from 'fs';
 import prosbcFileManager, { createProSBCFileAPI } from '../utils/prosbc/prosbcFileManager.js';
 import { getProSBCCredentials } from '../utils/prosbc/multiInstanceManager.js';
+import proSbcInstanceService from '../services/proSbcInstanceService.js';
 
 const router = express.Router();
 
@@ -526,6 +527,131 @@ router.post('/update-rest-api', uploadMemory.single('file'), async (req, res) =>
         error: err.message 
       });
     }
+  }
+});
+
+// Update file on all registered ProSBC instances where the file exists
+router.post('/update-to-all', uploadMemory.single('file'), async (req, res) => {
+  try {
+    const { fileType, fileName, fileId } = req.body;
+    if (!fileType || !fileName || !req.file) {
+      return res.status(400).json({ success: false, error: 'Missing required parameters: fileType, fileName and file' });
+    }
+
+    const fileContent = req.file.buffer.toString('utf8');
+
+    // Get all active instances
+    const instances = await proSbcInstanceService.getAllInstances();
+    const results = [];
+
+    for (const inst of instances) {
+      const instanceId = inst.id;
+      try {
+        console.log(`[UpdateToAll] Processing instance: ${instanceId}`);
+        const instanceFileManager = createProSBCFileAPI(instanceId);
+
+        // List files on the instance and try to find this file by name or id
+        let listResult;
+        if (fileType === 'routesets_definitions') {
+          listResult = await instanceFileManager.listDfFiles();
+        } else {
+          listResult = await instanceFileManager.listDmFiles();
+        }
+
+        // Helper to normalize file names for tolerant matching
+        const normalize = (s) => {
+          if (!s && s !== 0) return '';
+          try {
+            return String(s).trim().toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ');
+          } catch (e) {
+            return String(s || '').toLowerCase();
+          }
+        };
+
+        const normalizedTarget = normalize(fileName || fileId || '');
+        const filesList = (listResult.files || []);
+
+        // Try multiple matching strategies: exact id, exact name, normalized name, fallback contains
+        let found = filesList.find(f => fileId && String(f.id) === String(fileId));
+        if (!found) {
+          found = filesList.find(f => f.name === fileName);
+        }
+        if (!found) {
+          found = filesList.find(f => normalize(f.name) === normalizedTarget);
+        }
+        if (!found) {
+          // fallback: contains
+          found = filesList.find(f => normalize(f.name).includes(normalizedTarget) || (normalizedTarget && normalize(normalizedTarget).includes(normalize(f.name))));
+        }
+
+        // If still not found, try a fuzzy match (Levenshtein distance)
+        if (!found && filesList.length > 0) {
+          const levenshtein = (a, b) => {
+            const m = a.length, n = b.length;
+            const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+            for (let i = 0; i <= m; i++) dp[i][0] = i;
+            for (let j = 0; j <= n; j++) dp[0][j] = j;
+            for (let i = 1; i <= m; i++) {
+              for (let j = 1; j <= n; j++) {
+                const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+                dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+              }
+            }
+            return dp[m][n];
+          };
+
+          let best = null;
+          for (const f of filesList) {
+            const nName = normalize(f.name || '');
+            if (!nName) continue;
+            const d = levenshtein(nName, normalizedTarget);
+            const rel = Math.max(nName.length, normalizedTarget.length) > 0 ? d / Math.max(nName.length, normalizedTarget.length) : 1;
+            if (!best || d < best.distance) {
+              best = { file: f, distance: d, relative: rel };
+            }
+          }
+
+          // Accept fuzzy match if absolute distance small or relative distance small
+          if (best && (best.distance <= 3 || best.relative <= 0.2)) {
+            console.log(`[UpdateToAll][FUZZY] Using fuzzy match for '${fileName}' -> '${best.file.name}' (distance=${best.distance}, relative=${(best.relative*100).toFixed(1)}%) on instance ${instanceId}`);
+            found = best.file;
+            // mark diagnostics for transparency
+            if (!found._diagnostics) found._diagnostics = {};
+            found._diagnostics.fuzzy = { distance: best.distance, relative: best.relative };
+          }
+        }
+
+        if (!found) {
+          // Log list of files and comparison diagnostics for easier debugging
+          try {
+            console.log(`[UpdateToAll][DEBUG] Instance ${instanceId} files (${filesList.length}):`);
+            filesList.slice(0, 200).forEach((f, i) => {
+              console.log(`  [${i}] id=${f.id} name='${String(f.name)}' configId=${f.configId || f.config_id || ''}`);
+            });
+            console.log(`[UpdateToAll][DEBUG] Target name='${fileName}' id='${fileId}' normalizedTarget='${normalizedTarget}'`);
+          } catch (logErr) {
+            console.warn('[UpdateToAll][DEBUG] Failed to log file list:', logErr);
+          }
+
+          results.push({ instance: instanceId, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: false, message: 'File not found on this instance', diagnostics: { filesCount: filesList.length } });
+          continue;
+        }
+
+        // Use REST-based update which will search the correct DB and verify
+        const configId = found.configId || null;
+        const updateResult = await instanceFileManager.updateFileRestAPI(fileType, fileName, fileContent, configId);
+
+  results.push({ instance: instanceId, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: !!updateResult.success, message: updateResult.message || null, details: updateResult });
+      } catch (err) {
+        console.error(`[UpdateToAll] Instance ${inst.id} error:`, err.message);
+  results.push({ instance: inst.id, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: false, error: err.message });
+      }
+    }
+
+    res.json({ success: true, results });
+  } catch (err) {
+    console.error('[UpdateToAll] Error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
