@@ -35,8 +35,6 @@ const ActivationGeneration = ({ onAuthError }) => {
   const pollRef = useRef(null);
   const [singleGenerateResult, setSingleGenerateResult] = useState(null);
   const [showSingleGenerateModal, setShowSingleGenerateModal] = useState(false);
-  const [showSingleRaw, setShowSingleRaw] = useState(false);
-  const [expandedDetails, setExpandedDetails] = useState({});
 
   // Load initial data and reload when instance changes
   useEffect(() => {
@@ -402,57 +400,6 @@ const ActivationGeneration = ({ onAuthError }) => {
                     </>
                   )}
                 </button>
-                <div className="flex flex-col gap-2 mt-2">
-                  <button
-                    onClick={async () => {
-                      if (!selectedInstance) return;
-                      try {
-                        setSingleGenerateResult(null);
-                        setShowSingleGenerateModal(true);
-                        const res = await fetch('/backend/api/prosbc-files/debug/validate-instance', {
-                          method: 'POST',
-                          credentials: 'include',
-                          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ instanceId: selectedInstance.id, configurationId: selectedConfig })
-                        });
-                        const data = await res.json();
-                        setSingleGenerateResult({ success: data.validateResult?.success ?? false, message: data.validateResult?.message || data.error || JSON.stringify(data), instance: selectedInstance.id, url: selectedInstance.baseUrl, response: data });
-                        setShowSingleRaw(true);
-                      } catch (err) {
-                        setSingleGenerateResult({ success: false, message: err.message, instance: selectedInstance?.id, url: selectedInstance?.baseUrl, response: null });
-                        setShowSingleRaw(true);
-                      }
-                    }}
-                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                  >
-                    Debug Validate Instance
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      if (!selectedInstance) return;
-                      try {
-                        setSingleGenerateResult(null);
-                        setShowSingleGenerateModal(true);
-                        const res = await fetch('/backend/api/prosbc-files/debug/activate-instance', {
-                          method: 'POST',
-                          credentials: 'include',
-                          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ instanceId: selectedInstance.id, configurationId: selectedConfig })
-                        });
-                        const data = await res.json();
-                        setSingleGenerateResult({ success: data.activateResult?.success ?? false, message: data.activateResult?.message || data.error || JSON.stringify(data), instance: selectedInstance.id, url: selectedInstance.baseUrl, response: data });
-                        setShowSingleRaw(true);
-                      } catch (err) {
-                        setSingleGenerateResult({ success: false, message: err.message, instance: selectedInstance?.id, url: selectedInstance?.baseUrl, response: null });
-                        setShowSingleRaw(true);
-                      }
-                    }}
-                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                  >
-                    Debug Activate Instance
-                  </button>
-                </div>
               </div>
             </div>
             
@@ -800,14 +747,6 @@ const ActivationGeneration = ({ onAuthError }) => {
                     </div>
                     <div className="mt-2 text-xs text-gray-300">
                       {r.message || r.error || (r.details && r.details.message) || 'No message'}
-                    </div>
-                    <div className="mt-2">
-                      <button onClick={() => setExpandedDetails(prev => ({ ...prev, [idx]: !prev[idx] }))} className="text-xs text-blue-300 underline">{expandedDetails[idx] ? 'Hide details' : 'Show details'}</button>
-                      {expandedDetails[idx] && (
-                        <pre className="mt-2 p-2 bg-gray-900 text-xs text-gray-200 overflow-auto rounded max-h-48">
-                          {JSON.stringify(r.details || r.response || r.error || r, null, 2)}
-                        </pre>
-                      )}
                     </div>
                   </div>
                 ))
