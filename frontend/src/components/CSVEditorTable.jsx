@@ -39,35 +39,51 @@ const CSVEditorTable = ({
                    fileInfo?.name?.toLowerCase().includes('digitmap') ||
                    fileInfo?.fileName?.toLowerCase().includes('digitmap');
 
+  // Detect which column should be validated for DM entries (called number column)
+  const calledColumnIndex = headers.findIndex((h) => {
+    if (!h) return false;
+    const key = h.toLowerCase();
+    return (
+      key.includes('called') ||
+      key.includes('calling') ||
+      key.includes('destination') ||
+      key.includes('msisdn') ||
+      key.includes('number')
+    );
+  });
+
   // Validation functions for DM files
   const validateDMEntry = (value, rowIndex, colIndex, allRows) => {
-    if (!isDMFile) return null; // Only validate DM files
-    
+    // Only validate DM files and only for the designated called column
+    if (!isDMFile) return null;
+    if (calledColumnIndex === -1) return null; // No called column detected
+    if (colIndex !== calledColumnIndex) return null; // Only validate the called column
+
     // Skip validation for headers or empty values
     if (!value || value.trim() === '') return null;
-    
+
     const trimmedValue = value.trim();
-    
+
     // Check if value contains only digits
     if (!/^\d+$/.test(trimmedValue)) {
-      return 'Only numeric digits are allowed in DM files';
+      return 'Only numeric digits are allowed in DM files (called column)';
     }
-    
+
     // Check if value is exactly 10 digits
     if (trimmedValue.length !== 10) {
       return 'DM entries must be exactly 10 digits long';
     }
-    
+
     // Check for duplicates in the same column
     const currentColumnValues = allRows
       .map((row, idx) => ({ value: row.data[colIndex]?.trim(), rowIdx: idx }))
       .filter(item => item.value && item.value !== '' && item.rowIdx !== rowIndex);
-    
+
     const isDuplicate = currentColumnValues.some(item => item.value === trimmedValue);
     if (isDuplicate) {
       return 'Duplicate numbers are not allowed in DM files';
     }
-    
+
     return null; // Valid
   };
 
@@ -571,8 +587,8 @@ const CSVEditorTable = ({
     const newErrors = { ...errors };
 
     for (const value of values) {
-      // DM files: enforce 10-digit numbers
-      if (isDMFile) {
+      // DM files: enforce 10-digit numbers only for called column
+      if (isDMFile && calledColumnIndex !== -1 && columnIndex === calledColumnIndex) {
         if (!/^\d{10}$/.test(value)) {
           // Mark error but continue processing others
           newErrors[`bulk-${value}`] = `Invalid DM entry '${value}': must be exactly 10 digits`;
@@ -942,7 +958,7 @@ const CSVEditorTable = ({
                   </td>
                   {row.data.map((cell, colIndex) => (
                     <td key={colIndex} className="px-2 py-1.5 border-r border-gray-700">
-                      <input
+          <input
                         ref={(el) => {
                           if (el) cellRefs.current[`${rowIndex}-${colIndex}`] = el;
                         }}
@@ -953,21 +969,21 @@ const CSVEditorTable = ({
                         className={`w-full px-2 py-1 text-xs bg-gray-800 border rounded text-white focus:outline-none focus:ring-1 transition-colors duration-200 ${
                           errors[`${rowIndex}-${colIndex}`] 
                             ? 'border-red-500 bg-red-900/20 focus:ring-red-500' 
-                            : isDMFile && cell && cell.trim() && /^\d{10}$/.test(cell.trim())
-                              ? 'border-green-500 bg-green-900/20 focus:ring-green-500'
-                              : 'border-gray-600 hover:border-gray-500 focus:ring-blue-500 focus:border-transparent'
+            : isDMFile && colIndex === calledColumnIndex && cell && cell.trim() && /^\d{10}$/.test(cell.trim())
+          ? 'border-green-500 bg-green-900/20 focus:ring-green-500'
+          : 'border-gray-600 hover:border-gray-500 focus:ring-blue-500 focus:border-transparent'
                         }`}
-                        disabled={isUpdating}
-                        placeholder={isDMFile ? "10-digit #" : "Enter..."}
-                        maxLength={isDMFile ? 10 : undefined}
-                        pattern={isDMFile ? "[0-9]{10}" : undefined}
-                        title={isDMFile ? "Enter exactly 10 digits (0-9)" : ""}
-                        inputMode={isDMFile ? "numeric" : "text"}
+        disabled={isUpdating}
+        placeholder={isDMFile && colIndex === calledColumnIndex ? "10-digit #" : "Enter..."}
+        maxLength={isDMFile && colIndex === calledColumnIndex ? 10 : undefined}
+        pattern={isDMFile && colIndex === calledColumnIndex ? "[0-9]{10}" : undefined}
+        title={isDMFile && colIndex === calledColumnIndex ? "Enter exactly 10 digits (0-9)" : ""}
+        inputMode={isDMFile && colIndex === calledColumnIndex ? "numeric" : "text"}
                       />
                       {errors[`${rowIndex}-${colIndex}`] && (
                         <p className="mt-0.5 text-xs text-red-400">{errors[`${rowIndex}-${colIndex}`]}</p>
                       )}
-                      {isDMFile && cell && cell.trim() && /^\d{10}$/.test(cell.trim()) && !errors[`${rowIndex}-${colIndex}`] && (
+                      {isDMFile && colIndex === calledColumnIndex && cell && cell.trim() && /^\d{10}$/.test(cell.trim()) && !errors[`${rowIndex}-${colIndex}`] && (
                         <p className="mt-0.5 text-xs text-green-400">✓ Valid</p>
                       )}
                     </td>
