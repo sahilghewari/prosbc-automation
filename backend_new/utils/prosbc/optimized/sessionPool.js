@@ -5,6 +5,25 @@ import { prosbcLogin } from '../login.js';
  * Global session pool for managing multiple ProSBC instance sessions
  * Provides connection pooling, session reuse, and automatic cleanup
  */
+
+// Helper function to validate if existing session is still active
+async function validateSession(baseURL, sessionCookie) {
+  try {
+    const response = await fetch(`${baseURL}/`, {
+      headers: {
+        'Cookie': `_WebOAMP_session=${sessionCookie}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
+      },
+      timeout: 5000
+    });
+    
+    // If we get a successful response or redirect (not auth error), session is valid
+    return response.status !== 401 && response.status !== 403;
+  } catch (error) {
+    // If request fails, assume session is invalid
+    return false;
+  }
+}
 class SessionPool {
   constructor() {
     this.sessions = new Map(); // instanceId -> session data
@@ -30,8 +49,17 @@ class SessionPool {
     
     // Return existing valid session
     if (existing && this.isSessionValid(existing)) {
-      existing.lastUsed = Date.now();
-      return existing.cookie;       
+      // Validate session before returning it
+      console.log(`[SessionPool] Validating existing session for ${instanceId}...`);
+      const isValid = await validateSession(credentials.baseUrl, existing.cookie);
+      if (isValid) {
+        console.log(`[SessionPool] Session still valid for ${instanceId}, reusing...`);
+        existing.lastUsed = Date.now();
+        return existing.cookie;
+      } else {
+        console.log(`[SessionPool] Session expired for ${instanceId}, will create new...`);
+        this.sessions.delete(sessionKey); // Remove invalid session
+      }
     }
 
     // Check if we're already creating a session for this instance

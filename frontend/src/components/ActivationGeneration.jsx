@@ -483,3 +483,4 @@ const ActivationGeneration = ({ onAuthError }) => {
 };
 
 export default ActivationGeneration;
+    

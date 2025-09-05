@@ -140,11 +140,15 @@ router.get('/df/list', async (req, res) => {
     const configId = getConfigIdFromRequest(req);
     const instanceId = req.headers['x-prosbc-instance-id'];
     
+    console.log('[DF List] Headers received:', Object.keys(req.headers));
+    console.log('[DF List] X-ProSBC-Instance-ID header:', req.headers['x-prosbc-instance-id']);
+    console.log('[DF List] Instance ID extracted:', instanceId);
+    
     // Create instance-specific file manager
     const instanceFileManager = createProSBCFileAPI(instanceId);
     
     const result = await instanceFileManager.listDfFiles(configId);
-    console.log(`[DF List] Instance ${instanceId || 'default'} returned ${result.dfFiles?.length || 0} files`);
+    console.log(`[DF List] Instance ${instanceId || 'default'} returned ${result.files?.length || 0} files`);
     res.json(result);
   } catch (err) {
     console.error('[DF List] Error:', err);
@@ -158,11 +162,15 @@ router.get('/dm/list', async (req, res) => {
     const configId = getConfigIdFromRequest(req);
     const instanceId = req.headers['x-prosbc-instance-id'];
     
+    console.log('[DM List] Headers received:', Object.keys(req.headers));
+    console.log('[DM List] X-ProSBC-Instance-ID header:', req.headers['x-prosbc-instance-id']);
+    console.log('[DM List] Instance ID extracted:', instanceId);
+    
     // Create instance-specific file manager
     const instanceFileManager = createProSBCFileAPI(instanceId);
     
     const result = await instanceFileManager.listDmFiles(configId);
-    console.log(`[DM List] Instance ${instanceId || 'default'} returned ${result.dmFiles?.length || 0} files`);
+    console.log(`[DM List] Instance ${instanceId || 'default'} returned ${result.files?.length || 0} files`);
     res.json(result);
   } catch (err) {
     console.error('[DM List] Error:', err);

@@ -9,16 +9,41 @@ const sessionCookies = new Map();
 const lastLoginTimes = new Map();
 const SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
+// Add login locks to prevent multiple simultaneous logins
+const loginLocks = new Map();
+
+// Helper function to validate if existing session is still active
+async function validateSession(baseURL, sessionCookie) {
+  try {
+    const response = await axios.get(`${baseURL}/`, {
+      headers: {
+        'Cookie': `_WebOAMP_session=${sessionCookie}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
+      },
+      timeout: 5000,
+      validateStatus: (status) => status < 500 // Accept redirects and client errors
+    });
+    
+    // If we get a successful response or redirect (not auth error), session is valid
+    return response.status !== 401 && response.status !== 403;
+  } catch (error) {
+    // If request fails, assume session is invalid
+    return false;
+  }
+}
+
 // Clear session cache for a specific instance or all instances
 const clearSessionCache = (instanceId = null) => {
   if (instanceId) {
     const sessionKey = instanceId || 'default';
     sessionCookies.delete(sessionKey);
     lastLoginTimes.delete(sessionKey);
+    loginLocks.delete(sessionKey);
     console.log(`[RoutesetMapping] Cleared session cache for instance: ${sessionKey}`);
   } else {
     sessionCookies.clear();
     lastLoginTimes.clear();
+    loginLocks.clear();
     console.log('[RoutesetMapping] Cleared all session caches');
   }
 };
@@ -49,13 +74,65 @@ async function getApiClient(instanceId = null) {
   let sessionCookie = sessionCookies.get(sessionKey);
   let lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
   
+  // Check if login is already in progress for this instance
+  if (loginLocks.get(sessionKey)) {
+    console.log(`[RoutesetMapping] Login already in progress for ${sessionKey}, waiting...`);
+    // Wait for existing login to complete
+    while (loginLocks.get(sessionKey)) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    // Re-check session after waiting
+    sessionCookie = sessionCookies.get(sessionKey);
+    lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
+  }
+  
   // Refresh session if expired or not set
   if (!sessionCookie || (Date.now() - lastLoginTime > SESSION_TTL_MS)) {
-    console.log(`[RoutesetMapping] Logging in to ProSBC instance: ${sessionKey}...`);
-    sessionCookie = await prosbcLogin(baseURL, username, password);
-    sessionCookies.set(sessionKey, sessionCookie);
-    lastLoginTimes.set(sessionKey, Date.now());
-    console.log(`[RoutesetMapping] Obtained ProSBC session cookie for: ${sessionKey}`);
+    // If we have a session cookie but it's within TTL, validate it first
+    if (sessionCookie && (Date.now() - lastLoginTime <= SESSION_TTL_MS)) {
+      console.log(`[RoutesetMapping] Validating existing session for ${sessionKey}...`);
+      const isValid = await validateSession(baseURL, sessionCookie);
+      if (isValid) {
+        console.log(`[RoutesetMapping] Session still valid for ${sessionKey}, reusing...`);
+        // Update last login time to extend TTL
+        lastLoginTimes.set(sessionKey, Date.now());
+      } else {
+        console.log(`[RoutesetMapping] Session expired for ${sessionKey}, will login...`);
+        sessionCookie = null; // Force login
+      }
+    }
+    
+    // Proceed with login if session is invalid or expired
+    if (!sessionCookie) {
+      // Acquire login lock
+      if (loginLocks.get(sessionKey)) {
+        console.log(`[RoutesetMapping] Another login is already in progress for ${sessionKey}, waiting...`);
+        // Wait for existing login to complete
+        while (loginLocks.get(sessionKey)) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        // Re-check session after waiting
+        sessionCookie = sessionCookies.get(sessionKey);
+        lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
+      }
+      
+      // Double-check after acquiring lock
+      if (!sessionCookie || (Date.now() - lastLoginTime > SESSION_TTL_MS)) {
+        loginLocks.set(sessionKey, true);
+        try {
+          console.log(`[RoutesetMapping] Logging in to ProSBC instance: ${sessionKey}...`);
+          sessionCookie = await prosbcLogin(baseURL, username, password);
+          sessionCookies.set(sessionKey, sessionCookie);
+          lastLoginTimes.set(sessionKey, Date.now());
+          console.log(`[RoutesetMapping] Obtained ProSBC session cookie for: ${sessionKey}`);
+        } finally {
+          // Release login lock
+          loginLocks.delete(sessionKey);
+        }
+      } else {
+        console.log(`[RoutesetMapping] Session refreshed by another request for ${sessionKey}`);
+      }
+    }
   }
   
   const apiClient = axios.create({

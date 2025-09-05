@@ -8,6 +8,47 @@ import { selectConfiguration } from './prosbcConfigSelector.js';
 import { fetchLiveConfigIds } from './prosbcConfigLiveFetcher.js';
 import { getInstanceContext } from './multiInstanceManager.js';
 
+// Session management variables
+const sessionCookies = new Map();
+const lastLoginTimes = new Map();
+const SESSION_TTL_MS = 20 * 60 * 1000; // 20 minutes
+const loginLocks = new Map();
+
+// Helper function to validate if existing session is still active
+async function validateSession(baseURL, sessionCookie) {
+  try {
+    const response = await fetch(`${baseURL}/`, {
+      headers: {
+        'Cookie': `_WebOAMP_session=${sessionCookie}`,
+        'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
+      },
+      timeout: 5000
+    });
+    
+    // If we get a successful response or redirect (not auth error), session is valid
+    return response.status !== 401 && response.status !== 403;
+  } catch (error) {
+    // If request fails, assume session is invalid
+    return false;
+  }
+}
+
+// Clear session cache for a specific instance or all instances
+const clearSessionCache = (instanceId = null) => {
+  if (instanceId) {
+    const sessionKey = instanceId || 'default';
+    sessionCookies.delete(sessionKey);
+    lastLoginTimes.delete(sessionKey);
+    loginLocks.delete(sessionKey);
+    console.log(`[ProSBC FileAPI] Cleared session cache for instance: ${sessionKey}`);
+  } else {
+    sessionCookies.clear();
+    lastLoginTimes.clear();
+    loginLocks.clear();
+    console.log('[ProSBC FileAPI] Cleared all session caches');
+  }
+};
+
 class ProSBCFileAPI {
   constructor(instanceId = null) {
     // Support both old env-based and new instance-based initialization
@@ -38,13 +79,15 @@ class ProSBCFileAPI {
       'config_1-BU': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
       'config_301122-1': { id: '4', dbId: '4', name: 'config_301122-1' },
       'config_demo': { id: '6', dbId: '6', name: 'config_demo' },
+      'config_090325-1': { id: '7', dbId: '7', name: 'config_090325-1' },
       // Also support lookup by ID
       '1': { id: '1', dbId: '1', name: 'config_1' },
       '2': { id: '2', dbId: '2', name: 'config_052421-1' },
       '3': { id: '3', dbId: '3', name: 'config_060620221' },
       '4': { id: '4', dbId: '4', name: 'config_301122-1' },
       '5': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
-      '6': { id: '6', dbId: '6', name: 'config_demo' }
+      '6': { id: '6', dbId: '6', name: 'config_demo' },
+      '7': { id: '7', dbId: '7', name: 'config_090325-1' }
     };
   }
 
@@ -86,17 +129,76 @@ class ProSBCFileAPI {
   }
 
   async getSessionCookie() {
-    if (this.sessionCookie) return this.sessionCookie;
-    
     // Ensure instance context is loaded
     await this.loadInstanceContext();
     
-    const username = this.instanceContext.username;
-    const password = this.instanceContext.password;
-    const baseUrl = this.baseURL;
+    const sessionKey = this.instanceId || 'default';
+    let sessionCookie = sessionCookies.get(sessionKey);
+    let lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
     
-    this.sessionCookie = await prosbcLogin(baseUrl, username, password);
-    return this.sessionCookie;
+    // Check if login is already in progress for this instance
+    if (loginLocks.get(sessionKey)) {
+      console.log(`[ProSBC FileAPI] Login already in progress for ${sessionKey}, waiting...`);
+      // Wait for existing login to complete
+      while (loginLocks.get(sessionKey)) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      // Re-check session after waiting
+      sessionCookie = sessionCookies.get(sessionKey);
+      lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
+    }
+    
+    // Refresh session if expired or not set
+    if (!sessionCookie || (Date.now() - lastLoginTime > SESSION_TTL_MS)) {
+      // If we have a session cookie but it's within TTL, validate it first
+      if (sessionCookie && (Date.now() - lastLoginTime <= SESSION_TTL_MS)) {
+        console.log(`[ProSBC FileAPI] Validating existing session for ${sessionKey}...`);
+        const isValid = await validateSession(this.baseURL, sessionCookie);
+        if (isValid) {
+          console.log(`[ProSBC FileAPI] Session still valid for ${sessionKey}, reusing...`);
+          // Update last login time to extend TTL
+          lastLoginTimes.set(sessionKey, Date.now());
+        } else {
+          console.log(`[ProSBC FileAPI] Session expired for ${sessionKey}, will login...`);
+          sessionCookie = null; // Force login
+        }
+      }
+      
+      // Proceed with login if session is invalid or expired
+      if (!sessionCookie) {
+        // Acquire login lock
+        if (loginLocks.get(sessionKey)) {
+          console.log(`[ProSBC FileAPI] Another login is already in progress for ${sessionKey}, waiting...`);
+          // Wait for existing login to complete
+          while (loginLocks.get(sessionKey)) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          // Re-check session after waiting
+          sessionCookie = sessionCookies.get(sessionKey);
+          lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
+        }
+        
+        // Double-check after acquiring lock
+        if (!sessionCookie || (Date.now() - lastLoginTime > SESSION_TTL_MS)) {
+          loginLocks.set(sessionKey, true);
+          try {
+            console.log(`[ProSBC FileAPI] Logging in to ProSBC instance: ${sessionKey}...`);
+            sessionCookie = await prosbcLogin(this.baseURL, this.instanceContext.username, this.instanceContext.password);
+            sessionCookies.set(sessionKey, sessionCookie);
+            lastLoginTimes.set(sessionKey, Date.now());
+            console.log(`[ProSBC FileAPI] Obtained ProSBC session cookie for: ${sessionKey}`);
+          } finally {
+            // Release login lock
+            loginLocks.delete(sessionKey);
+          }
+        } else {
+          console.log(`[ProSBC FileAPI] Session refreshed by another request for ${sessionKey}`);
+        }
+      }
+    }
+    
+    this.sessionCookie = sessionCookie;
+    return sessionCookie;
   }
 
   // Helper to get configuration name for REST API
@@ -644,15 +746,15 @@ class ProSBCFileAPI {
           const verifyHtml = await verifyResp.text();
 
           // If we unexpectedly received the configuration selection page or the section is missing, probe nearby DB IDs
-          const looksLikeConfigPage = verifyHtml.includes('configurations_list') || verifyHtml.includes('Configuration');
+          const looksLikeConfigPage = verifyHtml.includes('configurations_list') && !hasRoutesetSection;
           const hasRoutesetSection = verifyHtml.includes('Routesets Definition') || verifyHtml.includes('Routesets Definition:');
 
           if (!verifyResp.ok || looksLikeConfigPage || !hasRoutesetSection) {
             console.log(`[ProSBC1 Config] After selecting mapped config ${mappedConfig.id}, verification for DB ${mappedConfig.dbId} failed (looksLikeConfig=${looksLikeConfigPage}, hasRoutesetSection=${hasRoutesetSection}). Probing alternative DB IDs.`);
 
-            // Probe DB IDs 1..6 to find the actual DB with routesets_definitions present
+            // Probe DB IDs 1..10 to find the actual DB with routesets_definitions present
             let foundDb = null;
-            for (let probe = 1; probe <= 6; probe++) {
+            for (let probe = 1; probe <= 10; probe++) {
               try {
                 const probeUrl = `${this.baseURL}/file_dbs/${probe}/edit`;
                 const resp = await fetch(probeUrl, { method: 'GET', headers: await this.getCommonHeaders() });
@@ -1710,16 +1812,13 @@ class ProSBCFileAPI {
       // Clear the files array since we found the section
       files.length = 0;
       // Match all file rows for the given fileType (routesets_definitions or routesets_digitmaps)
-      // Example row:
-      // <td><a href="/file_dbs/3/routesets_digitmaps/61/edit" ...>Update</a></td>
-      // <td><a href="/file_dbs/3/routesets_digitmaps/61/export" ...>Export</a></td>
-      // <td><a href="/file_dbs/3/routesets_digitmaps/61" ...>Delete</a></td>
+      // More flexible regex to handle variations in HTML structure
       const rowRegex = new RegExp(
-        `<tr>\\s*<td>([^<]+)<\\/td>\\s*` +
-        `<td><a href=\\"/file_dbs/(\\d+)/(?:${fileType})/(\\d+)/edit\\"[^>]*>Update<\\/a><\\/td>\\s*` +
-        `<td><a href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)/export\\"[^>]*>Export<\\/a><\\/td>\\s*` +
-        `<td><a href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)\\"[^>]*onclick=[^>]*>Delete<\\/a><\\/td>\\s*<\\/tr>`,
-        'g'
+        `<tr>[\\s\\S]*?<td[^>]*>([^<]+)<\\/td>[\\s\\S]*?` +
+        `<td[^>]*><a[^>]*href=\\"/file_dbs/(\\d+)/(?:${fileType})/(\\d+)/edit\\"[^>]*>Update<\\/a><\\/td>[\\s\\S]*?` +
+        `<td[^>]*><a[^>]*href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)/export\\"[^>]*>Export<\\/a><\\/td>[\\s\\S]*?` +
+        `<td[^>]*><a[^>]*href=\\"/file_dbs/\\d+/(?:${fileType})/(\\d+)\\"[^>]*>Delete<\\/a><\\/td>[\\s\\S]*?<\\/tr>`,
+        'gi'
       );
       let match;
       let rowCount = 0;
@@ -1737,6 +1836,22 @@ class ProSBCFileAPI {
         });
       }
       console.log(`[ProSBC] Found ${rowCount} rows in section: ${sectionTitle}`);
+      
+      // Debug: If no files found but section exists, log a sample of the HTML
+      if (rowCount === 0 && sectionHtml.length > 0) {
+        const sampleHtml = sectionHtml.substring(0, 500);
+        console.log(`[ProSBC] DEBUG: No files matched regex. Section HTML sample:`, sampleHtml);
+        
+        // Try to find any table rows in the section
+        const trMatches = sectionHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
+        if (trMatches) {
+          console.log(`[ProSBC] DEBUG: Found ${trMatches.length} table rows in section`);
+          if (trMatches.length > 0) {
+            console.log(`[ProSBC] DEBUG: First row sample:`, trMatches[0].substring(0, 200));
+          }
+        }
+      }
+      
       return files;
     } catch (error) {
       console.error('[ProSBC] parseFileTable error:', error);
@@ -1979,7 +2094,7 @@ class ProSBCFileAPI {
 }
 
 // Export both the class and a default instance for backward compatibility
-export { ProSBCFileAPI };
+export { ProSBCFileAPI, clearSessionCache };
 export default new ProSBCFileAPI();
 
 // Factory function to create instance-specific API clients

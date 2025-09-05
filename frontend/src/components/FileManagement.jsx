@@ -153,6 +153,10 @@ function FileManagement({ onAuthError, configId }) {
         ...(targetInstance?.id && { 'X-ProSBC-Instance-ID': targetInstance.id.toString() })
       };
       
+      console.log('[FileManagement] Target instance:', targetInstance);
+      console.log('[FileManagement] Target instance ID:', targetInstance?.id);
+      console.log('[FileManagement] Headers being sent:', headers);
+      
       console.log('[FileManagement] Loading files for instance:', targetInstance?.id);
       
       // Add artificial minimum delay to ensure animation is visible
@@ -1218,7 +1222,7 @@ function FileManagement({ onAuthError, configId }) {
             <div className="flex items-center">
               <span className="text-xl mr-3">{fileType === 'routesets_definitions' ? '📄' : '🗺️'}</span>
               <span className="font-medium text-white">{file.name}</span>
-            </div>
+                </div>
           </td>
           <td className="py-4 px-4">
             <div className="flex justify-center space-x-2">
