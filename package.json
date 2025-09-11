@@ -4,15 +4,16 @@
   "description": "ProSBC Automation System with Frontend and Backend",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev": "concurrently \"npm run dev:backend_new\" \"npm run dev:frontend\"",
     "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend_new": "cd backend_new && npm run dev",
     "dev:backend": "cd backend && npm run dev",
     "build": "cd frontend && npm run build",
-    "start": "cd backend && npm start",
+    "start": "cd backend_new && npm start",
     "install:all": "npm install && npm run install:frontend && npm run install:backend",
     "install:frontend": "cd frontend && npm install",
-    "install:backend": "cd backend && npm install",
-    "setup": "npm run install:all && cd backend && npm run setup"
+    "install:backend": "cd backend_new && npm install",
+    "setup": "npm run install:all && cd backend_new && npm run setup"
   },
   "keywords": [
     "prosbc",

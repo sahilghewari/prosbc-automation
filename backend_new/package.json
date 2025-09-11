@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "dev": "node server.js",
+    "setup": "npm run init-db",
     "init-db": "node scripts/init-database.js"
   },
   "dependencies": {
