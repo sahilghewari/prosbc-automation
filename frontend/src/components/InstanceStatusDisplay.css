@@ -1,0 +1,145 @@
+.instance-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.2s ease;
+}
+
+.instance-status.compact {
+  padding: 0.25rem 0.5rem;
+  gap: 0.25rem;
+}
+
+.instance-status.success {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.instance-status.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.instance-status.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.status-indicator.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: rgb(34, 197, 94);
+}
+
+.status-indicator.inactive {
+  background: rgba(156, 163, 175, 0.2);
+  color: rgb(156, 163, 175);
+}
+
+.status-indicator.loading {
+  background: rgba(59, 130, 246, 0.2);
+  color: rgb(59, 130, 246);
+}
+
+.status-indicator.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: rgb(245, 158, 11);
+}
+
+.status-indicator.error {
+  background: rgba(239, 68, 68, 0.2);
+  color: rgb(239, 68, 68);
+}
+
+.instance-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.instance-name {
+  font-weight: 600;
+  color: white;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.instance-status-text {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .instance-status:not(.compact) {
+    padding: 0.375rem 0.5rem;
+  }
+  
+  .instance-name {
+    font-size: 0.8125rem;
+  }
+  
+  .instance-status-text {
+    font-size: 0.6875rem;
+  }
+}
+
+/* Animation for status changes */
+.instance-status {
+  animation: statusFadeIn 0.3s ease-in-out;
+}
+
+@keyframes statusFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hover effects */
+.instance-status:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.instance-status.compact:hover {
+  transform: none;
+}
+
+/* Loading animation */
+.status-indicator.loading svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

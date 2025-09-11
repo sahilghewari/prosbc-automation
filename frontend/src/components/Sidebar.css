@@ -1,0 +1,129 @@
+/* Enhanced Dark Theme Sidebar Styles */
+.sidebar-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.menu-item-active {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+  border: none;
+  transform: scale(1.02);
+}
+
+.menu-item-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.menu-item-hover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s;
+}
+
+.menu-item-hover:hover::before {
+  left: 100%;
+}
+
+.menu-item-hover:hover {
+  background-color: #374151;
+  transform: translateX(4px) scale(1.01);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.sidebar-collapsed {
+  width: 4rem;
+}
+
+.sidebar-expanded {
+  width: 16rem;
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+/* Enhanced scrollbar for sidebar */
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.8);
+  border-radius: 3px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #4b5563, #6b7280);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #6b7280, #9ca3af);
+}
+
+/* Active menu item glow effect */
+.menu-item-active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(to bottom, #60a5fa, #a855f7);
+  border-radius: 1.5px 0 0 1.5px;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.5);
+}
+
+/* Active Configuration Section */
+.config-section-background {
+  background: rgba(31, 41, 55, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(75, 85, 99, 0.5);
+}
+
+.config-section-background:hover {
+  background: rgba(31, 41, 55, 0.7);
+  border-color: rgba(75, 85, 99, 0.7);
+}
+
+.config-select-enhanced {
+  background: linear-gradient(135deg, #1f2937, #111827);
+  border: 1px solid #4b5563;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.config-select-enhanced:hover {
+  border-color: #6b7280;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.config-select-enhanced:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.live-indicator {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition: color 0.2s ease, background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}

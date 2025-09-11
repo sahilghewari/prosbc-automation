@@ -1,0 +1,23 @@
+/* ProSBC Files Management Component Styles */
+
+.prosbc-files-management {
+  padding: 16px;
+}
+
+.prosbc-files-management .table-toolbar {
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.prosbc-files-management .ant-pagination {
+  margin-top: 16px;
+}
+
+.prosbc-files-management .ant-alert {
+  margin-bottom: 16px;
+}
+
+.prosbc-files-management .ant-statistic {
+  margin-bottom: 16px;
+}
