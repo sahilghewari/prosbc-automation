@@ -99,7 +99,7 @@ const CustomerCounts = ({ configId }) => {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Customer DM Counts</h1>
+        <h1 className="text-3xl font-bold text-white mb-2">Customer Number Counts</h1>
         <p className="text-gray-400">Monitor dial map file counts per customer</p>
       </div>
 
