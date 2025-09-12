@@ -18,6 +18,7 @@ import prosbcUploadRouter from './routes/prosbcUpload.js';
 
 import prosbcFileManagerRouter from './routes/prosbcFileManager.js';
 import routesetMappingRouter from './routes/routesetMapping.js';
+import customerCountsRouter from './routes/customerCounts.js';
 import { fetchLiveConfigIds } from './utils/prosbc/prosbcConfigLiveFetcher.js';
 
 
@@ -103,6 +104,8 @@ app.use('/backend/api/prosbc-files', prosbcFileManagerRouter);
 
 // Routeset Mapping Center API
 app.use('/backend/api/routeset-mapping', routesetMappingRouter);
+
+app.use('/backend/api/customer-counts', customerCountsRouter);
 
 
 // Test endpoint: fetch live ProSBC configs
@@ -239,6 +242,13 @@ const PORT = process.env.PORT || 3001;
   await Log.sync();
   // Sync ActiveUser table
   await ActiveUser.sync();
+  // Sync CustomerCount table
+  try {
+    await database.sequelize.models.CustomerCount.sync();
+    console.log('✅ CustomerCount table synced');
+  } catch (syncError) {
+    console.warn('⚠️ Failed to sync CustomerCount table:', syncError.message);
+  }
     
     // Initialize default ProSBC instances
     await proSbcInstanceService.initializeDefaultInstances();

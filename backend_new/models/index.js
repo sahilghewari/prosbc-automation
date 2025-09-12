@@ -4,3 +4,4 @@ import './DigitMap.js';
 import './DialFormat.js';
 import './AuditLog.js';
 import './ProSBCInstance.js';
+import './CustomerCount.js';

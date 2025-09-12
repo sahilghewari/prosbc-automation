@@ -8,6 +8,7 @@ import ActivationGeneration from './components/ActivationGeneration';
 import DashboardLogin from './DashboardLogin';
 import Profile from './components/Profile';
 import ProSBCInstanceManager from './components/ProSBCInstanceManager';
+import CustomerCounts from './components/CustomerCounts';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import { ProSBCInstanceProvider, useProSBCInstance } from './contexts/ProSBCInstanceContext';
@@ -154,6 +155,8 @@ function AppContent() {
         return <ActivationGeneration onAuthError={handleAuthError} />;
       case 'prosbc-instances':
         return <ProSBCInstanceManager />;
+      case 'customer-counts':
+        return <CustomerCounts configId={selectedConfigId} />;
       default:
         return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
     }
