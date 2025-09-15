@@ -91,6 +91,25 @@ function countCalledNumbers(csvContent, fileName) {
   });
 }
 
+// Function to search for a number in 'called' or 'calling' column
+function searchNumberInCSV(csvContent, number) {
+  return new Promise((resolve, reject) => {
+    const stream = Readable.from(csvContent);
+
+    stream
+      .pipe(csv())
+      .on('data', (row) => {
+        const calledValue = Object.values(row)[0] || '';
+        const callingValue = Object.values(row)[1] || '';
+        if (calledValue.trim() === number.trim() || callingValue.trim() === number.trim()) {
+          resolve(true);
+        }
+      })
+      .on('end', () => resolve(false))
+      .on('error', reject);
+  });
+}
+
 // GET /customer-counts
 router.get('/', async (req, res) => {
   try {
@@ -237,6 +256,85 @@ router.get('/historical', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching historical data:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /customer-counts/search?configId=xxx&numbers=num1,num2,num3
+router.get('/search', async (req, res) => {
+  try {
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const configId = req.query.configId;
+    const numbersParam = req.query.numbers || req.query.number; // Support both 'numbers' and 'number' for backward compatibility
+
+    if (!configId || !numbersParam) {
+      return res.status(400).json({ success: false, error: 'configId and numbers are required' });
+    }
+
+    const numbers = numbersParam.split(',').map(num => num.trim()).filter(num => num);
+    if (numbers.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one number is required' });
+    }
+
+    const instanceConfig = await getInstanceConfig(instanceId);
+    const fileManager = new ProSBCFileAPI(instanceId);
+
+    // Get DM files
+    const dmResult = await fileManager.listDmFiles(configId);
+    if (!dmResult.success) {
+      throw new Error('Failed to list DM files');
+    }
+    const dmFiles = dmResult.files.filter(file => 
+      file.id && 
+      !isNaN(file.id) && 
+      file.name && 
+      file.name.endsWith('.csv') && 
+      !file.name.includes('called_calling') // Filter out header-like entries
+    );
+
+    const results = [];
+
+    for (const searchNumber of numbers) {
+      let found = false;
+      let customerName = null;
+
+      for (const file of dmFiles) {
+        if (found) break; // Skip remaining files if already found
+        try {
+          // Fetch the file content directly
+          const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
+          const response = await fetch(exportUrl, {
+            headers: await fileManager.getCommonHeaders()
+          });
+          if (!response.ok) {
+            console.error(`Failed to fetch file ${file.name}: ${response.status}`);
+            continue;
+          }
+          const csvContent = await response.text();
+          const numberFound = await searchNumberInCSV(csvContent, searchNumber);
+          if (numberFound) {
+            found = true;
+            customerName = file.name;
+            break;
+          }
+        } catch (err) {
+          console.error(`Error processing file ${file.name}:`, err);
+        }
+      }
+
+      results.push({
+        number: searchNumber,
+        found: found,
+        customerName: customerName
+      });
+    }
+
+    res.json({
+      success: true,
+      results: results
+    });
+  } catch (err) {
+    console.error('Error in bulk search:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
