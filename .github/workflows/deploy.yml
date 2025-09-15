@@ -23,5 +23,5 @@ jobs:
           sudo npm install --prefix backend_new
           sudo npm install --prefix frontend
           sudo npm run build --prefix frontend
-          pm2 restart prosbc-backend || pm2 start backend_new/server.js --name prosbc-backend
+          pm2 describe prosbc-backend > /dev/null 2>&1 && pm2 restart prosbc-backend || pm2 start backend_new/server.js --name prosbc-backend
           sudo nginx -s reload 
