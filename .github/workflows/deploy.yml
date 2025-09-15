@@ -18,7 +18,8 @@ jobs:
           git config --global user.name "GitHub Runner"
           git config --global user.email "githubrunner@prosbcapp.com"
           git config --global --add safe.directory /opt/prosbc-automation
-          git pull origin main
+          git fetch origin
+          git reset --hard origin/main
           npm install --prefix backend_new
           npm install --prefix frontend
           npm run build --prefix frontend
