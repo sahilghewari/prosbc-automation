@@ -20,8 +20,8 @@ jobs:
           git config --global --add safe.directory /opt/prosbc-automation
           git fetch origin
           git reset --hard origin/main
-          npm install --prefix backend_new
-          npm install --prefix frontend
-          npm run build --prefix frontend
+          sudo npm install --prefix backend_new
+          sudo npm install --prefix frontend
+          sudo npm run build --prefix frontend
           pm2 restart prosbc-backend || pm2 start backend_new/server.js --name prosbc-backend
           sudo nginx -s reload 
