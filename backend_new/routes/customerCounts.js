@@ -240,7 +240,6 @@ router.get('/historical', async (req, res) => {
       return res.status(400).json({ success: false, error: 'instanceId is required' });
     }
 
-    // Get historical data for the specified instance
     const historicalCounts = await CustomerCount.findAll({
       where: { prosbcInstanceId: instanceId },
       order: [['date', 'DESC'], ['customerName', 'ASC']]
