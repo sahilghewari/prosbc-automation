@@ -12,6 +12,12 @@ const CustomerCounts = ({ configId }) => {
   const [numberSearch, setNumberSearch] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
+  const [debugging, setDebugging] = useState(false);
+  const [debugResult, setDebugResult] = useState(null);
 
   const fetchCounts = async () => {
     if (!configId || !selectedInstance) return;
@@ -64,16 +70,15 @@ const CustomerCounts = ({ configId }) => {
   };
 
   const searchNumber = async () => {
-    if (!numberSearch.trim() || !configId || !selectedInstance) return;
+    if (!numberSearch.trim()) return;
 
     setSearching(true);
     setSearchResult(null);
     try {
       const token = localStorage.getItem('dashboard_token');
-      const response = await fetch(`/backend/api/customer-counts/search?configId=${configId}&numbers=${encodeURIComponent(numberSearch)}`, {
+      const response = await fetch(`/backend/api/dm-files/search?numbers=${encodeURIComponent(numberSearch)}`, {
         headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+          'Authorization': token ? `Bearer ${token}` : ''
         }
       });
 
@@ -87,6 +92,138 @@ const CustomerCounts = ({ configId }) => {
       setSearchResult({ success: false, error: err.message });
     } finally {
       setSearching(false);
+    }
+  };
+
+  const syncDMFiles = async () => {
+    if (!configId || !selectedInstance) return;
+
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch('/backend/api/dm-files/sync', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ configId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setSyncResult(data);
+    } catch (err) {
+      setSyncResult({ success: false, error: err.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const replaceDMFiles = async () => {
+    if (!configId || !selectedInstance) return;
+
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+
+      // First, clear existing data
+      const clearResponse = await fetch('/backend/api/dm-files/clear', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        }
+      });
+
+      if (!clearResponse.ok) {
+        throw new Error(`Clear failed: ${clearResponse.statusText}`);
+      }
+
+      // Then sync new data
+      const syncResponse = await fetch('/backend/api/dm-files/sync', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ configId })
+      });
+
+      if (!syncResponse.ok) {
+        throw new Error(`Sync failed: ${syncResponse.statusText}`);
+      }
+
+      const data = await syncResponse.json();
+      setSyncResult({
+        ...data,
+        message: `Data replaced successfully. ${data.message}`
+      });
+    } catch (err) {
+      setSyncResult({ success: false, error: err.message });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const cleanupDMFiles = async () => {
+    if (!selectedInstance) return;
+
+    setCleaning(true);
+    setCleanupResult(null);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch('/backend/api/dm-files/cleanup', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Cleanup failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setCleanupResult(data);
+    } catch (err) {
+      setCleanupResult({ success: false, error: err.message });
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const debugDMFiles = async () => {
+    if (!selectedInstance) return;
+
+    setDebugging(true);
+    setDebugResult(null);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch(`/backend/api/dm-files/debug?instanceId=${selectedInstance.id}`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Debug failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setDebugResult(data);
+    } catch (err) {
+      setDebugResult({ success: false, error: err.message });
+    } finally {
+      setDebugging(false);
     }
   };
 
@@ -141,7 +278,7 @@ const CustomerCounts = ({ configId }) => {
 
       {/* Number Search */}
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-white mb-4">Bulk Number Search</h2>
+        <h2 className="text-xl font-semibold text-white mb-4">Database Number Search</h2>
         <div className="flex gap-4">
           <div className="flex-1">
             <textarea
@@ -157,9 +294,12 @@ const CustomerCounts = ({ configId }) => {
             disabled={searching || !numberSearch.trim()}
             className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg font-medium transition-colors h-fit"
           >
-            {searching ? 'Searching...' : 'Search'}
+            {searching ? 'Searching...' : 'Search Database'}
           </button>
         </div>
+        <p className="text-gray-400 text-sm mt-2">
+          Search for phone numbers in the stored DM files database. Shows which file and ProSBC instance each number belongs to.
+        </p>
         {searchResult && (
           <div className="mt-4">
             {searchResult.success && searchResult.results ? (
@@ -169,7 +309,7 @@ const CustomerCounts = ({ configId }) => {
                     <tr>
                       <th className="px-4 py-3 text-left text-white font-semibold">Number</th>
                       <th className="px-4 py-3 text-left text-white font-semibold">Status</th>
-                      <th className="px-4 py-3 text-left text-white font-semibold">Customer</th>
+                      <th className="px-4 py-3 text-left text-white font-semibold">Found In</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,7 +324,20 @@ const CustomerCounts = ({ configId }) => {
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-300">
-                          {result.found ? result.customerName : 'N/A'}
+                          {result.found && result.locations ? (
+                            <div className="space-y-1">
+                              {result.locations.map((location, locIndex) => (
+                                <div key={locIndex} className="text-sm">
+                                  <span className="font-medium text-blue-400">{location.file_name}</span>
+                                  <span className="text-gray-400"> in </span>
+                                  <span className="font-medium text-purple-400">{location.prosbc_instance_name}</span>
+                                  <span className="text-gray-500"> ({location.prosbc_instance_id})</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            'N/A'
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -201,6 +354,137 @@ const CustomerCounts = ({ configId }) => {
           </div>
         )}
       </div>
+
+      {/* DM Files Sync */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-white mb-4">DM Files Management</h2>
+        <div className="flex gap-4 items-center mb-4">
+          <button
+            onClick={syncDMFiles}
+            disabled={syncing || !configId || !selectedInstance}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            {syncing ? 'Syncing...' : 'Sync DM Files'}
+          </button>
+          <button
+            onClick={replaceDMFiles}
+            disabled={syncing || !configId || !selectedInstance}
+            className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            {syncing ? 'Replacing...' : 'Replace All Data'}
+          </button>
+          <button
+            onClick={cleanupDMFiles}
+            disabled={cleaning || !selectedInstance}
+            className="bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            {cleaning ? 'Cleaning...' : 'Cleanup Data'}
+          </button>
+          <button
+            onClick={debugDMFiles}
+            disabled={debugging || !selectedInstance}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            {debugging ? 'Debugging...' : 'Debug Data'}
+          </button>
+        </div>
+        <p className="text-gray-400 text-sm mb-4">
+          Sync adds new files. Replace clears all existing data and syncs fresh data. Cleanup fixes malformed JSON data. Debug shows data format and validation results.
+        </p>
+        {syncResult && (
+          <div className="mt-4">
+            {syncResult.success ? (
+              <div className="p-4 bg-green-900 border border-green-700 text-green-100 rounded-lg">
+                <div className="font-semibold mb-2">Sync completed successfully!</div>
+                <div className="text-sm">
+                  {syncResult.message}
+                  {syncResult.syncedFiles && syncResult.syncedFiles.length > 0 && (
+                    <div className="mt-2">
+                      <div className="font-medium">Synced Files:</div>
+                      <ul className="list-disc list-inside mt-1">
+                        {syncResult.syncedFiles.map((file, index) => (
+                          <li key={index}>{file.file_name} ({file.total_numbers} numbers)</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {syncResult.errors && syncResult.errors.length > 0 && (
+                    <div className="mt-2">
+                      <div className="font-medium text-red-300">Errors:</div>
+                      <ul className="list-disc list-inside mt-1">
+                        {syncResult.errors.map((error, index) => (
+                          <li key={index} className="text-red-300">{error.file_name}: {error.error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
+                <div className="font-semibold">Sync failed</div>
+                <div className="text-sm mt-1">{syncResult.error}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {cleanupResult && (
+        <div className="mb-6">
+          {cleanupResult.success ? (
+            <div className="p-4 bg-yellow-900 border border-yellow-700 text-yellow-100 rounded-lg">
+              <div className="font-semibold mb-2">Cleanup completed!</div>
+              <div className="text-sm">
+                {cleanupResult.message}
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
+              <div className="font-semibold">Cleanup failed</div>
+              <div className="text-sm mt-1">{cleanupResult.error}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {debugResult && (
+        <div className="mb-6">
+          {debugResult.success ? (
+            <div className="p-4 bg-purple-900 border border-purple-700 text-purple-100 rounded-lg">
+              <div className="font-semibold mb-2">Debug Results:</div>
+              <div className="text-sm">
+                <div className="mb-2">Total records: {debugResult.totalRecords}</div>
+                <div className="mb-2">Valid JSON records: {debugResult.validRecords}</div>
+                <div className="mb-2">Invalid JSON records: {debugResult.invalidRecords}</div>
+                {debugResult.sampleData && debugResult.sampleData.length > 0 && (
+                  <div className="mt-4">
+                    <div className="font-medium mb-2">Sample Data:</div>
+                    <pre className="bg-gray-800 p-2 rounded text-xs overflow-x-auto">
+                      {JSON.stringify(debugResult.sampleData, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {debugResult.errors && debugResult.errors.length > 0 && (
+                  <div className="mt-4">
+                    <div className="font-medium mb-2">Errors:</div>
+                    <ul className="list-disc list-inside">
+                      {debugResult.errors.map((error, index) => (
+                        <li key={index} className="text-red-300">{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
+              <div className="font-semibold">Debug failed</div>
+              <div className="text-sm mt-1">{debugResult.error}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="mb-6">
