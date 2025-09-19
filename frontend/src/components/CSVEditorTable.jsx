@@ -39,6 +39,18 @@ const CSVEditorTable = ({
                    fileInfo?.name?.toLowerCase().includes('digitmap') ||
                    fileInfo?.fileName?.toLowerCase().includes('digitmap');
 
+  // Extract routeset name from file name (e.g., "CS4_DM.csv" -> "CS4")
+  const extractRoutesetName = (fileName) => {
+    if (!fileName) return '';
+    // Remove file extension and "_DM" suffix
+    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
+    const nameWithoutDMSuffix = nameWithoutExt.replace(/_DM$/i, '');
+    return nameWithoutDMSuffix;
+  };
+
+  // Get the routeset name for this file
+  const routesetName = extractRoutesetName(fileInfo?.name || fileInfo?.fileName || '');
+
   // Detect which column should be validated for DM entries (called number column)
   const calledColumnIndex = headers.findIndex((h) => {
     if (!h) return false;
@@ -506,6 +518,18 @@ const CSVEditorTable = ({
     const newRows = [...rows];
     newRows[rowIndex].data[colIndex] = value;
     
+    // Auto-fill routeset_name for DM files when editing that column
+    if (isDMFile && routesetName) {
+      const routesetNameIndex = headers.findIndex(h => 
+        h.toLowerCase().includes('routeset_name') || 
+        h.toLowerCase().includes('customer') || 
+        h.toLowerCase().includes('name')
+      );
+      if (routesetNameIndex !== -1 && colIndex === routesetNameIndex && (!value || value.trim() === '')) {
+        newRows[rowIndex].data[colIndex] = routesetName;
+      }
+    }
+    
     // Validate the input for DM files
     const validationError = validateDMEntry(value, rowIndex, colIndex, newRows);
     const errorKey = `${rowIndex}-${colIndex}`;
@@ -538,6 +562,19 @@ const CSVEditorTable = ({
       data: new Array(headers.length).fill(''),
       isNew: true
     };
+    
+    // Auto-fill routeset_name for DM files
+    if (isDMFile && routesetName) {
+      const routesetNameIndex = headers.findIndex(h => 
+        h.toLowerCase().includes('routeset_name') || 
+        h.toLowerCase().includes('customer') || 
+        h.toLowerCase().includes('name')
+      );
+      if (routesetNameIndex !== -1) {
+        newRow.data[routesetNameIndex] = routesetName;
+      }
+    }
+    
     setRows([...rows, newRow]);
     setHasChanges(true);
   };
@@ -611,8 +648,13 @@ const CSVEditorTable = ({
       newRow.data[columnIndex] = value;
       
       // Set customer name in routeset_name column if found and customer name provided
-      if (routesetNameIndex !== -1 && bulkCustomerName.trim()) {
-        newRow.data[routesetNameIndex] = bulkCustomerName.trim();
+      if (routesetNameIndex !== -1) {
+        if (bulkCustomerName.trim()) {
+          newRow.data[routesetNameIndex] = bulkCustomerName.trim();
+        } else if (isDMFile && routesetName) {
+          // Auto-fill with extracted routeset name for DM files
+          newRow.data[routesetNameIndex] = routesetName;
+        }
       }
       
       newRowsToAdd.push(newRow);
