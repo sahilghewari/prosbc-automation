@@ -53,10 +53,10 @@ app.use(async (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Missing or invalid token' });
   jwt.verify(token, process.env.JWT_SECRET || 'secret', async (err, user) => {
     if (err) return res.status(401).json({ message: 'Invalid or expired token' });
-    // Check if token matches the active user's token
-    const activeUser = await ActiveUser.findOne();
-    if (!activeUser || activeUser.token !== token) {
-      return res.status(401).json({ message: 'Session expired or overridden. Please login again.' });
+    // Check if token exists in active users
+    const activeUser = await ActiveUser.findOne({ where: { token: token } });
+    if (!activeUser) {
+      return res.status(401).json({ message: 'Session expired or invalid. Please login again.' });
     }
     req.user = user;
     next();

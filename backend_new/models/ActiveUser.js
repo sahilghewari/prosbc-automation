@@ -27,6 +27,10 @@ const ActiveUser = database.sequelize.define('ActiveUser', {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  logoutTime: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
 });
 
 export default ActiveUser;
