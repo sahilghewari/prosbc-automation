@@ -70,23 +70,82 @@ function countCalledNumbers(csvContent, fileName) {
   });
 }
 
-// Function to search for a number in 'called' or 'calling' column
-function searchNumberInCSV(csvContent, number) {
-  return new Promise((resolve, reject) => {
-    const stream = Readable.from(csvContent);
+// Function to create monthly historical counts for all DM files
+async function createMonthlyHistoricalCounts(instanceId, configId, fileManager) {
+  try {
+    // Get DM files
+    const dmResult = await fileManager.listDmFiles(configId);
+    if (!dmResult.success) {
+      throw new Error('Failed to list DM files');
+    }
+    const dmFiles = dmResult.files.filter(file => 
+      file.id && 
+      !isNaN(file.id) && 
+      file.name && 
+      file.name.endsWith('.csv') && 
+      !file.name.includes('called_calling') // Filter out header-like entries
+    );
 
-    stream
-      .pipe(csv())
-      .on('data', (row) => {
-        const calledValue = Object.values(row)[0] || '';
-        const callingValue = Object.values(row)[1] || '';
-        if (calledValue.trim() === number.trim() || callingValue.trim() === number.trim()) {
-          resolve(true);
+    // Get ProSBC instance ID from DB
+    let prosbcInstanceId;
+    if (instanceId) {
+      const instance = await ProSBCInstance.findOne({ where: { id: instanceId } });
+      if (!instance) {
+        throw new Error('Invalid instance ID');
+      }
+      prosbcInstanceId = instance.id;
+    } else {
+      // Default instance
+      const instance = await ProSBCInstance.findOne({ where: { name: 'default' } });
+      prosbcInstanceId = instance ? instance.id : 1; // Assume 1 if not found
+    }
+
+    const currentDate = new Date();
+    const currentMonth = currentDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    for (const file of dmFiles) {
+      try {
+        // Fetch the file content directly
+        const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
+        const response = await fetch(exportUrl, {
+          headers: await fileManager.getCommonHeaders()
+        });
+        if (!response.ok) {
+          console.error(`Failed to fetch file ${file.name}: ${response.status}`);
+          continue;
         }
-      })
-      .on('end', () => resolve(false))
-      .on('error', reject);
-  });
+        const csvContent = await response.text();
+        const count = await countCalledNumbers(csvContent, file.name);
+
+        // Check if we need to store monthly data
+        const existingRecord = await CustomerCount.findOne({
+          where: {
+            customerName: file.name,
+            date: currentMonth,
+            prosbcInstanceId: prosbcInstanceId
+          }
+        });
+
+        if (!existingRecord) {
+          await CustomerCount.create({
+            customerName: file.name,
+            count: count,
+            date: currentMonth,
+            prosbcInstanceId: prosbcInstanceId
+          });
+          console.log(`Created historical count for ${file.name} on ${currentMonth}`);
+        } else {
+          console.log(`Historical count already exists for ${file.name} on ${currentMonth}`);
+        }
+      } catch (err) {
+        console.error(`Error processing file ${file.name}:`, err);
+        // Continue with other files
+      }
+    }
+  } catch (error) {
+    console.error('Error creating monthly historical counts:', error);
+    throw error;
+  }
 }
 
 // GET /customer-counts
@@ -115,23 +174,7 @@ router.get('/', async (req, res) => {
       !file.name.includes('called_calling') // Filter out header-like entries
     );
 
-    // Get ProSBC instance ID from DB
-    let prosbcInstanceId;
-    if (instanceId) {
-      const instance = await ProSBCInstance.findOne({ where: { id: instanceId } });
-      if (!instance) {
-        return res.status(400).json({ success: false, error: 'Invalid instance ID' });
-      }
-      prosbcInstanceId = instance.id;
-    } else {
-      // Default instance
-      const instance = await ProSBCInstance.findOne({ where: { name: 'default' } });
-      prosbcInstanceId = instance ? instance.id : 1; // Assume 1 if not found
-    }
-
     const liveCounts = [];
-    const currentDate = new Date();
-    const currentMonth = currentDate.toISOString().slice(0, 10); // YYYY-MM-DD
 
     for (const file of dmFiles) {
       try {
@@ -150,28 +193,6 @@ router.get('/', async (req, res) => {
           customerName: file.name,
           count: count
         });
-
-        // Check if we need to store monthly data
-        try {
-          const existingRecord = await CustomerCount.findOne({
-            where: {
-              customerName: file.name,
-              date: currentMonth,
-              prosbcInstanceId: prosbcInstanceId
-            }
-          });
-
-          if (!existingRecord) {
-            await CustomerCount.create({
-              customerName: file.name,
-              count: count,
-              date: currentMonth,
-              prosbcInstanceId: prosbcInstanceId
-            });
-          }
-        } catch (dbError) {
-          // Silently skip database operations if table doesn't exist
-        }
       } catch (err) {
         console.error(`Error processing file ${file.name}:`, err);
         // Continue with other files
@@ -181,6 +202,16 @@ router.get('/', async (req, res) => {
     // Get historical data
     let historicalCounts = [];
     try {
+      let prosbcInstanceId;
+      if (instanceId) {
+        const instance = await ProSBCInstance.findOne({ where: { id: instanceId } });
+        prosbcInstanceId = instance ? instance.id : instanceId;
+      } else {
+        // Default instance
+        const instance = await ProSBCInstance.findOne({ where: { name: 'default' } });
+        prosbcInstanceId = instance ? instance.id : 1; // Assume 1 if not found
+      }
+
       historicalCounts = await CustomerCount.findAll({
         where: { prosbcInstanceId: prosbcInstanceId },
         order: [['date', 'DESC'], ['customerName', 'ASC']]
@@ -204,30 +235,27 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /customer-counts/historical?instanceId=xxx
-router.get('/historical', async (req, res) => {
+// POST /customer-counts/create-monthly
+router.post('/create-monthly', async (req, res) => {
   try {
-    const instanceId = req.query.instanceId;
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const configId = req.body.configId;
 
-    if (!instanceId) {
-      return res.status(400).json({ success: false, error: 'instanceId is required' });
+    if (!configId) {
+      return res.status(400).json({ success: false, error: 'configId is required' });
     }
 
-    const historicalCounts = await CustomerCount.findAll({
-      where: { prosbcInstanceId: instanceId },
-      order: [['date', 'DESC'], ['customerName', 'ASC']]
-    });
+    const instanceConfig = await getInstanceConfig(instanceId);
+    const fileManager = new ProSBCFileAPI(instanceId);
+
+    await createMonthlyHistoricalCounts(instanceId, configId, fileManager);
 
     res.json({
       success: true,
-      historicalCounts: historicalCounts.map(record => ({
-        customerName: record.customerName,
-        count: record.count,
-        date: record.date
-      }))
+      message: 'Monthly historical counts created successfully'
     });
   } catch (err) {
-    console.error('Error fetching historical data:', err);
+    console.error('Error creating monthly historical counts:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

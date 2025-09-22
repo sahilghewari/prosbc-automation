@@ -9,6 +9,7 @@ const CustomerCounts = ({ configId }) => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHistoricalInstance, setSelectedHistoricalInstance] = useState(selectedInstance?.id || '');
+  const [selectedHistoricalDate, setSelectedHistoricalDate] = useState(null);
   const [numberSearch, setNumberSearch] = useState('');
   const [searchResult, setSearchResult] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -18,6 +19,8 @@ const CustomerCounts = ({ configId }) => {
   const [cleanupResult, setCleanupResult] = useState(null);
   const [debugging, setDebugging] = useState(false);
   const [debugResult, setDebugResult] = useState(null);
+  const [recordingCounts, setRecordingCounts] = useState(false);
+  const [recordResult, setRecordResult] = useState(null);
 
   const fetchCounts = async () => {
     if (!configId || !selectedInstance) return;
@@ -227,6 +230,38 @@ const CustomerCounts = ({ configId }) => {
     }
   };
 
+  const recordCounts = async () => {
+    if (!configId || !selectedInstance) return;
+
+    setRecordingCounts(true);
+    setRecordResult(null);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch('/backend/api/customer-counts/create-monthly', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'X-ProSBC-Instance-ID': selectedInstance.id.toString(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ configId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to record counts: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setRecordResult(data);
+      // Refresh the counts to show the new historical data
+      fetchCounts();
+    } catch (err) {
+      setRecordResult({ success: false, error: err.message });
+    } finally {
+      setRecordingCounts(false);
+    }
+  };
+
   useEffect(() => {
     fetchCounts();
   }, [configId, selectedInstance]);
@@ -387,9 +422,16 @@ const CustomerCounts = ({ configId }) => {
           >
             {debugging ? 'Debugging...' : 'Debug Data'}
           </button>
+          <button
+            onClick={recordCounts}
+            disabled={recordingCounts || !configId || !selectedInstance}
+            className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+          >
+            {recordingCounts ? 'Recording...' : 'Record Number Counts'}
+          </button>
         </div>
         <p className="text-gray-400 text-sm mb-4">
-          Sync adds new files. Replace clears all existing data and syncs fresh data. Cleanup fixes malformed JSON data. Debug shows data format and validation results.
+          Sync adds new files. Replace clears all existing data and syncs fresh data. Cleanup fixes malformed JSON data. Debug shows data format and validation results. Record Number Counts creates monthly historical records for current customer counts.
         </p>
         {syncResult && (
           <div className="mt-4">
@@ -486,6 +528,24 @@ const CustomerCounts = ({ configId }) => {
         </div>
       )}
 
+      {recordResult && (
+        <div className="mb-6">
+          {recordResult.success ? (
+            <div className="p-4 bg-green-900 border border-green-700 text-green-100 rounded-lg">
+              <div className="font-semibold mb-2">Number counts recorded successfully!</div>
+              <div className="text-sm">
+                {recordResult.message}
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
+              <div className="font-semibold">Failed to record counts</div>
+              <div className="text-sm mt-1">{recordResult.error}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Search Bar */}
       <div className="mb-6">
         <div className="relative">
@@ -537,7 +597,9 @@ const CustomerCounts = ({ configId }) => {
         {/* Historical Counts */}
         <div className="bg-gray-800 rounded-xl p-6 shadow-lg">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-white">Historical Counts</h2>
+            <h2 className="text-xl font-semibold text-white">
+              {selectedHistoricalDate ? `Historical Counts - ${selectedHistoricalDate}` : 'Historical Counts'}
+            </h2>
             <select
               value={selectedHistoricalInstance}
               onChange={(e) => setSelectedHistoricalInstance(e.target.value)}
@@ -551,24 +613,73 @@ const CustomerCounts = ({ configId }) => {
             </select>
           </div>
           <div className="space-y-4 max-h-96 overflow-y-auto">
-            {Object.keys(historicalGrouped).sort().reverse().map(date => (
-              <div key={date} className="bg-gray-700 rounded-lg p-4">
-                <h3 className="text-white font-medium mb-3 pb-2 border-b border-gray-600">{date}</h3>
-                <div className="space-y-2">
-                  {historicalGrouped[date].map((count, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-gray-600 rounded hover:bg-gray-500 transition-colors">
-                      <span className="text-gray-300 truncate flex-1 mr-4">{count.customerName}</span>
-                      <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
-                        {count.count}
+            {!selectedHistoricalDate ? (
+              // Show date list
+              <div className="space-y-2">
+                <h3 className="text-white font-medium mb-4">Available Historical Dates</h3>
+                {Object.keys(historicalGrouped).sort().reverse().map(date => (
+                  <div
+                    key={date}
+                    onClick={() => setSelectedHistoricalDate(date)}
+                    className="bg-gray-700 rounded-lg p-4 cursor-pointer hover:bg-gray-600 transition-colors border border-gray-600 hover:border-gray-500"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-white font-medium">{date}</span>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-gray-300 text-sm">
+                          {historicalGrouped[date].length} customers
+                        </span>
+                        <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
+                          {historicalGrouped[date].reduce((sum, count) => sum + count.count, 0)} total
+                        </span>
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(historicalGrouped).length === 0 && (
+                  <div className="text-center py-12 text-gray-400">
+                    {searchTerm ? 'No historical data matches your search' : 'No historical data available'}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Show selected date details
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <button
+                    onClick={() => setSelectedHistoricalDate(null)}
+                    className="flex items-center text-blue-400 hover:text-blue-300 transition-colors"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to Dates
+                  </button>
+                  <h3 className="text-white font-medium">{selectedHistoricalDate}</h3>
+                </div>
+                <div className="bg-gray-700 rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {historicalGrouped[selectedHistoricalDate].map((count, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-600 rounded hover:bg-gray-500 transition-colors">
+                        <span className="text-gray-300 truncate flex-1 mr-4 text-sm">{count.customerName}</span>
+                        <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
+                          {count.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-600">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-gray-400">Total Customers: {historicalGrouped[selectedHistoricalDate].length}</span>
+                      <span className="text-green-400 font-bold">
+                        Total Numbers: {historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0)}
                       </span>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {Object.keys(historicalGrouped).length === 0 && (
-              <div className="text-center py-12 text-gray-400">
-                {searchTerm ? 'No historical data matches your search' : 'No historical data available'}
               </div>
             )}
           </div>
@@ -589,9 +700,17 @@ const CustomerCounts = ({ configId }) => {
         </div>
         <div className="bg-gray-800 rounded-xl p-6 text-center">
           <div className="text-2xl font-bold text-purple-400 mb-2">
-            {Object.keys(historicalGrouped).length}
+            {selectedHistoricalDate && historicalGrouped[selectedHistoricalDate] 
+              ? historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0)
+              : Object.keys(historicalGrouped).length > 0 
+                ? Object.values(historicalGrouped).reduce((total, dateData) => 
+                    total + dateData.reduce((sum, count) => sum + count.count, 0), 0)
+                : 0
+            }
           </div>
-          <div className="text-gray-400">Historical Months</div>
+          <div className="text-gray-400">
+            {selectedHistoricalDate ? `${selectedHistoricalDate} Numbers` : 'Total Historical Numbers'}
+          </div>
         </div>
       </div>
 
