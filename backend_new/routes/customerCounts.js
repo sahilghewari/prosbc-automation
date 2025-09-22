@@ -53,36 +53,15 @@ async function fetchDMFile(baseURL, sessionCookie, dbId, fileId) {
 function countCalledNumbers(csvContent, fileName) {
   return new Promise((resolve, reject) => {
     let count = 0;
-    let headersLogged = false;
     const stream = Readable.from(csvContent);
 
     stream
       .pipe(csv())
       .on('data', (row) => {
-        if (!headersLogged && fileName === 'DIP_800_TFN_DM.csv') {
-          console.log('Headers for DIP_800_TFN_DM.csv:', Object.keys(row));
-          headersLogged = true;
-        }
-        if (fileName === 'DIP_800_TFN_DM.csv') {
-          console.log('Row for DIP_800_TFN_DM.csv:', row);
-        }
-        if (fileName === 'DIP_800_TFN_DM.csv') {
-          console.log('Row keys:', Object.keys(row));
-          console.log('Row values:', Object.values(row));
-          console.log('row["Called"]:', row['Called']);
-          console.log('row["called"]:', row['called']);
-          console.log('row["CALLED"]:', row['CALLED']);
-        }
         // Check 'called' first, then 'calling' if 'called' is empty
         const calledValue = Object.values(row)[0] || '';
         const callingValue = Object.values(row)[1] || '';
-        if (fileName === 'DIP_800_TFN_DM.csv') {
-          console.log('calledValue:', calledValue, 'callingValue:', callingValue);
-        }
         if ((calledValue && calledValue.trim() !== '') || (callingValue && callingValue.trim() !== '')) {
-          if (fileName === 'DIP_800_TFN_DM.csv') {
-            console.log('Incrementing count for DIP_800_TFN_DM.csv');
-          }
           count++;
         }
       })
@@ -166,13 +145,7 @@ router.get('/', async (req, res) => {
           continue;
         }
         const csvContent = await response.text();
-        if (file.name === 'DIP_800_TFN_DM.csv') {
-          console.log('CSV Content for DIP_800_TFN_DM.csv:', csvContent);
-        }
         const count = await countCalledNumbers(csvContent, file.name);
-        if (file.name === 'DIP_800_TFN_DM.csv') {
-          console.log('Count for DIP_800_TFN_DM.csv:', count);
-        }
         liveCounts.push({
           customerName: file.name,
           count: count

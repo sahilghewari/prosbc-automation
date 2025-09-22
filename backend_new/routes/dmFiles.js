@@ -2,6 +2,8 @@ import express from 'express';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 import fetch from 'node-fetch';
+import fs from 'fs';
+import path from 'path';
 import ProSBCDMFile from '../models/ProSBCDMFile.js';
 import ProSBCInstance from '../models/ProSBCInstance.js';
 import { getProSBCCredentials } from '../utils/prosbc/multiInstanceManager.js';
@@ -103,6 +105,7 @@ router.post('/sync', async (req, res) => {
         // Update status to syncing
         await ProSBCDMFile.upsert({
           file_name: file.name,
+          prosbc_file_id: file.id.toString(),
           prosbc_instance_id: prosbcInstance.id,
           prosbc_instance_name: prosbcInstance.name,
           status: 'syncing',
@@ -122,10 +125,12 @@ router.post('/sync', async (req, res) => {
         const csvContent = await response.text();
         const numbers = await extractNumbersFromCSV(csvContent);
 
-        // Store only file name and numbers (not full content)
+        // Store full CSV content and numbers array
         await ProSBCDMFile.upsert({
           file_name: file.name,
+          file_content: csvContent,
           numbers: JSON.stringify(numbers),
+          prosbc_file_id: file.id.toString(),
           prosbc_instance_id: prosbcInstance.id,
           prosbc_instance_name: prosbcInstance.name,
           total_numbers: numbers.length,
@@ -149,6 +154,7 @@ router.post('/sync', async (req, res) => {
         try {
           await ProSBCDMFile.upsert({
             file_name: file.name,
+            prosbc_file_id: file.id.toString(),
             prosbc_instance_id: prosbcInstance.id,
             prosbc_instance_name: prosbcInstance.name,
             status: 'inactive',
@@ -173,6 +179,75 @@ router.post('/sync', async (req, res) => {
   }
 });
 
+// POST /dm-files - Create a new DM file entry
+router.post('/', async (req, res) => {
+  try {
+    const instanceId = req.headers['x-prosbc-instance-id'];
+    const { file_name, prosbc_file_id, file_content, configId } = req.body;
+
+    if (!file_name) {
+      return res.status(400).json({ success: false, error: 'file_name is required' });
+    }
+
+    // Get instance details
+    let prosbcInstance;
+    if (instanceId) {
+      prosbcInstance = await ProSBCInstance.findOne({ where: { id: instanceId } });
+      if (!prosbcInstance) {
+        return res.status(400).json({ success: false, error: 'Invalid instance ID' });
+      }
+    } else {
+      // Default instance
+      prosbcInstance = await ProSBCInstance.findOne({ where: { name: 'default' } });
+      if (!prosbcInstance) {
+        prosbcInstance = { id: 1, name: 'default' }; // Assume 1 if not found
+      }
+    }
+
+    // Extract numbers from CSV content if provided
+    let numbers = [];
+    let totalNumbers = 0;
+    if (file_content) {
+      numbers = await extractNumbersFromCSV(file_content);
+      totalNumbers = numbers.length;
+    }
+
+    // Create the file entry
+    const newFile = await ProSBCDMFile.create({
+      file_name: file_name,
+      file_content: file_content || null,
+      numbers: file_content ? JSON.stringify(numbers) : null,
+      prosbc_file_id: prosbc_file_id || null,
+      prosbc_instance_id: prosbcInstance.id,
+      prosbc_instance_name: prosbcInstance.name,
+      total_numbers: totalNumbers,
+      last_synced: new Date(),
+      status: 'active'
+    });
+
+    res.json({
+      success: true,
+      message: 'DM file created successfully',
+      file: {
+        id: newFile.id,
+        file_name: newFile.file_name,
+        prosbc_file_id: newFile.prosbc_file_id,
+        prosbc_instance_id: newFile.prosbc_instance_id,
+        prosbc_instance_name: newFile.prosbc_instance_name,
+        total_numbers: newFile.total_numbers,
+        last_synced: newFile.last_synced,
+        status: newFile.status,
+        createdAt: newFile.createdAt,
+        updatedAt: newFile.updatedAt
+      }
+    });
+
+  } catch (err) {
+    console.error('Error creating DM file:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // GET /dm-files
 router.get('/', async (req, res) => {
   try {
@@ -193,6 +268,7 @@ router.get('/', async (req, res) => {
       files: dmFiles.map(file => ({
         id: file.id,
         file_name: file.file_name,
+        prosbc_file_id: file.prosbc_file_id,
         prosbc_instance_id: file.prosbc_instance_id,
         prosbc_instance_name: file.prosbc_instance_name,
         total_numbers: file.total_numbers,
@@ -206,6 +282,141 @@ router.get('/', async (req, res) => {
 
   } catch (err) {
     console.error('Error fetching DM files:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /dm-files/:id/content - Get file content for editing
+router.get('/:id/content', async (req, res) => {
+  try {
+    const fileId = req.params.id;
+    const instanceId = req.query.instanceId;
+
+    const whereClause = { id: fileId };
+    if (instanceId) {
+      whereClause.prosbc_instance_id = instanceId;
+    }
+
+    const dmFile = await ProSBCDMFile.findOne({
+      where: whereClause
+    });
+
+    if (!dmFile) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    // Return file content from database
+    res.json({
+      success: true,
+      file: {
+        id: dmFile.id,
+        file_name: dmFile.file_name,
+        file_content: dmFile.file_content,
+        prosbc_file_id: dmFile.prosbc_file_id,
+        prosbc_instance_id: dmFile.prosbc_instance_id,
+        prosbc_instance_name: dmFile.prosbc_instance_name,
+        last_synced: dmFile.last_synced,
+        status: dmFile.status
+      }
+    });
+
+  } catch (err) {
+    console.error('Error fetching DM file content:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /dm-files/:id/content - Update file content in database and ProSBC
+router.put('/:id/content', async (req, res) => {
+  try {
+    const fileId = req.params.id;
+    const { file_content, configId } = req.body;
+    const instanceId = req.headers['x-prosbc-instance-id'];
+
+    if (!file_content) {
+      return res.status(400).json({ success: false, error: 'file_content is required' });
+    }
+
+    // Find the file in database
+    const dmFile = await ProSBCDMFile.findOne({
+      where: { id: fileId }
+    });
+
+    if (!dmFile) {
+      return res.status(404).json({ success: false, error: 'File not found' });
+    }
+
+    // Extract numbers from the updated CSV content
+    const numbers = await extractNumbersFromCSV(file_content);
+
+    // Update database first
+    await dmFile.update({
+      file_content: file_content,
+      numbers: JSON.stringify(numbers),
+      total_numbers: numbers.length,
+      last_synced: new Date(),
+      status: 'active'
+    });
+
+    // Update ProSBC if instanceId and configId are provided
+    let prosbcUpdateResult = null;
+    if (instanceId && configId) {
+      try {
+        const instanceConfig = await getInstanceConfig(instanceId);
+        const fileManager = new ProSBCFileAPI(instanceId);
+
+        // Create a temporary file with the content
+        const tempDir = path.join(process.cwd(), 'temp');
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+
+        const tempFilePath = path.join(tempDir, `${dmFile.file_name}_${Date.now()}.csv`);
+        fs.writeFileSync(tempFilePath, file_content);
+
+        // Update the file on ProSBC
+        prosbcUpdateResult = await fileManager.updateFile(
+          'routesets_digitmaps',
+          dmFile.prosbc_file_id, // Use the actual ProSBC file ID
+          tempFilePath,
+          null,
+          configId
+        );
+
+        // Clean up temp file
+        fs.unlinkSync(tempFilePath);
+
+        // Update sync status
+        await dmFile.update({
+          last_synced: new Date(),
+          status: 'active'
+        });
+
+      } catch (prosbcError) {
+        console.error('Error updating ProSBC:', prosbcError);
+        // Don't fail the whole operation if ProSBC update fails
+        prosbcUpdateResult = {
+          success: false,
+          error: prosbcError.message
+        };
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'File updated successfully',
+      file: {
+        id: dmFile.id,
+        file_name: dmFile.file_name,
+        total_numbers: numbers.length,
+        last_synced: dmFile.last_synced,
+        status: dmFile.status
+      },
+      prosbc_update: prosbcUpdateResult
+    });
+
+  } catch (err) {
+    console.error('Error updating DM file content:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

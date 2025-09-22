@@ -390,7 +390,6 @@ class ProSBCFileAPI {
           
           if (testResponse.ok) {
             const testHtml = await testResponse.text();
-            console.log(`[Update REST API] DB ID ${testDbId} response length: ${testHtml.length}`);
             
             // Check if this response contains any content
             if (testHtml.length < 1000) {
@@ -516,13 +515,9 @@ class ProSBCFileAPI {
                 verified: true
               };
             } else {
-              console.warn(`[Update REST API] ✗ Verification failed: File content doesn't match what we sent`);
-              console.log(`[Update REST API] Expected content length: ${originalContentTrimmed.length}, Actual: ${updatedContentTrimmed.length}`);
-              console.log(`[Update REST API] Expected first 100 chars:`, originalContentTrimmed.substring(0, 100));
-              console.log(`[Update REST API] Actual first 100 chars:`, updatedContentTrimmed.substring(0, 100));
+              console.warn(`[Update REST API] Verification failed: content mismatch, falling back to CSRF method`);
               
               // Try the CSRF-based update as fallback
-              console.log(`[Update REST API] Falling back to CSRF-based update method...`);
               const fallbackResult = await this.updateFileCSRF(fileType, fileDetails.id, fileContent, fileName, dbId);
               if (fallbackResult.success) {
                 return {
@@ -746,8 +741,8 @@ class ProSBCFileAPI {
           const verifyHtml = await verifyResp.text();
 
           // If we unexpectedly received the configuration selection page or the section is missing, probe nearby DB IDs
-          const looksLikeConfigPage = verifyHtml.includes('configurations_list') && !hasRoutesetSection;
           const hasRoutesetSection = verifyHtml.includes('Routesets Definition') || verifyHtml.includes('Routesets Definition:');
+          const looksLikeConfigPage = verifyHtml.includes('configurations_list') && !hasRoutesetSection;
 
           if (!verifyResp.ok || looksLikeConfigPage || !hasRoutesetSection) {
             console.log(`[ProSBC1 Config] After selecting mapped config ${mappedConfig.id}, verification for DB ${mappedConfig.dbId} failed (looksLikeConfig=${looksLikeConfigPage}, hasRoutesetSection=${hasRoutesetSection}). Probing alternative DB IDs.`);
@@ -810,38 +805,27 @@ class ProSBCFileAPI {
     const sessionCookie = await this.getSessionCookie();
     // Fetch live configs
     this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
-    console.log(`[Config Selection] Instance: ${this.instanceId}, Total configs found: ${this.configs.length}`);
-    console.log(`[Config Selection] Available configs from ProSBC:`, this.configs.map(cfg => `${cfg.id}:${cfg.name}(active:${cfg.active})`));
     
     // Pick config: use numericConfigId if set, else pick the active one
     let configToSelect = numericConfigId || this.selectedConfigId;
     if (!configToSelect) {
       const active = this.configs.find(cfg => cfg.active);
       configToSelect = active ? active.id : (this.configs[0] && this.configs[0].id);
-      console.log(`[Config Selection] No specific config requested, using: ${configToSelect} (active: ${active ? 'yes' : 'first available'})`);
-      if (active) {
-        console.log(`[Config Selection] Active config details: ID=${active.id}, Name=${active.name}`);
-      } else if (this.configs[0]) {
-        console.log(`[Config Selection] First available config details: ID=${this.configs[0].id}, Name=${this.configs[0].name}`);
-      }
     } else {
-      console.log(`[Config Selection] Selecting specific config: ${configToSelect} (requested: ${configId})`);
       const selectedConfig = this.configs.find(cfg => cfg.id === configToSelect);
-      if (selectedConfig) {
-        console.log(`[Config Selection] Selected config details: ID=${selectedConfig.id}, Name=${selectedConfig.name}, Active=${selectedConfig.active}`);
-      } else {
-        console.warn(`[Config Selection] WARNING: Selected config ${configToSelect} not found in available configs!`);
+      if (!selectedConfig) {
+        console.warn(`[Config Selection] Config ${configToSelect} not found in available configs`);
       }
     }
     if (!configToSelect) throw new Error('No configuration found to select');
     
-    console.log(`[Config Selection] Attempting to select config ${configToSelect} on instance ${this.instanceId}...`);
+    console.log(`[Config Selection] Selecting config ${configToSelect} on instance ${this.instanceId}`);
     
     try {
       await selectConfiguration(configToSelect, this.baseURL, sessionCookie);
       this.selectedConfigId = configToSelect;
       this.configSelectionDone = true;
-      console.log(`[Config Selection] ✓ Successfully selected config ${configToSelect} for instance ${this.instanceId}`);
+      console.log(`[Config Selection] ✓ Config ${configToSelect} selected for ${this.instanceId}`);
       
       // Verify the selection worked by checking a simple endpoint and extract the actual database ID
       const verifyResponse = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
@@ -852,7 +836,7 @@ class ProSBCFileAPI {
       if (verifyResponse.ok) {
         const verifyHtml = await verifyResponse.text();
         if (verifyHtml.includes('configurations_list') || verifyHtml.includes('Configuration')) {
-          console.warn(`[Config Selection] WARNING: Config selection verification failed - still getting configuration page`);
+        console.warn(`[Config Selection] Config selection verification failed for ${this.instanceId}`);
           console.warn(`[Config Selection] This suggests ProSBC ${this.instanceId} has issues with config selection or session state`);
           
           // Try to re-login and select again
@@ -910,12 +894,7 @@ class ProSBCFileAPI {
       const sessionCookie = await this.getSessionCookie();
       this.configs = await fetchLiveConfigIds(this.baseURL, sessionCookie);
       
-      console.log(`[ProSBC1 Debug] Total configurations: ${this.configs.length}`);
-      console.log(`[ProSBC1 Debug] Configuration details:`, this.configs.map(cfg => ({
-        id: cfg.id,
-        name: cfg.name,
-        active: cfg.active
-      })));
+      console.log(`[ProSBC1] Loaded ${this.configs.length} configurations`);
       
       // Check which database IDs are accessible and contain files
       const dbResults = [];
@@ -954,10 +933,8 @@ class ProSBCFileAPI {
           }
           
           dbResults.push(result);
-          console.log(`[ProSBC1 Debug] DB ID ${dbId}:`, result);
           
         } catch (error) {
-          console.log(`[ProSBC1 Debug] DB ID ${dbId} error:`, error.message);
           dbResults.push({
             dbId,
             error: error.message,
@@ -970,13 +947,10 @@ class ProSBCFileAPI {
       const accessibleDbs = dbResults.filter(db => db.accessible);
       const dbsWithFiles = dbResults.filter(db => db.accessible && (db.dfFiles > 0 || db.dmFiles > 0));
       
-      console.log(`[ProSBC1 Debug] Summary:`);
-      console.log(`  - Total configurations: ${this.configs.length}`);
-      console.log(`  - Accessible database IDs: ${accessibleDbs.map(db => db.dbId).join(', ')}`);
-      console.log(`  - Database IDs with files: ${dbsWithFiles.map(db => `${db.dbId}(DF:${db.dfFiles},DM:${db.dmFiles})`).join(', ')}`);
+      console.log(`[ProSBC1] Found ${accessibleDbs.length} accessible DBs, ${dbsWithFiles.length} with files`);
       
       if (this.configs.length > 10) {
-        console.log(`[ProSBC1 Debug] WARNING: ProSBC1 has ${this.configs.length} configurations, which might cause issues with config selection`);
+        console.warn(`[ProSBC1] ${this.configs.length} configurations may cause config selection issues`);
       }
       
       return {
@@ -1139,11 +1113,7 @@ class ProSBCFileAPI {
         redirect: 'manual' // Handle redirects manually to avoid stream issues
       });
       
-      console.log(`[Upload DF] Response status: ${uploadResponse.status}`);
-      console.log(`[Upload DF] Response headers:`, Object.fromEntries(uploadResponse.headers.entries()));
-      
       const responseText = await uploadResponse.text();
-      console.log(`[Upload DF] Response body preview:`, responseText.substring(0, 500));
       
       onProgress?.(100, 'Upload complete!');
       
@@ -1454,11 +1424,7 @@ class ProSBCFileAPI {
         redirect: 'manual' // Handle redirects manually to avoid stream issues
       });
       
-      console.log(`[Upload DM] Response status: ${uploadResponse.status}`);
-      console.log(`[Upload DM] Response headers:`, Object.fromEntries(uploadResponse.headers.entries()));
-      
       const responseText = await uploadResponse.text();
-      console.log(`[Upload DM] Response body preview:`, responseText.substring(0, 500));
       
       onProgress?.(100, 'Upload complete!');
       
@@ -1629,25 +1595,16 @@ class ProSBCFileAPI {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
-      console.log(`[ProSBC] Instance: ${this.instanceId}, Response status: ${response.status}`);
       if (!response.ok) throw new Error(`Failed to fetch DF files: ${response.status}`);
       const html = await response.text();
-      console.log(`[ProSBC] Instance: ${this.instanceId}, HTML length: ${html.length}`);
       
       // Check if we're getting the right page (should contain file database content)
       if (html.includes('configurations_list') || html.includes('Configuration')) {
-        console.log(`[ProSBC] Instance: ${this.instanceId}, WARNING: Received configuration page instead of file database page!`);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, URL was: ${this.baseURL}/file_dbs/${dbId}/edit`);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, This suggests the config selection may have failed or reset`);
+        console.warn(`[ProSBC] Config selection may have failed for ${this.instanceId}`);
       }
       
       const files = this.parseFileTable(html, 'Routesets Definition', 'routesets_definitions');
-      try {
-        const sample = (files || []).slice(0, 6).map(f => f.name || f.id || '').filter(Boolean);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files: count=${(files || []).length}, sample=${JSON.stringify(sample)}`);
-      } catch (e) {
-        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DF files count=${(files || []).length}`);
-      }
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed ${(files || []).length} DF files`);
       return { success: true, files };
     } catch (error) {
       console.error(`[ProSBC] Instance: ${this.instanceId}, listDfFiles error:`, error);
@@ -1690,25 +1647,16 @@ class ProSBCFileAPI {
         method: 'GET',
         headers: await this.getCommonHeaders()
       });
-      console.log(`[ProSBC] Instance: ${this.instanceId}, Response status: ${response.status}`);
       if (!response.ok) throw new Error(`Failed to fetch DM files: ${response.status}`);
       const html = await response.text();
-      console.log(`[ProSBC] Instance: ${this.instanceId}, HTML length: ${html.length}`);
       
       // Check if we're getting the right page (should contain file database content)
       if (html.includes('configurations_list') || html.includes('Configuration')) {
-        console.log(`[ProSBC] Instance: ${this.instanceId}, WARNING: Received configuration page instead of file database page!`);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, URL was: ${this.baseURL}/file_dbs/${dbId}/edit`);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, This suggests the config selection may have failed or reset`);
+        console.warn(`[ProSBC] Config selection may have failed for ${this.instanceId}`);
       }
       
       const files = this.parseFileTable(html, 'Routesets Digitmap', 'routesets_digitmaps');
-      try {
-        const sample = (files || []).slice(0, 6).map(f => f.name || f.id || '').filter(Boolean);
-        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files: count=${(files || []).length}, sample=${JSON.stringify(sample)}`);
-      } catch (e) {
-        console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed DM files count=${(files || []).length}`);
-      }
+      console.log(`[ProSBC] Instance: ${this.instanceId}, Parsed ${(files || []).length} DM files`);
       return { success: true, files };
     } catch (error) {
       console.error(`[ProSBC] Instance: ${this.instanceId}, listDmFiles error:`, error);
@@ -1837,19 +1785,9 @@ class ProSBCFileAPI {
       }
       console.log(`[ProSBC] Found ${rowCount} rows in section: ${sectionTitle}`);
       
-      // Debug: If no files found but section exists, log a sample of the HTML
+      // Debug: If no files found but section exists, log a warning
       if (rowCount === 0 && sectionHtml.length > 0) {
-        const sampleHtml = sectionHtml.substring(0, 500);
-        console.log(`[ProSBC] DEBUG: No files matched regex. Section HTML sample:`, sampleHtml);
-        
-        // Try to find any table rows in the section
-        const trMatches = sectionHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
-        if (trMatches) {
-          console.log(`[ProSBC] DEBUG: Found ${trMatches.length} table rows in section`);
-          if (trMatches.length > 0) {
-            console.log(`[ProSBC] DEBUG: First row sample:`, trMatches[0].substring(0, 200));
-          }
-        }
+        console.warn(`[ProSBC] No files parsed from section: ${sectionTitle}`);
       }
       
       return files;

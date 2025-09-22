@@ -19,6 +19,10 @@ const ProSBCDMFile = database.sequelize.define('ProSBCDMFile', {
     type: DataTypes.TEXT('long'),
     allowNull: true,
   },
+  prosbc_file_id: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+  },
   prosbc_instance_id: {
     type: DataTypes.STRING(50),
     allowNull: false,
