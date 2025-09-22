@@ -243,7 +243,7 @@ router.get('/search', async (req, res) => {
       return res.status(400).json({ success: false, error: 'configId and numbers are required' });
     }
 
-    const numbers = numbersParam.split(',').map(num => num.trim()).filter(num => num);
+    const numbers = numbersParam.split(/[, \r\n]+/).map(num => num.trim()).filter(num => num);
     if (numbers.length === 0) {
       return res.status(400).json({ success: false, error: 'At least one number is required' });
     }
