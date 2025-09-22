@@ -9,8 +9,6 @@ export async function fetchProSbcNapList() {
   const response = await napService.makeRequest(listUrl, { method: 'GET' });
   if (!response.ok) throw new Error('Failed to fetch NAP list from ProSBC');
   const html = await response.text();
-  // Log the first 50000 characters of the HTML response for debugging
-  console.log('[ProSBC] HTML response (first 50000 chars):', html.slice(0, 50000));
   const dom = new JSDOM(html);
   const doc = dom.window.document;
   // ProSBC NAPs are in a table with links like /naps/{id}/edit

@@ -261,7 +261,6 @@ const getCsrfToken = async (client) => {
     
     let html = response.data;
     console.log('Received HTML response, extracting CSRF token...');
-    console.log('Response length:', html.length);
     
     // Check if we got a proper page with forms (should have authenticity_token)
     if (!html.includes('authenticity_token') && !html.includes('csrf')) {
@@ -271,7 +270,6 @@ const getCsrfToken = async (client) => {
         const res = await client.request('/naps/new', { method: 'GET' });
         response = { status: res.status, data: await res.text() };
         html = response.data;
-        console.log('Got /naps/new page, length:', html.length);
       } catch (newPageError) {
         console.log('Failed to get /naps/new page:', newPageError.message);
         
@@ -281,7 +279,6 @@ const getCsrfToken = async (client) => {
           const res = await client.request('/', { method: 'GET' });
           response = { status: res.status, data: await res.text() };
           html = response.data;
-          console.log('Got main page, length:', html.length);
         } catch (mainPageError) {
           console.log('Failed to get main page:', mainPageError.message);
         }
@@ -441,27 +438,6 @@ const getCsrfToken = async (client) => {
       }
     } catch (newPageError) {
       console.log('Failed to get /naps/new page:', newPageError.message);
-    }
-    
-    // Log part of the HTML for debugging
-    console.log('HTML sample for debugging (first 2000 chars):');
-    console.log(html.substring(0, 2000));
-    console.log('HTML sample for debugging (last 1000 chars):');
-    console.log(html.substring(Math.max(0, html.length - 1000)));
-    
-    // Additional debugging: show all authenticity_token matches
-    console.log('DEBUG: Looking for all authenticity_token patterns in HTML...');
-    const debugMatches = html.match(/authenticity_token[^>]*value="([^"]+)"/gi);
-    if (debugMatches) {
-      console.log('All authenticity_token matches found:', debugMatches);
-      debugMatches.forEach((match, i) => {
-        const valueMatch = match.match(/value="([^"]+)"/i);
-        if (valueMatch) {
-          console.log(`  Match ${i + 1}: ${valueMatch[1].substring(0, 100)}${valueMatch[1].length > 100 ? '...' : ''}`);
-        }
-      });
-    } else {
-      console.log('No authenticity_token patterns found in HTML');
     }
     
     // Try to extract any token-like string as last resort

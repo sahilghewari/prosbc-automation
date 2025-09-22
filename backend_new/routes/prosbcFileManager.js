@@ -560,10 +560,31 @@ router.post('/update-to-all', uploadMemory.single('file'), async (req, res) => {
 
         // List files on the instance and try to find this file by name or id
         let listResult;
-        if (fileType === 'routesets_definitions') {
-          listResult = await instanceFileManager.listDfFiles();
-        } else {
-          listResult = await instanceFileManager.listDmFiles();
+        try {
+          if (fileType === 'routesets_definitions') {
+            listResult = await instanceFileManager.listDfFiles();
+          } else {
+            listResult = await instanceFileManager.listDmFiles();
+          }
+        } catch (listError) {
+          // Handle specific connection and login errors
+          const errorMessage = listError.message || listError.toString();
+          if (errorMessage.includes('socket hang up') || 
+              errorMessage.includes('ECONNREFUSED') || 
+              errorMessage.includes('Failed to fetch login page') ||
+              errorMessage.includes('authenticity_token')) {
+            console.warn(`[UpdateToAll] Connection/login error for instance ${instanceId}: ${errorMessage}`);
+            results.push({ 
+              instance: instanceId, 
+              url: inst.baseUrl || inst.baseURL || inst.base_url || null, 
+              success: false, 
+              error: `Connection failed: ${errorMessage}`,
+              errorType: 'connection'
+            });
+            continue;
+          }
+          // Re-throw other errors to be handled by the outer catch
+          throw listError;
         }
 
         // Helper to normalize file names for tolerant matching
@@ -649,10 +670,30 @@ router.post('/update-to-all', uploadMemory.single('file'), async (req, res) => {
         const configId = found.configId || null;
         const updateResult = await instanceFileManager.updateFileRestAPI(fileType, fileName, fileContent, configId);
 
-  results.push({ instance: instanceId, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: !!updateResult.success, message: updateResult.message || null, details: updateResult });
+        results.push({ instance: instanceId, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: !!updateResult.success, message: updateResult.message || null, details: updateResult });
       } catch (err) {
-        console.error(`[UpdateToAll] Instance ${inst.id} error:`, err.message);
-  results.push({ instance: inst.id, url: inst.baseUrl || inst.baseURL || inst.base_url || null, success: false, error: err.message });
+        const errorMessage = err.message || err.toString();
+        console.error(`[UpdateToAll] Instance ${inst.id} error:`, errorMessage);
+        
+        // Categorize the error type for better client handling
+        let errorType = 'unknown';
+        if (errorMessage.includes('hasRoutesetSection') || errorMessage.includes('before initialization')) {
+          errorType = 'initialization';
+        } else if (errorMessage.includes('socket hang up') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('Failed to fetch')) {
+          errorType = 'connection';
+        } else if (errorMessage.includes('authenticity_token') || errorMessage.includes('login')) {
+          errorType = 'authentication';
+        } else if (errorMessage.includes('timeout')) {
+          errorType = 'timeout';
+        }
+        
+        results.push({ 
+          instance: inst.id, 
+          url: inst.baseUrl || inst.baseURL || inst.base_url || null, 
+          success: false, 
+          error: errorMessage,
+          errorType: errorType
+        });
       }
     }
 

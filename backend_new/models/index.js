@@ -6,3 +6,4 @@ import './DialFormat.js';
 import './AuditLog.js';
 import './ProSBCInstance.js';
 import './CustomerCount.js';
+import './ProSBCDMFile.js';

@@ -36,18 +36,14 @@ class ProSBCInstanceService {
     try {
       const instance = await this.getInstanceById(id);
       
-      console.log('Instance retrieved for credentials:', instance.id);
-      console.log('Available fields:', Object.keys(instance.dataValues));
-      
       // Get the raw instance data to see exactly what's in the database
       const rawInstance = instance.get({ plain: true });
-      console.log('Raw instance data:', rawInstance);
       
       // Get baseUrl directly from the instance data
       return {
         id: instance.id,
         name: instance.id, 
-        baseUrl: rawInstance.baseUrl, // Use the database field directly (lowercase 'url')
+        baseUrl: rawInstance.baseUrl,
         username: instance.username,
         password: instance.password,
         location: ''

@@ -1020,10 +1020,169 @@ function FileManagement({ onAuthError, configId }) {
       }
 
       console.log('[Save Edit] Saving edited file:', fileInfo.name);
-      console.log('[Save Edit] Current component configId:', configId);
-      console.log('[Save Edit] File configId:', fileInfo.configId);
-      
-      // Create a blob from the edited content
+      console.log('[Save Edit] File info:', fileInfo);
+      console.log('[Save Edit] Database file ID:', fileInfo.databaseFileId);
+      console.log('[Save Edit] Source:', fileInfo.source);
+
+      // Always try to find the file in database first, even if we think we already have it
+      let databaseFileId = fileInfo.databaseFileId;
+
+      if (!databaseFileId) {
+        console.log('[Save Edit] No database file ID, searching for existing file...');
+
+        try {
+          const dbResponse = await fetch(`/backend/api/dm-files?instanceId=${selectedInstance.id}`, {
+            headers: {
+              ...getAuthHeaders(),
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (dbResponse.ok) {
+            const dbResult = await dbResponse.json();
+            if (dbResult.success) {
+              const dbFile = dbResult.files.find(dbFile =>
+                dbFile.prosbc_file_id === fileInfo.prosbcFileId?.toString() ||
+                (dbFile.file_name === fileInfo.name && dbFile.prosbc_instance_id === selectedInstance.id.toString())
+              );
+
+              if (dbFile) {
+                databaseFileId = dbFile.id;
+                console.log('[Save Edit] Found existing file in database:', databaseFileId);
+              }
+            }
+          }
+        } catch (dbError) {
+          console.log('[Save Edit] Database lookup failed:', dbError.message);
+        }
+      }
+
+      // If we still don't have a database file ID, try to sync/create
+      if (!databaseFileId) {
+        console.log('[Save Edit] File not found in database, attempting to sync/create...');
+
+        try {
+          // First, try to sync the file to database
+          const syncRes = await fetch('/backend/api/dm-files/sync', {
+            method: 'POST',
+            headers: {
+              ...getAuthHeaders(),
+              'Content-Type': 'application/json',
+              'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+            },
+            body: JSON.stringify({
+              configId: fileInfo.configId || configId
+            })
+          });
+
+          if (syncRes.ok) {
+            const syncResult = await syncRes.json();
+            if (syncResult.success) {
+              console.log('[Save Edit] Sync completed, looking for file in database...');
+
+              // Now try to find the file in database again
+              const dbResponse = await fetch(`/backend/api/dm-files?instanceId=${selectedInstance.id}`, {
+                headers: {
+                  ...getAuthHeaders(),
+                  'Content-Type': 'application/json'
+                }
+              });
+
+              if (dbResponse.ok) {
+                const dbResult = await dbResponse.json();
+                if (dbResult.success) {
+                  const dbFile = dbResult.files.find(dbFile =>
+                    dbFile.prosbc_file_id === fileInfo.prosbcFileId?.toString() ||
+                    (dbFile.file_name === fileInfo.name && dbFile.prosbc_instance_id === selectedInstance.id.toString())
+                  );
+
+                  if (dbFile) {
+                    databaseFileId = dbFile.id;
+                    console.log('[Save Edit] Found file in database after sync:', databaseFileId);
+                  }
+                }
+              }
+            }
+          }
+        } catch (syncError) {
+          console.log('[Save Edit] Sync failed, will create file directly:', syncError.message);
+        }
+
+        // If still no database file ID, create it directly
+        if (!databaseFileId) {
+          console.log('[Save Edit] Creating file entry in database...');
+
+          try {
+            const createRes = await fetch('/backend/api/dm-files', {
+              method: 'POST',
+              headers: {
+                ...getAuthHeaders(),
+                'Content-Type': 'application/json',
+                'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+              },
+              body: JSON.stringify({
+                file_name: fileInfo.name,
+                prosbc_file_id: fileInfo.prosbcFileId?.toString(),
+                file_content: editedContent,
+                configId: fileInfo.configId || configId
+              })
+            });
+
+            if (createRes.ok) {
+              const createResult = await createRes.json();
+              if (createResult.success && createResult.file) {
+                databaseFileId = createResult.file.id;
+                console.log('[Save Edit] Created file in database:', databaseFileId);
+              }
+            }
+          } catch (createError) {
+            console.log('[Save Edit] Direct creation failed:', createError.message);
+          }
+        }
+      }
+
+      // Now update using the database endpoint if we have a database file ID
+      if (databaseFileId) {
+        console.log('[Save Edit] Using database-backed update endpoint');
+
+        const updateData = {
+          file_content: editedContent,
+          configId: fileInfo.configId || configId
+        };
+
+        const res = await fetch(`/backend/api/dm-files/${databaseFileId}/content`, {
+          method: 'PUT',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json',
+            'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+          },
+          body: JSON.stringify(updateData)
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error('[Save Edit] Database update failed:', errorText);
+          throw new Error(`Database update failed: ${errorText}`);
+        }
+
+        const result = await res.json();
+        if (result.success) {
+          setMessage(`✅ ${fileInfo.name} saved successfully in database and ProSBC!`);
+          
+          // Refresh the file list
+          setTimeout(() => {
+            loadFiles();
+          }, 1000);
+          
+          return { success: true, message: 'File saved successfully' };
+        } else {
+          throw new Error(result.message || 'Database update failed');
+        }
+      }
+
+      // Final fallback to the old method if all database operations failed
+      console.log('[Save Edit] All database operations failed, using legacy ProSBC-only update method');      // Create a blob from the edited content
       const blob = new Blob([editedContent], { type: 'text/csv' });
       const file = new File([blob], fileInfo.name, { type: 'text/csv' });
 
@@ -1034,8 +1193,6 @@ function FileManagement({ onAuthError, configId }) {
       // If component configId is empty string, prefer the file's configId
       const finalConfigId = (configId && configId !== '') ? configId : (originalFile.configId || '');
       console.log('[Save Edit] Using final configId:', finalConfigId);
-      console.log('[Save Edit] ConfigId type:', typeof finalConfigId);
-      console.log('[Save Edit] ConfigId length:', finalConfigId.length);
       
       // Call the REST API update function
       const formData = new FormData();
@@ -1044,11 +1201,6 @@ function FileManagement({ onAuthError, configId }) {
       formData.append('file', file);
       formData.append('configId', finalConfigId);
       
-      console.log('[Save Edit] FormData contents:');
-      for (let [key, value] of formData.entries()) {
-        console.log(`  ${key}:`, value);
-      }
-
       const res = await fetch('/backend/api/prosbc-files/update-rest-api', {
         method: 'POST',
         headers: {
@@ -1072,7 +1224,7 @@ function FileManagement({ onAuthError, configId }) {
       }
 
       if (result.success) {
-        setMessage(`✅ ${originalFile.name} saved successfully!`);
+        setMessage(`✅ ${originalFile.name} saved successfully on ProSBC!`);
         
         // Refresh the file list
         setTimeout(() => {
@@ -1113,55 +1265,97 @@ function FileManagement({ onAuthError, configId }) {
       console.log('[Edit] File configId:', file.configId);
       console.log('[Edit] File object:', file);
 
-      // Fetch the file content using the export API
-      const res = await fetch('/backend/api/prosbc-files/export-direct', {
-        method: 'POST',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
-        },
-        body: JSON.stringify({
-          exportUrl: file.exportUrl,
-          fileName: file.name,
-          fileType: file.type,
-          fileId: file.id,
-          configId: file.configId,
-          returnContent: true // Request content instead of download
-        })
-      });
+      // First, try to get content from database using the prosbc file ID
+      let fileContent = null;
+      let databaseFileId = null;
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Failed to fetch file content: ${errorText}`);
+      try {
+        console.log('[Edit] Trying to get content from database first...');
+        const dbResponse = await fetch(`/backend/api/dm-files?instanceId=${selectedInstance.id}`, {
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (dbResponse.ok) {
+          const dbResult = await dbResponse.json();
+          if (dbResult.success) {
+            // Find the matching file in database by prosbc_file_id or file_name
+            const dbFile = dbResult.files.find(dbFile => 
+              dbFile.prosbc_file_id === file.id.toString() || 
+              (dbFile.file_name === file.name && dbFile.prosbc_instance_id === selectedInstance.id.toString())
+            );
+
+            if (dbFile && dbFile.file_content) {
+              console.log('[Edit] Found file content in database');
+              fileContent = dbFile.file_content;
+              databaseFileId = dbFile.id;
+            }
+          }
+        }
+      } catch (dbError) {
+        console.log('[Edit] Database fetch failed, falling back to ProSBC:', dbError.message);
       }
 
-      const contentType = res.headers.get('content-type') || '';
-      let fileContent;
-      
-      if (contentType.includes('application/json')) {
-        const result = await res.json();
-        if (result.success && result.content) {
-          fileContent = result.content;
-        } else {
-          throw new Error(result.error || 'Failed to get file content');
+      // If not found in database, fetch from ProSBC
+      if (!fileContent) {
+        console.log('[Edit] Fetching content from ProSBC...');
+        if (!file.exportUrl) {
+          setMessage('❌ Export URL not available for this file');
+          return;
         }
-      } else {
-        // It's the raw file content
-        fileContent = await res.text();
+
+        const res = await fetch('/backend/api/prosbc-files/export-direct', {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(),
+            'Content-Type': 'application/json',
+            'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+          },
+          body: JSON.stringify({
+            exportUrl: file.exportUrl,
+            fileName: file.name,
+            fileType: file.type,
+            fileId: file.id,
+            configId: file.configId,
+            returnContent: true
+          })
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Failed to fetch file content: ${errorText}`);
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        
+        if (contentType.includes('application/json')) {
+          const result = await res.json();
+          if (result.success && result.content) {
+            fileContent = result.content;
+          } else {
+            throw new Error(result.error || 'Failed to get file content');
+          }
+        } else {
+          // It's the raw file content
+          fileContent = await res.text();
+        }
       }
 
       // Prepare the file object for the CSV editor
       const fileForEditor = {
-        id: file.id,
+        id: databaseFileId || file.id, // Use database ID if available, otherwise ProSBC ID
         name: file.name,
         fileName: file.name,
         type: file.type,
         fileType: file.type,
         configId: (configId && configId !== '') ? configId : (file.configId || ''), // Use file configId if component configId is empty
-        source: 'prosbc',
+        source: databaseFileId ? 'database' : 'prosbc', // Track source for saving
         content: fileContent,
-        originalFile: file // Keep reference to original file for updates
+        originalFile: file, // Keep reference to original file for updates
+        prosbcFileId: file.id, // Keep ProSBC ID for fallback
+        databaseFileId: databaseFileId // Store database ID if available
       };
 
       setSelectedCSVFile(fileForEditor);

@@ -19,6 +19,7 @@ import prosbcUploadRouter from './routes/prosbcUpload.js';
 import prosbcFileManagerRouter from './routes/prosbcFileManager.js';
 import routesetMappingRouter from './routes/routesetMapping.js';
 import customerCountsRouter from './routes/customerCounts.js';
+import dmFilesRouter from './routes/dmFiles.js';
 import { fetchLiveConfigIds } from './utils/prosbc/prosbcConfigLiveFetcher.js';
 
 
@@ -106,6 +107,8 @@ app.use('/backend/api/prosbc-files', prosbcFileManagerRouter);
 app.use('/backend/api/routeset-mapping', routesetMappingRouter);
 
 app.use('/backend/api/customer-counts', customerCountsRouter);
+
+app.use('/backend/api/dm-files', dmFilesRouter);
 
 
 // Test endpoint: fetch live ProSBC configs
