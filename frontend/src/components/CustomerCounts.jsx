@@ -19,6 +19,7 @@ const CustomerCounts = ({ configId }) => {
   const [cleanupResult, setCleanupResult] = useState(null);
   const [debugging, setDebugging] = useState(false);
   const [debugResult, setDebugResult] = useState(null);
+  const [loadingHistorical, setLoadingHistorical] = useState(false);
   const [recordingCounts, setRecordingCounts] = useState(false);
   const [recordResult, setRecordResult] = useState(null);
 
@@ -53,6 +54,7 @@ const CustomerCounts = ({ configId }) => {
   const fetchHistoricalForInstance = async (instanceId) => {
     if (!configId || !instanceId) return;
 
+    setLoadingHistorical(true);
     try {
       const token = localStorage.getItem('dashboard_token');
       const response = await fetch(`/backend/api/customer-counts/historical?instanceId=${instanceId}`, {
@@ -69,6 +71,9 @@ const CustomerCounts = ({ configId }) => {
       setHistoricalCounts(data.historicalCounts || []);
     } catch (err) {
       console.error('Failed to fetch historical data:', err);
+      setHistoricalCounts([]);
+    } finally {
+      setLoadingHistorical(false);
     }
   };
 
@@ -267,11 +272,20 @@ const CustomerCounts = ({ configId }) => {
   }, [configId, selectedInstance]);
 
   useEffect(() => {
+    // Update selectedHistoricalInstance when selectedInstance changes
+    if (selectedInstance?.id && selectedInstance.id !== selectedHistoricalInstance) {
+      setSelectedHistoricalInstance(selectedInstance.id);
+    }
+  }, [selectedInstance]);
+
+  useEffect(() => {
     if (selectedHistoricalInstance && selectedHistoricalInstance !== selectedInstance?.id) {
       fetchHistoricalForInstance(selectedHistoricalInstance);
+      setSelectedHistoricalDate(null); // Reset selected date when instance changes
     } else {
       // If viewing current instance, use the data from fetchCounts
       fetchCounts();
+      setSelectedHistoricalDate(null); // Reset selected date when switching back to current instance
     }
   }, [selectedHistoricalInstance]);
 
@@ -600,23 +614,31 @@ const CustomerCounts = ({ configId }) => {
             <h2 className="text-xl font-semibold text-white">
               {selectedHistoricalDate ? `Historical Counts - ${selectedHistoricalDate}` : 'Historical Counts'}
             </h2>
-            <select
-              value={selectedHistoricalInstance}
-              onChange={(e) => setSelectedHistoricalInstance(e.target.value)}
-              className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {instances.map(instance => (
-                <option key={instance.id} value={instance.id}>
-                  {instance.id}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center space-x-3">
+              <label className="text-gray-300 text-sm">Instance:</label>
+              <select
+                value={selectedHistoricalInstance}
+                onChange={(e) => setSelectedHistoricalInstance(e.target.value)}
+                className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {instances.map(instance => (
+                  <option key={instance.id} value={instance.id}>
+                    ProSBC {instance.id}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="space-y-4 max-h-96 overflow-y-auto">
-            {!selectedHistoricalDate ? (
+            {loadingHistorical ? (
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+                <p className="text-gray-400 mt-2">Loading historical data...</p>
+              </div>
+            ) : !selectedHistoricalDate ? (
               // Show date list
-              <div className="space-y-2">
-                <h3 className="text-white font-medium mb-4">Available Historical Dates</h3>
+              <div className="space-y-3">
+                <h3 className="text-white font-medium mb-4">Select a Date to View Historical Counts</h3>
                 {Object.keys(historicalGrouped).sort().reverse().map(date => (
                   <div
                     key={date}
@@ -624,13 +646,15 @@ const CustomerCounts = ({ configId }) => {
                     className="bg-gray-700 rounded-lg p-4 cursor-pointer hover:bg-gray-600 transition-colors border border-gray-600 hover:border-gray-500"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-white font-medium">{date}</span>
                       <div className="flex items-center space-x-4">
-                        <span className="text-gray-300 text-sm">
+                        <div className="text-white font-medium text-lg">{date}</div>
+                        <div className="text-gray-300 text-sm">
                           {historicalGrouped[date].length} customers
-                        </span>
-                        <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
-                          {historicalGrouped[date].reduce((sum, count) => sum + count.count, 0)} total
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <span className="text-green-400 font-bold bg-green-900 px-3 py-1 rounded text-sm">
+                          {historicalGrouped[date].reduce((sum, count) => sum + count.count, 0).toLocaleString()} total numbers
                         </span>
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -641,7 +665,7 @@ const CustomerCounts = ({ configId }) => {
                 ))}
                 {Object.keys(historicalGrouped).length === 0 && (
                   <div className="text-center py-12 text-gray-400">
-                    {searchTerm ? 'No historical data matches your search' : 'No historical data available'}
+                    {searchTerm ? 'No historical data matches your search' : 'No historical data available for this instance'}
                   </div>
                 )}
               </div>
@@ -656,17 +680,19 @@ const CustomerCounts = ({ configId }) => {
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
-                    Back to Dates
+                    Back to Date Selection
                   </button>
                   <h3 className="text-white font-medium">{selectedHistoricalDate}</h3>
                 </div>
                 <div className="bg-gray-700 rounded-lg p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {historicalGrouped[selectedHistoricalDate].map((count, index) => (
+                    {historicalGrouped[selectedHistoricalDate]
+                      .sort((a, b) => b.count - a.count) // Sort by count descending
+                      .map((count, index) => (
                       <div key={index} className="flex items-center justify-between p-3 bg-gray-600 rounded hover:bg-gray-500 transition-colors">
-                        <span className="text-gray-300 truncate flex-1 mr-4 text-sm">{count.customerName}</span>
+                        <span className="text-gray-300 truncate flex-1 mr-4 text-sm font-medium">{count.customerName}</span>
                         <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
-                          {count.count}
+                          {count.count.toLocaleString()}
                         </span>
                       </div>
                     ))}
@@ -675,7 +701,7 @@ const CustomerCounts = ({ configId }) => {
                     <div className="flex justify-between items-center text-sm">
                       <span className="text-gray-400">Total Customers: {historicalGrouped[selectedHistoricalDate].length}</span>
                       <span className="text-green-400 font-bold">
-                        Total Numbers: {historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0)}
+                        Total Numbers: {historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0).toLocaleString()}
                       </span>
                     </div>
                   </div>

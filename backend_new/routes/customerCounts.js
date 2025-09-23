@@ -86,19 +86,8 @@ async function createMonthlyHistoricalCounts(instanceId, configId, fileManager) 
       !file.name.includes('called_calling') // Filter out header-like entries
     );
 
-    // Get ProSBC instance ID from DB
-    let prosbcInstanceId;
-    if (instanceId) {
-      const instance = await ProSBCInstance.findOne({ where: { id: instanceId } });
-      if (!instance) {
-        throw new Error('Invalid instance ID');
-      }
-      prosbcInstanceId = instance.id;
-    } else {
-      // Default instance
-      const instance = await ProSBCInstance.findOne({ where: { name: 'default' } });
-      prosbcInstanceId = instance ? instance.id : 1; // Assume 1 if not found
-    }
+    // Use the correct prosbcInstanceId format (prosbc1, prosbc2, etc.)
+    const prosbcInstanceId = `prosbc${instanceId}`;
 
     const currentDate = new Date();
     const currentMonth = currentDate.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -202,15 +191,8 @@ router.get('/', async (req, res) => {
     // Get historical data
     let historicalCounts = [];
     try {
-      let prosbcInstanceId;
-      if (instanceId) {
-        const instance = await ProSBCInstance.findOne({ where: { id: instanceId } });
-        prosbcInstanceId = instance ? instance.id : instanceId;
-      } else {
-        // Default instance
-        const instance = await ProSBCInstance.findOne({ where: { name: 'default' } });
-        prosbcInstanceId = instance ? instance.id : 1; // Assume 1 if not found
-      }
+      // Map instanceId to prosbcInstanceId format (prosbc1, prosbc2, etc.)
+      const prosbcInstanceId = `prosbc${instanceId}`;
 
       historicalCounts = await CustomerCount.findAll({
         where: { prosbcInstanceId: prosbcInstanceId },
@@ -260,7 +242,36 @@ router.post('/create-monthly', async (req, res) => {
   }
 });
 
-// GET /customer-counts/search?configId=xxx&numbers=num1,num2,num3
+// GET /customer-counts/historical?instanceId=xxx
+router.get('/historical', async (req, res) => {
+  try {
+    const instanceId = req.query.instanceId;
+
+    if (!instanceId) {
+      return res.status(400).json({ success: false, error: 'instanceId is required' });
+    }
+
+    // Map instanceId to prosbcInstanceId format (prosbc1, prosbc2, etc.)
+    const prosbcInstanceId = `prosbc${instanceId}`;
+
+    const historicalCounts = await CustomerCount.findAll({
+      where: { prosbcInstanceId: prosbcInstanceId },
+      order: [['date', 'DESC'], ['customerName', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      historicalCounts: historicalCounts.map(record => ({
+        customerName: record.customerName,
+        count: record.count,
+        date: record.date
+      }))
+    });
+  } catch (err) {
+    console.error('Error fetching historical data:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 router.get('/search', async (req, res) => {
   try {
     const instanceId = req.headers['x-prosbc-instance-id'];
