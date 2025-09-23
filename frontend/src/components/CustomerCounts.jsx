@@ -22,6 +22,9 @@ const CustomerCounts = ({ configId }) => {
   const [loadingHistorical, setLoadingHistorical] = useState(false);
   const [recordingCounts, setRecordingCounts] = useState(false);
   const [recordResult, setRecordResult] = useState(null);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
+  const [runInBackground, setRunInBackground] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const fetchCounts = async () => {
     if (!configId || !selectedInstance) return;
@@ -134,50 +137,91 @@ const CustomerCounts = ({ configId }) => {
   };
 
   const replaceDMFiles = async () => {
-    if (!configId || !selectedInstance) return;
+    if (!configId || instances.length === 0) return;
 
-    setSyncing(true);
+    setIsProcessing(true);
+    if (!runInBackground) setSyncing(true);
     setSyncResult(null);
+    setSyncProgress({ current: 0, total: instances.length });
+    const results = { successes: [], failures: [] };
+
     try {
       const token = localStorage.getItem('dashboard_token');
 
-      // First, clear existing data
-      const clearResponse = await fetch('/backend/api/dm-files/clear', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-ProSBC-Instance-ID': selectedInstance.id.toString()
+      // Process all instances in parallel
+      const processInstance = async (instance) => {
+        try {
+          // Clear existing data for this instance
+          const clearResponse = await fetch('/backend/api/dm-files/clear', {
+            method: 'DELETE',
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'X-ProSBC-Instance-ID': instance.id.toString()
+            }
+          });
+
+          if (!clearResponse.ok) {
+            throw new Error(`Clear failed for instance ${instance.id}: ${clearResponse.statusText}`);
+          }
+
+          // Sync new data for this instance
+          const syncResponse = await fetch('/backend/api/dm-files/sync', {
+            method: 'POST',
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'X-ProSBC-Instance-ID': instance.id.toString(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ configId })
+          });
+
+          if (!syncResponse.ok) {
+            throw new Error(`Sync failed for instance ${instance.id}: ${syncResponse.statusText}`);
+          }
+
+          const data = await syncResponse.json();
+          return { success: true, instanceId: instance.id, ...data };
+        } catch (err) {
+          return { success: false, instanceId: instance.id, error: err.message };
         }
+      };
+
+      const promises = instances.map(processInstance);
+      const settledResults = await Promise.allSettled(promises);
+
+      // Process results
+      settledResults.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const data = result.value;
+          if (data.success) {
+            results.successes.push(data);
+          } else {
+            results.failures.push(data);
+          }
+        } else {
+          // This shouldn't happen with our error handling, but just in case
+          results.failures.push({ instanceId: 'unknown', error: result.reason });
+        }
+        setSyncProgress(prev => ({ ...prev, current: prev.current + 1 }));
       });
 
-      if (!clearResponse.ok) {
-        throw new Error(`Clear failed: ${clearResponse.statusText}`);
-      }
-
-      // Then sync new data
-      const syncResponse = await fetch('/backend/api/dm-files/sync', {
-        method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'X-ProSBC-Instance-ID': selectedInstance.id.toString(),
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ configId })
-      });
-
-      if (!syncResponse.ok) {
-        throw new Error(`Sync failed: ${syncResponse.statusText}`);
-      }
-
-      const data = await syncResponse.json();
+      // Aggregate final result
+      const hasSuccesses = results.successes.length > 0;
+      const hasFailures = results.failures.length > 0;
       setSyncResult({
-        ...data,
-        message: `Data replaced successfully. ${data.message}`
+        success: hasSuccesses && !hasFailures, // Fully successful only if no failures
+        message: hasSuccesses
+          ? `Data replaced successfully for ${results.successes.length} instance(s). ${hasFailures ? `${results.failures.length} instance(s) failed.` : ''}`
+          : 'All replacements failed.',
+        successes: results.successes,
+        failures: results.failures
       });
     } catch (err) {
       setSyncResult({ success: false, error: err.message });
     } finally {
-      setSyncing(false);
+      setIsProcessing(false);
+      if (!runInBackground) setSyncing(false);
+      setSyncProgress({ current: 0, total: 0 });
     }
   };
 
@@ -407,6 +451,17 @@ const CustomerCounts = ({ configId }) => {
       {/* DM Files Sync */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-white mb-4">DM Files Management</h2>
+        <div className="mb-4">
+          <label className="flex items-center text-gray-300">
+            <input
+              type="checkbox"
+              checked={runInBackground}
+              onChange={(e) => setRunInBackground(e.target.checked)}
+              className="mr-2"
+            />
+            Run in background (allows other operations while processing)
+          </label>
+        </div>
         <div className="flex gap-4 items-center mb-4">
           <button
             onClick={syncDMFiles}
@@ -417,10 +472,10 @@ const CustomerCounts = ({ configId }) => {
           </button>
           <button
             onClick={replaceDMFiles}
-            disabled={syncing || !configId || !selectedInstance}
+            disabled={(!runInBackground && syncing) || !configId || instances.length === 0}
             className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
           >
-            {syncing ? 'Replacing...' : 'Replace All Data'}
+            {(!runInBackground && syncing) ? 'Replacing...' : 'Replace All Data'}
           </button>
           <button
             onClick={cleanupDMFiles}
@@ -444,6 +499,19 @@ const CustomerCounts = ({ configId }) => {
             {recordingCounts ? 'Recording...' : 'Record Number Counts'}
           </button>
         </div>
+        {isProcessing && syncProgress.total > 0 && (
+          <div className="mb-4">
+            <div className="text-sm text-gray-300 mb-2">
+              Processing instances: {syncProgress.current} / {syncProgress.total}
+            </div>
+            <div className="w-full bg-gray-700 rounded-full h-2">
+              <div
+                className="bg-red-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
         <p className="text-gray-400 text-sm mb-4">
           Sync adds new files. Replace clears all existing data and syncs fresh data. Cleanup fixes malformed JSON data. Debug shows data format and validation results. Record Number Counts creates monthly historical records for current customer counts.
         </p>
@@ -451,25 +519,25 @@ const CustomerCounts = ({ configId }) => {
           <div className="mt-4">
             {syncResult.success ? (
               <div className="p-4 bg-green-900 border border-green-700 text-green-100 rounded-lg">
-                <div className="font-semibold mb-2">Sync completed successfully!</div>
+                <div className="font-semibold mb-2">Replacement completed!</div>
                 <div className="text-sm">
                   {syncResult.message}
-                  {syncResult.syncedFiles && syncResult.syncedFiles.length > 0 && (
+                  {syncResult.successes && syncResult.successes.length > 0 && (
                     <div className="mt-2">
-                      <div className="font-medium">Synced Files:</div>
+                      <div className="font-medium">Successful Instances:</div>
                       <ul className="list-disc list-inside mt-1">
-                        {syncResult.syncedFiles.map((file, index) => (
-                          <li key={index}>{file.file_name} ({file.total_numbers} numbers)</li>
+                        {syncResult.successes.map((success, index) => (
+                          <li key={index}>Instance {success.instanceId}: {success.message}</li>
                         ))}
                       </ul>
                     </div>
                   )}
-                  {syncResult.errors && syncResult.errors.length > 0 && (
+                  {syncResult.failures && syncResult.failures.length > 0 && (
                     <div className="mt-2">
-                      <div className="font-medium text-red-300">Errors:</div>
+                      <div className="font-medium text-red-300">Failed Instances:</div>
                       <ul className="list-disc list-inside mt-1">
-                        {syncResult.errors.map((error, index) => (
-                          <li key={index} className="text-red-300">{error.file_name}: {error.error}</li>
+                        {syncResult.failures.map((failure, index) => (
+                          <li key={index} className="text-red-300">Instance {failure.instanceId}: {failure.error}</li>
                         ))}
                       </ul>
                     </div>
@@ -478,7 +546,7 @@ const CustomerCounts = ({ configId }) => {
               </div>
             ) : (
               <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
-                <div className="font-semibold">Sync failed</div>
+                <div className="font-semibold">Replacement failed</div>
                 <div className="text-sm mt-1">{syncResult.error}</div>
               </div>
             )}
