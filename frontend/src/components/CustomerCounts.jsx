@@ -55,22 +55,34 @@ const CustomerCounts = ({ configId }) => {
   };
 
   const fetchHistoricalForInstance = async (instanceId) => {
-    if (!configId || !instanceId) return;
+    if (!configId || !instanceId) {
+      console.log('Missing configId or instanceId:', { configId, instanceId });
+      return;
+    }
 
+    console.log('Fetching historical data for instance:', instanceId, 'with configId:', configId);
     setLoadingHistorical(true);
     try {
       const token = localStorage.getItem('dashboard_token');
-      const response = await fetch(`/backend/api/customer-counts/historical?instanceId=${instanceId}`, {
+      
+      // Extract just the number from instanceId (e.g., 'prosbc1' -> '1')
+      const instanceNumber = instanceId.toString().replace('prosbc', '');
+      console.log('Using instance number:', instanceNumber);
+      
+      const response = await fetch(`/backend/api/customer-counts/historical?instanceId=${instanceNumber}`, {
         headers: {
           'Authorization': token ? `Bearer ${token}` : ''
         }
       });
+
+      console.log('Historical data response status:', response.status);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch historical counts: ${response.statusText}`);
       }
 
       const data = await response.json();
+      console.log('Historical data received:', data);
       setHistoricalCounts(data.historicalCounts || []);
     } catch (err) {
       console.error('Failed to fetch historical data:', err);
@@ -320,18 +332,14 @@ const CustomerCounts = ({ configId }) => {
     if (selectedInstance?.id && selectedInstance.id !== selectedHistoricalInstance) {
       setSelectedHistoricalInstance(selectedInstance.id);
     }
-  }, [selectedInstance]);
+  }, [selectedInstance, selectedHistoricalInstance]);
 
   useEffect(() => {
-    if (selectedHistoricalInstance && selectedHistoricalInstance !== selectedInstance?.id) {
+    if (selectedHistoricalInstance && configId) {
       fetchHistoricalForInstance(selectedHistoricalInstance);
       setSelectedHistoricalDate(null); // Reset selected date when instance changes
-    } else {
-      // If viewing current instance, use the data from fetchCounts
-      fetchCounts();
-      setSelectedHistoricalDate(null); // Reset selected date when switching back to current instance
     }
-  }, [selectedHistoricalInstance]);
+  }, [selectedHistoricalInstance, configId]);
 
   const filterData = (data) => {
     if (!searchTerm) return data;
