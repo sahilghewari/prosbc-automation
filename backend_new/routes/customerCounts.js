@@ -188,28 +188,10 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Get historical data
-    let historicalCounts = [];
-    try {
-      // Map instanceId to prosbcInstanceId format (prosbc1, prosbc2, etc.)
-      const prosbcInstanceId = `prosbc${instanceId}`;
-
-      historicalCounts = await CustomerCount.findAll({
-        where: { prosbcInstanceId: prosbcInstanceId },
-        order: [['date', 'DESC'], ['customerName', 'ASC']]
-      });
-    } catch (dbError) {
-      // Silently skip if table doesn't exist
-    }
-
     res.json({
       success: true,
-      liveCounts: liveCounts,
-      historicalCounts: historicalCounts.map(record => ({
-        customerName: record.customerName,
-        count: record.count,
-        date: record.date
-      }))
+      liveCounts: liveCounts
+      // Historical data is now fetched separately via /customer-counts/historical endpoint
     });
   } catch (err) {
     console.error('Error in customer counts:', err);
@@ -253,11 +235,17 @@ router.get('/historical', async (req, res) => {
 
     // Map instanceId to prosbcInstanceId format (prosbc1, prosbc2, etc.)
     const prosbcInstanceId = `prosbc${instanceId}`;
+    console.log('Fetching historical data for prosbcInstanceId:', prosbcInstanceId);
 
     const historicalCounts = await CustomerCount.findAll({
       where: { prosbcInstanceId: prosbcInstanceId },
       order: [['date', 'DESC'], ['customerName', 'ASC']]
     });
+
+    console.log('Found historical records:', historicalCounts.length);
+    if (historicalCounts.length > 0) {
+      console.log('Sample record:', historicalCounts[0].dataValues);
+    }
 
     res.json({
       success: true,

@@ -19,7 +19,7 @@ const CustomerCounts = ({ configId }) => {
   const [cleanupResult, setCleanupResult] = useState(null);
   const [debugging, setDebugging] = useState(false);
   const [debugResult, setDebugResult] = useState(null);
-  const [loadingHistorical, setLoadingHistorical] = useState(false);
+  const [isLoadingHistorical, setIsLoadingHistorical] = useState(false);
   const [recordingCounts, setRecordingCounts] = useState(false);
   const [recordResult, setRecordResult] = useState(null);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
@@ -46,7 +46,8 @@ const CustomerCounts = ({ configId }) => {
 
       const data = await response.json();
       setLiveCounts(data.liveCounts || []);
-      setHistoricalCounts(data.historicalCounts || []);
+      // Note: Historical data is loaded separately via fetchHistoricalForInstance()
+      // setHistoricalCounts(data.historicalCounts || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -60,8 +61,14 @@ const CustomerCounts = ({ configId }) => {
       return;
     }
 
+    // Prevent multiple simultaneous calls
+    if (isLoadingHistorical) {
+      console.log('Already loading historical data, skipping');
+      return;
+    }
+
     console.log('Fetching historical data for instance:', instanceId, 'with configId:', configId);
-    setLoadingHistorical(true);
+    setIsLoadingHistorical(true);
     try {
       const token = localStorage.getItem('dashboard_token');
       
@@ -83,12 +90,22 @@ const CustomerCounts = ({ configId }) => {
 
       const data = await response.json();
       console.log('Historical data received:', data);
+      console.log('Setting historical counts with', data.historicalCounts?.length || 0, 'records');
+      console.trace('setHistoricalCounts called from success');
       setHistoricalCounts(data.historicalCounts || []);
     } catch (err) {
       console.error('Failed to fetch historical data:', err);
-      setHistoricalCounts([]);
+      console.log('Current historicalCounts length:', historicalCounts.length);
+      console.log('Clearing historical counts due to error');
+      console.trace('setHistoricalCounts called from error');
+      // Only clear if we don't already have data (prevent clearing existing data on API errors)
+      if (historicalCounts.length === 0) {
+        setHistoricalCounts([]);
+      } else {
+        console.log('Keeping existing historical data despite error');
+      }
     } finally {
-      setLoadingHistorical(false);
+      setIsLoadingHistorical(false);
     }
   };
 
@@ -706,7 +723,7 @@ const CustomerCounts = ({ configId }) => {
             </div>
           </div>
           <div className="space-y-4 max-h-96 overflow-y-auto">
-            {loadingHistorical ? (
+            {isLoadingHistorical ? (
               <div className="text-center py-12">
                 <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
                 <p className="text-gray-400 mt-2">Loading historical data...</p>
@@ -762,25 +779,33 @@ const CustomerCounts = ({ configId }) => {
                 </div>
                 <div className="bg-gray-700 rounded-lg p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {historicalGrouped[selectedHistoricalDate]
-                      .sort((a, b) => b.count - a.count) // Sort by count descending
-                      .map((count, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-600 rounded hover:bg-gray-500 transition-colors">
-                        <span className="text-gray-300 truncate flex-1 mr-4 text-sm font-medium">{count.customerName}</span>
-                        <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
-                          {count.count.toLocaleString()}
+                    {historicalGrouped[selectedHistoricalDate] && historicalGrouped[selectedHistoricalDate].length > 0 ? (
+                      historicalGrouped[selectedHistoricalDate]
+                        .sort((a, b) => b.count - a.count) // Sort by count descending
+                        .map((count, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-gray-600 rounded hover:bg-gray-500 transition-colors">
+                          <span className="text-gray-300 truncate flex-1 mr-4 text-sm font-medium">{count.customerName}</span>
+                          <span className="text-green-400 font-bold bg-green-900 px-2 py-1 rounded text-sm">
+                            {count.count.toLocaleString()}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="col-span-full text-center py-8 text-gray-400">
+                        No data available for this date
+                      </div>
+                    )}
+                  </div>
+                  {historicalGrouped[selectedHistoricalDate] && historicalGrouped[selectedHistoricalDate].length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-gray-600">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-400">Total Customers: {historicalGrouped[selectedHistoricalDate].length}</span>
+                        <span className="text-green-400 font-bold">
+                          Total Numbers: {historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0).toLocaleString()}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-gray-600">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-gray-400">Total Customers: {historicalGrouped[selectedHistoricalDate].length}</span>
-                      <span className="text-green-400 font-bold">
-                        Total Numbers: {historicalGrouped[selectedHistoricalDate].reduce((sum, count) => sum + count.count, 0).toLocaleString()}
-                      </span>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
