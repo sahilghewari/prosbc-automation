@@ -265,19 +265,33 @@ router.get('/', async (req, res) => {
 
     res.json({
       success: true,
-      files: dmFiles.map(file => ({
-        id: file.id,
-        file_name: file.file_name,
-        prosbc_file_id: file.prosbc_file_id,
-        prosbc_instance_id: file.prosbc_instance_id,
-        prosbc_instance_name: file.prosbc_instance_name,
-        total_numbers: file.total_numbers,
-        numbers: file.numbers ? JSON.parse(file.numbers) : [],
-        last_synced: file.last_synced,
-        status: file.status,
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt
-      }))
+      files: dmFiles.map(file => {
+        // Safely parse numbers field
+        let numbers = [];
+        if (file.numbers) {
+          try {
+            // Check if it's already an object/array
+            numbers = typeof file.numbers === 'string' ? JSON.parse(file.numbers) : file.numbers;
+          } catch (parseError) {
+            console.error(`[DM Files] Error parsing numbers for file ${file.file_name}:`, parseError.message);
+            numbers = [];
+          }
+        }
+        
+        return {
+          id: file.id,
+          file_name: file.file_name,
+          prosbc_file_id: file.prosbc_file_id,
+          prosbc_instance_id: file.prosbc_instance_id,
+          prosbc_instance_name: file.prosbc_instance_name,
+          total_numbers: file.total_numbers,
+          numbers: numbers,
+          last_synced: file.last_synced,
+          status: file.status,
+          createdAt: file.createdAt,
+          updatedAt: file.updatedAt
+        };
+      })
     });
 
   } catch (err) {
@@ -365,26 +379,14 @@ router.put('/:id/content', async (req, res) => {
         const instanceConfig = await getInstanceConfig(instanceId);
         const fileManager = new ProSBCFileAPI(instanceId);
 
-        // Create a temporary file with the content
-        const tempDir = path.join(process.cwd(), 'temp');
-        if (!fs.existsSync(tempDir)) {
-          fs.mkdirSync(tempDir, { recursive: true });
-        }
-
-        const tempFilePath = path.join(tempDir, `${dmFile.file_name}_${Date.now()}.csv`);
-        fs.writeFileSync(tempFilePath, file_content);
-
-        // Update the file on ProSBC
-        prosbcUpdateResult = await fileManager.updateFile(
+        // Use REST API method which doesn't require CSRF token
+        // and works better with Basic Auth
+        prosbcUpdateResult = await fileManager.updateFileRestAPI(
           'routesets_digitmaps',
-          dmFile.prosbc_file_id, // Use the actual ProSBC file ID
-          tempFilePath,
-          null,
+          dmFile.file_name,
+          file_content,
           configId
         );
-
-        // Clean up temp file
-        fs.unlinkSync(tempFilePath);
 
         // Update sync status
         await dmFile.update({

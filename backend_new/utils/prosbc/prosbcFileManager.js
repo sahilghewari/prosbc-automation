@@ -73,22 +73,24 @@ class ProSBCFileAPI {
     // - id: configuration ID (used for /configurations/{id}/choose_redirect)
     // - dbId: database ID (used for /file_dbs/{dbId}/edit after redirect)
     // - name: configuration name
+    // IMPORTANT: config_1 maps to config ID 8 and DB ID 8 (where the files are stored)
     this.prosbc1ConfigMappings = {
       'config_052421-1': { id: '2', dbId: '2', name: 'config_052421-1' },
       'config_060620221': { id: '3', dbId: '3', name: 'config_060620221' },
-      'config_1': { id: '1', dbId: '1', name: 'config_1' },
+      'config_1': { id: '8', dbId: '8', name: 'config_1' }, // Config ID 8, DB ID 8
       'config_1-BU': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
       'config_301122-1': { id: '4', dbId: '4', name: 'config_301122-1' },
       'config_demo': { id: '6', dbId: '6', name: 'config_demo' },
       'config_090325-1': { id: '7', dbId: '7', name: 'config_090325-1' },
-      // Also support lookup by ID
-      '1': { id: '1', dbId: '1', name: 'config_1' },
+      // Also support lookup by numeric ID
+      '1': { id: '8', dbId: '8', name: 'config_1' },
       '2': { id: '2', dbId: '2', name: 'config_052421-1' },
       '3': { id: '3', dbId: '3', name: 'config_060620221' },
       '4': { id: '4', dbId: '4', name: 'config_301122-1' },
       '5': { id: '5', dbId: '3', name: 'config_1-BU' }, // Config 5 maps to database 3
       '6': { id: '6', dbId: '6', name: 'config_demo' },
-      '7': { id: '7', dbId: '7', name: 'config_090325-1' }
+      '7': { id: '7', dbId: '7', name: 'config_090325-1' },
+      '8': { id: '8', dbId: '8', name: 'config_1' } // Config ID 8, DB ID 8
     };
   }
 
@@ -370,19 +372,37 @@ class ProSBCFileAPI {
       
       // Ensure config is selected and get the actual config ID (same logic as file listing)
       await this.ensureConfigSelected(configId);
-      let dbId = this.selectedConfigId ;
+      let dbId = this.selectedConfigId;
       
       // Find which database ID actually contains the file and get the file details
       let actualDbId = null;
       let fileDetails = null;
       
-      // Try all possible database IDs more thoroughly
-      // For ProSBC1 with many configs, check more database IDs
-      const dbIdsToSearch = (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') ? 
-        ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] : 
-        ['1', '2', '3', '4', '5'];
+      // CRITICAL FIX: Search in the correct DB ID FIRST (based on config selection)
+      // Only fallback to searching other DB IDs if not found in the correct one
+      const dbIdsToSearch = [];
       
-      console.log(`[Update REST API] Instance ${this.instanceId}: Searching for '${fileName}' across ${dbIdsToSearch.length} database IDs...`);
+      // Always prioritize the selected config's DB ID
+      if (dbId) {
+        dbIdsToSearch.push(dbId);
+      }
+      
+      // Then add other DB IDs as fallback (for legacy/migration scenarios)
+      if (this.instanceId && this.instanceId.toLowerCase() === 'prosbc1') {
+        for (const id of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']) {
+          if (id !== dbId) {
+            dbIdsToSearch.push(id);
+          }
+        }
+      } else {
+        for (const id of ['1', '2', '3', '4', '5']) {
+          if (id !== dbId) {
+            dbIdsToSearch.push(id);
+          }
+        }
+      }
+      
+      console.log(`[Update REST API] Instance ${this.instanceId}: Searching for '${fileName}', prioritizing DB ID ${dbId}...`);
       
       for (const testDbId of dbIdsToSearch) {
         try {
@@ -451,24 +471,23 @@ class ProSBCFileAPI {
         }
       }
       
-      // Get configuration name for REST API
-      const configName = await this.getConfigName(configId);
-      if (!configName) {
-        throw new Error('Could not determine configuration name for REST API');
-      }
+      // CRITICAL: Use the actual DB ID where the file was found, NOT the mapped config ID
+      // This is the key fix - dbId should already be set to actualDbId above
+      console.log(`[Update REST API] Final DB ID to use for update: ${dbId}`);
       
       // Use the file ID instead of file name in the REST API endpoint
+      // For ProSBC REST API, we use the simple endpoint without config name
       let endpoint;
       if (fileType === 'routesets_digitmaps' || fileType === 'dm') {
-        endpoint = `/configurations/${configName}/file_dbs/${dbId}/routesets_digitmaps/${fileDetails.id}`;
+        endpoint = `/file_dbs/${dbId}/routesets_digitmaps/${fileDetails.id}`;
       } else if (fileType === 'routesets_definitions' || fileType === 'df') {
-        endpoint = `/configurations/${configName}/file_dbs/${dbId}/routesets_definitions/${fileDetails.id}`;
+        endpoint = `/file_dbs/${dbId}/routesets_definitions/${fileDetails.id}`;
       } else {
         throw new Error(`Unsupported file type: ${fileType}`);
       }
       
       const updateUrl = `${this.baseURL}${endpoint}`;
-      console.log(`[Update REST API] Instance: ${this.instanceId}, Config: ${configName}, DB ID: ${dbId}, File ID: ${fileDetails.id}, Endpoint: ${endpoint}`);
+      console.log(`[Update REST API] Instance: ${this.instanceId}, DB ID: ${dbId}, File ID: ${fileDetails.id}, Endpoint: ${endpoint}`);
       console.log(`[Update REST API] Updating: ${updateUrl}`);
       
       // Prepare the REST API payload
@@ -491,79 +510,41 @@ class ProSBCFileAPI {
       });
       
       console.log(`[Update REST API] Response status: ${response.status}`);
+      
+      // Read response body only ONCE to avoid "body already used" error
       const responseText = await response.text();
-      console.log(`[Update REST API] Response body:`, responseText);
+      console.log(`[Update REST API] Response body:`, responseText.substring(0, 300));
       
       if (response.ok) {
-        console.log(`[Update REST API] REST API reports success, but let's verify the file was actually updated...`);
+        console.log(`[Update REST API] ✓ REST API update successful (${response.status})`);
+        console.log(`[Update REST API] File '${fileName}' updated in DB ID ${dbId}`);
         
-        // Wait a moment for the update to propagate
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Verify the update by fetching the file content to see if it changed
-        try {
-          const verifyResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileDetails.id}/export`, {
-            method: 'GET',
-            headers: await this.getCommonHeaders(),
-            follow: 3
-          });
-          if (verifyResponse.ok) {
-            const updatedContent = await verifyResponse.text();
-            const originalContentTrimmed = fileContent.trim();
-            const updatedContentTrimmed = updatedContent.trim();
-            
-            // More robust content comparison
-            if (updatedContentTrimmed === originalContentTrimmed) {
-              console.log(`[Update REST API] ✓ Verification successful: File content matches what we sent`);
-              return { 
-                success: true, 
-                message: `File '${fileName}' updated successfully via REST API`,
-                status: response.status,
-                verified: true
-              };
-            } else {
-              console.warn(`[Update REST API] Verification failed: content mismatch, falling back to CSRF method`);
-              
-              // Try the CSRF-based update as fallback
-              const fallbackResult = await this.updateFileCSRF(fileType, fileDetails.id, fileContent, fileName, dbId);
-              if (fallbackResult.success) {
-                return {
-                  ...fallbackResult,
-                  fallbackUsed: true,
-                  message: `File '${fileName}' updated successfully using fallback method`
-                };
-              } else {
-                return { 
-                  success: false, 
-                  message: `File '${fileName}' update verification failed and fallback also failed`,
-                  verified: false
-                };
-              }
-            }
-          } else {
-            console.warn(`[Update REST API] Could not verify update (export failed: ${verifyResponse.status}), assuming success`);
-            return { 
-              success: true, 
-              message: `File '${fileName}' updated successfully via REST API (unverified)`,
-              status: response.status,
-              verified: null
-            };
-          }
-        } catch (verifyError) {
-          console.warn(`[Update REST API] Verification error:`, verifyError.message);
-          return { 
-            success: true, 
-            message: `File '${fileName}' updated successfully via REST API (verification failed)`,
-            status: response.status,
-            verified: null
-          };
-        }
+        // Return success immediately - file name should remain unchanged
+        return { 
+          success: true, 
+          message: `File '${fileName}' updated successfully`,
+          status: response.status,
+          dbId: dbId,
+          fileId: fileDetails.id,
+          fileName: fileName // Ensure filename is returned unchanged
+        };
       } else {
-        const responseText = await response.text();
+        // Response text already read above
         console.error(`[Update REST API] Update failed:`, responseText.substring(0, 300));
         
         if (response.status === 404) {
-          throw new Error(`File '${fileName}' not found`);
+          // Parse the error message to understand why
+          let errorDetail = 'File not found';
+          try {
+            const errorObj = JSON.parse(responseText);
+            errorDetail = errorObj.error || errorDetail;
+            console.error(`[Update REST API] 404 Error detail: ${errorDetail}`);
+          } catch (e) {
+            // Not JSON, use raw text
+          }
+          
+          // The file exists in DB ID 1 but we're using wrong config/DB mapping
+          throw new Error(`File '${fileName}' not found: ${errorDetail}. File is in DB ID ${dbId} but may be in different config.`);
         } else if (response.status === 401) {
           throw new Error('Authentication failed');
         } else {
@@ -1987,22 +1968,70 @@ class ProSBCFileAPI {
 
   async updateFile(fileType, fileId, updatedFilePath, onProgress = null, configId = null) {
     try {
-      const dbId = configId;
+      // Ensure instance context is loaded
+      await this.loadInstanceContext();
+      
+      // Ensure config is selected and get the actual database ID
+      await this.ensureConfigSelected(configId);
+      const dbId = this.selectedConfigId;
       const updatedFileName = updatedFilePath.split('/').pop();
       onProgress?.(10, 'Getting edit form...');
       const editUrl = `/file_dbs/${dbId}/${fileType}/${fileId}/edit`;
       const editResponse = await fetch(`${this.baseURL}${editUrl}`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       if (!editResponse.ok) {
         const errorText = await editResponse.text();
         throw new Error(`Failed to get edit form: ${editResponse.status} - ${errorText.substring(0, 200)}`);
       }
       const editHtml = await editResponse.text();
-      const tokenMatch = editHtml.match(/name="authenticity_token"[^>]*value="([^"]+)"/);
-      if (!tokenMatch) throw new Error('Could not find authenticity token in edit form');
-      const csrfToken = tokenMatch[1];
+      
+      // Try multiple patterns for CSRF token extraction
+      let csrfToken = null;
+      const tokenPatterns = [
+        // Standard input field patterns
+        /name="authenticity_token"[^>]*value="([^"]+)"/i,
+        /name='authenticity_token'[^>]*value='([^']+)'/i,
+        /value="([^"]+)"[^>]*name="authenticity_token"/i,
+        /<input[^>]*name="authenticity_token"[^>]*value="([^"]+)"[^>]*>/i,
+        /<input[^>]*value="([^"]+)"[^>]*name="authenticity_token"[^>]*>/i,
+        
+        // Hidden field patterns
+        /<input[^>]*type="hidden"[^>]*name="authenticity_token"[^>]*value="([^"]+)"[^>]*>/i,
+        /<input[^>]*type='hidden'[^>]*name='authenticity_token'[^>]*value='([^']+)'[^>]*>/i,
+        
+        // Meta tag patterns
+        /<meta[^>]*name="csrf-token"[^>]*content="([^"]+)"[^>]*>/i,
+        /<meta[^>]*content="([^"]+)"[^>]*name="csrf-token"[^>]*>/i,
+        
+        // Form token patterns (Rails style)
+        /authenticity_token['"]\s*value\s*=\s*["']([^"']+)["']/i,
+        /authenticity_token['"]\s*:\s*["']([^"']+)["']/i,
+        
+        // JavaScript/data attribute patterns
+        /data-authenticity-token=["']([^"']+)["']/i,
+        /authenticity[-_]?token["']?\s*:\s*["']([^"']+)["']/i
+      ];
+      
+      for (const pattern of tokenPatterns) {
+        const match = editHtml.match(pattern);
+        if (match) {
+          csrfToken = match[1];
+          console.log(`[Update File] Found CSRF token using pattern: ${pattern}`);
+          break;
+        }
+      }
+      
+      if (!csrfToken) {
+        console.warn(`[Update File] Could not find CSRF token in edit form`);
+        console.warn(`[Update File] Edit URL: ${this.baseURL}${editUrl}`);
+        console.warn(`[Update File] HTML preview:`, editHtml.substring(0, 500));
+        console.warn(`[Update File] Attempting update without CSRF token as fallback...`);
+        // Some ProSBC versions might not require CSRF token for authenticated sessions
+        csrfToken = '';
+      }
       let recordId = fileId;
       const fieldName = fileType === 'routesets_digitmaps' ? 'tbgw_routesets_digitmap' : 'tbgw_routesets_definition';
       const idMatch = editHtml.match(new RegExp(`name="${fieldName}\[id\]"[^>]*value="([^"]+)"`));
@@ -2029,7 +2058,8 @@ class ProSBCFileAPI {
         method: 'POST',
         headers: updateHeaders,
         body: formData,
-        redirect: 'manual'
+        redirect: 'manual',
+        follow: 0
       });
       onProgress?.(80, 'Processing update response...');
       if (updateResponse.ok || updateResponse.status === 302) {
