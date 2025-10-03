@@ -22,7 +22,8 @@ async function validateSession(baseURL, sessionCookie) {
         'Cookie': `_WebOAMP_session=${sessionCookie}`,
         'User-Agent': 'Mozilla/5.0 (compatible; ProSBC-Automation)'
       },
-      timeout: 5000
+      timeout: 5000,
+      follow: 3
     });
     
     // If we get a successful response or redirect (not auth error), session is valid
@@ -132,7 +133,8 @@ class ProSBCFileAPI {
     // Ensure instance context is loaded
     await this.loadInstanceContext();
     
-    const sessionKey = this.instanceId || 'default';
+    // Use baseURL as key to handle both instance-based and env-based configurations
+    const sessionKey = this.instanceId || this.baseURL || 'default';
     let sessionCookie = sessionCookies.get(sessionKey);
     let lastLoginTime = lastLoginTimes.get(sessionKey) || 0;
     
@@ -284,7 +286,8 @@ class ProSBCFileAPI {
           'Authorization': this.getBasicAuthHeader(),
           'User-Agent': 'Mozilla/5.0 (Node.js)',
           'Content-Type': 'application/json'
-        }
+        },
+        follow: 3
       });
       
       console.log(`[Delete REST API] Response status: ${response.status}`);
@@ -328,7 +331,8 @@ class ProSBCFileAPI {
           'Content-Type': 'application/x-www-form-urlencoded',
           'User-Agent': 'Mozilla/5.0 (Node.js)'
         },
-        body: params.toString()
+        body: params.toString(),
+        follow: 3
       });
       
       console.log(`[Delete Form API] Response status: ${response.status}`);
@@ -385,7 +389,8 @@ class ProSBCFileAPI {
           console.log(`[Update REST API] Searching for '${fileName}' in DB ID ${testDbId}...`);
           const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
             method: 'GET',
-            headers: await this.getCommonHeaders()
+            headers: await this.getCommonHeaders(),
+            follow: 3
           });
           
           if (testResponse.ok) {
@@ -481,7 +486,8 @@ class ProSBCFileAPI {
           'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Node.js)'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        follow: 3
       });
       
       console.log(`[Update REST API] Response status: ${response.status}`);
@@ -498,7 +504,8 @@ class ProSBCFileAPI {
         try {
           const verifyResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/${fileType}/${fileDetails.id}/export`, {
             method: 'GET',
-            headers: await this.getCommonHeaders()
+            headers: await this.getCommonHeaders(),
+            follow: 3
           });
           if (verifyResponse.ok) {
             const updatedContent = await verifyResponse.text();
@@ -737,7 +744,7 @@ class ProSBCFileAPI {
 
           // After configuration selection, verify that the expected file_dbs page returns file content
           const verifyUrl = `${this.baseURL}/file_dbs/${mappedConfig.dbId}/edit`;
-          const verifyResp = await fetch(verifyUrl, { method: 'GET', headers: await this.getCommonHeaders() });
+          const verifyResp = await fetch(verifyUrl, { method: 'GET', headers: await this.getCommonHeaders(), follow: 3 });
           const verifyHtml = await verifyResp.text();
 
           // If we unexpectedly received the configuration selection page or the section is missing, probe nearby DB IDs
@@ -752,7 +759,7 @@ class ProSBCFileAPI {
             for (let probe = 1; probe <= 10; probe++) {
               try {
                 const probeUrl = `${this.baseURL}/file_dbs/${probe}/edit`;
-                const resp = await fetch(probeUrl, { method: 'GET', headers: await this.getCommonHeaders() });
+                const resp = await fetch(probeUrl, { method: 'GET', headers: await this.getCommonHeaders(), follow: 3 });
                 if (!resp.ok) continue;
                 const h = await resp.text();
                 const hasSection = h.includes('Routesets Definition') || h.includes('Routesets Definition:');
@@ -830,7 +837,8 @@ class ProSBCFileAPI {
       // Verify the selection worked by checking a simple endpoint and extract the actual database ID
       const verifyResponse = await fetch(`${this.baseURL}/file_dbs/1/edit`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       
       if (verifyResponse.ok) {
@@ -902,7 +910,8 @@ class ProSBCFileAPI {
         try {
           const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
             method: 'GET',
-            headers: await this.getCommonHeaders()
+            headers: await this.getCommonHeaders(),
+            follow: 3
           });
           
           const result = {
@@ -1040,7 +1049,8 @@ class ProSBCFileAPI {
       onProgress?.(25, 'Getting upload form...');
       const newDfResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_definitions/new`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       if (!newDfResponse.ok) {
         const errorText = await newDfResponse.text();
@@ -1192,7 +1202,8 @@ class ProSBCFileAPI {
           try {
             const redirectResponse = await fetch(redirectUrl, {
               method: 'GET',
-              headers: await this.getCommonHeaders()
+              headers: await this.getCommonHeaders(),
+              follow: 3
             });
             const redirectText = await redirectResponse.text();
             console.log(`[Upload DF] Redirect response preview:`, redirectText.substring(0, 500));
@@ -1239,7 +1250,8 @@ class ProSBCFileAPI {
                 for (const testDbId of dbIdsToVerify) {
                   const testResponse = await fetch(`${this.baseURL}/file_dbs/${testDbId}/edit`, {
                     method: 'GET',
-                    headers: await this.getCommonHeaders()
+                    headers: await this.getCommonHeaders(),
+                    follow: 3
                   });
                   if (testResponse.ok) {
                     const testHtml = await testResponse.text();
@@ -1350,7 +1362,8 @@ class ProSBCFileAPI {
       onProgress?.(25, 'Getting upload form...');
       const newDmResponse = await fetch(`${this.baseURL}/file_dbs/${dbId}/routesets_digitmaps/new`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       if (!newDmResponse.ok) {
         const errorText = await newDmResponse.text();
@@ -1503,7 +1516,8 @@ class ProSBCFileAPI {
           try {
             const redirectResponse = await fetch(redirectUrl, {
               method: 'GET',
-              headers: await this.getCommonHeaders()
+              headers: await this.getCommonHeaders(),
+              follow: 3
             });
             const redirectText = await redirectResponse.text();
             console.log(`[Upload DM] Redirect response preview:`, redirectText.substring(0, 500));
@@ -1593,7 +1607,8 @@ class ProSBCFileAPI {
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       if (!response.ok) throw new Error(`Failed to fetch DF files: ${response.status}`);
       const html = await response.text();
@@ -1626,7 +1641,8 @@ class ProSBCFileAPI {
         try {
           const indexResponse = await fetch(`${this.baseURL}/file_dbs`, {
             method: 'GET',
-            headers: await this.getCommonHeaders()
+            headers: await this.getCommonHeaders(),
+            follow: 3
           });
           
           if (indexResponse.ok) {
@@ -1645,7 +1661,8 @@ class ProSBCFileAPI {
       
       const response = await fetch(`${this.baseURL}/file_dbs/${dbId}/edit`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       if (!response.ok) throw new Error(`Failed to fetch DM files: ${response.status}`);
       const html = await response.text();
@@ -1668,7 +1685,8 @@ class ProSBCFileAPI {
     try {
       const response = await fetch(`${this.baseURL}/dashboard`, {
         method: 'GET',
-        headers: await this.getCommonHeaders()
+        headers: await this.getCommonHeaders(),
+        follow: 3
       });
       return {
         isOnline: response.ok,

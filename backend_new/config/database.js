@@ -10,7 +10,16 @@ const sequelize = new Sequelize(
     port: process.env.DB_PORT || 3306,
     logging: false,
     dialectOptions: {
-  connectTimeout: 30000 // 30 seconds
+      connectTimeout: 30000, // 30 seconds
+      // Disable GSSAPI and prefer standard authentication
+      permitSetMultiParamEntries: true,
+      // Force use of mysql_native_password or caching_sha2_password
+      authPlugins: {
+        mysql_native_password: () => () => Buffer.from([])
+      },
+      // Additional connection options to avoid GSSAPI
+      skipSetTimezone: true,
+      charset: 'utf8mb4'
     }
   }
 );

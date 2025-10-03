@@ -23,7 +23,7 @@ export async function fetchLiveConfigIds(baseURL, sessionCookie) {
 
   let res;
   try {
-    res = await fetch(url, { method: 'GET', headers, timeout: 10000 });
+    res = await fetch(url, { method: 'GET', headers, timeout: 10000, follow: 3 });
   } catch (fetchError) {
     console.error(`[Config Fetcher] Network error: ${fetchError.message}`);
     throw new Error(`Network error: ${fetchError.message}`);
