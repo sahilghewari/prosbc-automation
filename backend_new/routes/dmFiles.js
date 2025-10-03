@@ -379,11 +379,20 @@ router.put('/:id/content', async (req, res) => {
         const instanceConfig = await getInstanceConfig(instanceId);
         const fileManager = new ProSBCFileAPI(instanceId);
 
+        // Clean the filename: remove any timestamp suffix that may have been added
+        // Pattern: filename.csv_1234567890123.csv -> filename.csv
+        let cleanFileName = dmFile.file_name;
+        const timestampPattern = /\.csv_\d{13}\.csv$/i;
+        if (timestampPattern.test(cleanFileName)) {
+          cleanFileName = cleanFileName.replace(timestampPattern, '.csv');
+          console.log(`[DM Update] Cleaned filename: '${dmFile.file_name}' -> '${cleanFileName}'`);
+        }
+
         // Use REST API method which doesn't require CSRF token
         // and works better with Basic Auth
         prosbcUpdateResult = await fileManager.updateFileRestAPI(
           'routesets_digitmaps',
-          dmFile.file_name,
+          cleanFileName,
           file_content,
           configId
         );
