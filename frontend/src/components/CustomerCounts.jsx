@@ -10,9 +10,6 @@ const CustomerCounts = ({ configId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHistoricalInstance, setSelectedHistoricalInstance] = useState(selectedInstance?.id || '');
   const [selectedHistoricalDate, setSelectedHistoricalDate] = useState(null);
-  const [numberSearch, setNumberSearch] = useState('');
-  const [searchResult, setSearchResult] = useState(null);
-  const [searching, setSearching] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [cleaning, setCleaning] = useState(false);
@@ -106,32 +103,6 @@ const CustomerCounts = ({ configId }) => {
       }
     } finally {
       setIsLoadingHistorical(false);
-    }
-  };
-
-  const searchNumber = async () => {
-    if (!numberSearch.trim()) return;
-
-    setSearching(true);
-    setSearchResult(null);
-    try {
-      const token = localStorage.getItem('dashboard_token');
-      const response = await fetch(`/backend/api/dm-files/search?numbers=${encodeURIComponent(numberSearch)}`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : ''
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setSearchResult(data);
-    } catch (err) {
-      setSearchResult({ success: false, error: err.message });
-    } finally {
-      setSearching(false);
     }
   };
 
@@ -393,85 +364,6 @@ const CustomerCounts = ({ configId }) => {
           {error}
         </div>
       )}
-
-      {/* Number Search */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold text-white mb-4">Database Number Search</h2>
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <textarea
-              placeholder="Enter phone numbers separated by commas (e.g., 1234567890, 0987654321, 5551234567)"
-              value={numberSearch}
-              onChange={(e) => setNumberSearch(e.target.value)}
-              rows={3}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            />
-          </div>
-          <button
-            onClick={searchNumber}
-            disabled={searching || !numberSearch.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-6 py-3 rounded-lg font-medium transition-colors h-fit"
-          >
-            {searching ? 'Searching...' : 'Search Database'}
-          </button>
-        </div>
-        <p className="text-gray-400 text-sm mt-2">
-          Search for phone numbers in the stored DM files database. Shows which file and ProSBC instance each number belongs to.
-        </p>
-        {searchResult && (
-          <div className="mt-4">
-            {searchResult.success && searchResult.results ? (
-              <div className="bg-gray-800 rounded-lg overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-gray-700">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-white font-semibold">Number</th>
-                      <th className="px-4 py-3 text-left text-white font-semibold">Status</th>
-                      <th className="px-4 py-3 text-left text-white font-semibold">Found In</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {searchResult.results.map((result, index) => (
-                      <tr key={index} className="border-t border-gray-600">
-                        <td className="px-4 py-3 text-white font-mono">{result.number}</td>
-                        <td className="px-4 py-3">
-                          {result.found ? (
-                            <span className="text-green-400 font-semibold">Found</span>
-                          ) : (
-                            <span className="text-red-400 font-semibold">Not Found</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-gray-300">
-                          {result.found && result.locations ? (
-                            <div className="space-y-1">
-                              {result.locations.map((location, locIndex) => (
-                                <div key={locIndex} className="text-sm">
-                                  <span className="font-medium text-blue-400">{location.file_name}</span>
-                                  <span className="text-gray-400"> in </span>
-                                  <span className="font-medium text-purple-400">{location.prosbc_instance_name}</span>
-                                  <span className="text-gray-500"> ({location.prosbc_instance_id})</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            'N/A'
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="p-4 bg-gray-800 rounded-lg">
-                <div className="text-red-400">
-                  {searchResult.error || 'Search failed'}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* DM Files Sync */}
       <div className="mb-6">
