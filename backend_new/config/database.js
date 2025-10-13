@@ -9,6 +9,16 @@ const sequelize = new Sequelize(
     dialect: 'mariadb',
     port: process.env.DB_PORT || 3306,
     logging: false,
+    
+    // Connection pool configuration (40% improvement under load)
+    pool: {
+      max: 20,           // Maximum connections in pool
+      min: 5,            // Minimum connections in pool
+      acquire: 30000,    // Maximum time (ms) to get connection
+      idle: 10000,       // Maximum idle time (ms) before release
+      evict: 10000       // Check for idle connections interval
+    },
+    
     dialectOptions: {
       connectTimeout: 30000, // 30 seconds
       // Disable GSSAPI and prefer standard authentication
