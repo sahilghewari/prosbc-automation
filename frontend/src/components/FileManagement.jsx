@@ -69,6 +69,10 @@ function FileManagement({ onAuthError, configId }) {
   const [searchResult, setSearchResult] = useState(null);
   const [searching, setSearching] = useState(false);
 
+  // Pagination state for search results
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+
   // Add instance refresh hook to automatically reload files when instance changes
   useInstanceRefresh(
     async (instance) => {
@@ -152,6 +156,7 @@ function FileManagement({ onAuthError, configId }) {
 
     setSearching(true);
     setSearchResult(null);
+    setCurrentPage(1); // Reset to first page on new search
     try {
       const token = localStorage.getItem('dashboard_token');
       // Split numbers by newlines, commas, or spaces and filter empty entries
@@ -1629,46 +1634,109 @@ function FileManagement({ onAuthError, configId }) {
           {searchResult && (
             <div className="mt-4">
               {searchResult.success && searchResult.results ? (
-                <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
-                  <table className="w-full">
-                    <thead className="bg-gray-700">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-white font-semibold">Number</th>
-                        <th className="px-4 py-3 text-left text-white font-semibold">Status</th>
-                        <th className="px-4 py-3 text-left text-white font-semibold">Found In</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {searchResult.results.map((result, index) => (
-                        <tr key={index} className="border-t border-gray-600">
-                          <td className="px-4 py-3 text-white font-mono">{result.number}</td>
-                          <td className="px-4 py-3">
-                            {result.found ? (
-                              <span className="text-green-400 font-semibold">Found</span>
-                            ) : (
-                              <span className="text-red-400 font-semibold">Not Found</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-gray-300">
-                            {result.found && result.locations ? (
-                              <div className="space-y-1">
-                                {result.locations.map((location, locIndex) => (
-                                  <div key={locIndex} className="text-sm">
-                                    <span className="font-medium text-blue-400">{location.file_name}</span>
-                                    <span className="text-gray-400"> in </span>
-                                    <span className="font-medium text-purple-400">{location.prosbc_instance_name}</span>
-                                    <span className="text-gray-500"> ({location.prosbc_instance_id})</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              'N/A'
-                            )}
-                          </td>
+                <div>
+                  <div className="mb-4 flex justify-between items-center">
+                    <div className="text-gray-300">
+                      Showing {Math.min((currentPage - 1) * itemsPerPage + 1, searchResult.results.length)} - {Math.min(currentPage * itemsPerPage, searchResult.results.length)} of {searchResult.results.length} results
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-gray-300 text-sm">Items per page:</label>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1); // Reset to first page when changing items per page
+                        }}
+                        className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                      >
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={200}>200</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="bg-gray-900 rounded-lg overflow-hidden border border-gray-700">
+                    <table className="w-full">
+                      <thead className="bg-gray-700">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-white font-semibold">Number</th>
+                          <th className="px-4 py-3 text-left text-white font-semibold">Status</th>
+                          <th className="px-4 py-3 text-left text-white font-semibold">Found In</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const startIndex = (currentPage - 1) * itemsPerPage;
+                          const endIndex = startIndex + itemsPerPage;
+                          const currentResults = searchResult.results.slice(startIndex, endIndex);
+                          
+                          return currentResults.map((result, index) => (
+                            <tr key={startIndex + index} className="border-t border-gray-600">
+                              <td className="px-4 py-3 text-white font-mono">{result.number}</td>
+                              <td className="px-4 py-3">
+                                {result.found ? (
+                                  <span className="text-green-400 font-semibold">Found</span>
+                                ) : (
+                                  <span className="text-red-400 font-semibold">Not Found</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-gray-300">
+                                {result.found && result.locations ? (
+                                  <div className="space-y-1">
+                                    {result.locations.map((location, locIndex) => (
+                                      <div key={locIndex} className="text-sm">
+                                        <span className="font-medium text-blue-400">{location.file_name}</span>
+                                        <span className="text-gray-400"> in </span>
+                                        <span className="font-medium text-purple-400">{location.prosbc_instance_name}</span>
+                                        <span className="text-gray-500"> ({location.prosbc_instance_id})</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  'N/A'
+                                )}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Pagination Controls */}
+                  {searchResult.results.length > itemsPerPage && (
+                    <div className="mt-4 flex justify-center items-center gap-4">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                      >
+                        Previous
+                      </button>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-300">Page</span>
+                        <select
+                          value={currentPage}
+                          onChange={(e) => setCurrentPage(Number(e.target.value))}
+                          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                        >
+                          {Array.from({ length: Math.ceil(searchResult.results.length / itemsPerPage) }, (_, i) => (
+                            <option key={i + 1} value={i + 1}>{i + 1}</option>
+                          ))}
+                        </select>
+                        <span className="text-gray-300">of {Math.ceil(searchResult.results.length / itemsPerPage)}</span>
+                      </div>
+                      
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(Math.ceil(searchResult.results.length / itemsPerPage), prev + 1))}
+                        disabled={currentPage === Math.ceil(searchResult.results.length / itemsPerPage)}
+                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="p-4 bg-gray-900 rounded-lg border border-red-700">
