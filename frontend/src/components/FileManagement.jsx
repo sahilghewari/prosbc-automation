@@ -154,10 +154,19 @@ function FileManagement({ onAuthError, configId }) {
     setSearchResult(null);
     try {
       const token = localStorage.getItem('dashboard_token');
-      const response = await fetch(`/backend/api/dm-files/search?numbers=${encodeURIComponent(numberSearch)}`, {
+      // Split numbers by newlines, commas, or spaces and filter empty entries
+      const numbersArray = numberSearch.split(/[\n\r,]+/).map(num => num.trim()).filter(num => num);
+
+      const response = await fetch('/backend/api/dm-files/search', {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': token ? `Bearer ${token}` : ''
-        }
+        },
+        body: JSON.stringify({
+          numbers: numbersArray,
+          instanceId: selectedInstance?.id
+        })
       });
 
       if (!response.ok) {

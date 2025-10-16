@@ -532,17 +532,15 @@ router.post('/cleanup', async (req, res) => {
   }
 });
 
-// GET /dm-files/search?numbers=num1,num2,num3&instanceId=optional
-router.get('/search', async (req, res) => {
+// POST /dm-files/search - Search for numbers in DM files
+router.post('/search', async (req, res) => {
   try {
-    const numbersParam = req.query.numbers || req.query.number;
-    const instanceId = req.query.instanceId;
+    const { numbers, instanceId } = req.body;
 
-    if (!numbersParam) {
-      return res.status(400).json({ success: false, error: 'numbers parameter is required' });
+    if (!numbers || !Array.isArray(numbers)) {
+      return res.status(400).json({ success: false, error: 'numbers array is required in request body' });
     }
 
-    const numbers = numbersParam.split(/[, \r\n]+/).map(num => num.trim()).filter(num => num);
     if (numbers.length === 0) {
       return res.status(400).json({ success: false, error: 'At least one number is required' });
     }
@@ -561,51 +559,40 @@ router.get('/search', async (req, res) => {
 
     console.log(`Found ${dmFiles.length} DM files to search`);
 
+    // Pre-parse numbers for all files to avoid repeated JSON parsing
+    const parsedFiles = [];
+    for (const file of dmFiles) {
+      try {
+        let fileNumbers = [];
+        if (file.numbers) {
+          if (Array.isArray(file.numbers)) {
+            fileNumbers = file.numbers;
+          } else if (typeof file.numbers === 'string') {
+            fileNumbers = JSON.parse(file.numbers);
+          }
+        }
+        parsedFiles.push({
+          ...file.toJSON(),
+          parsedNumbers: fileNumbers
+        });
+      } catch (err) {
+        console.error(`Error parsing numbers for file ${file.file_name}:`, err);
+        // Skip this file
+      }
+    }
+
     const results = [];
 
     for (const searchNumber of numbers) {
       const foundLocations = [];
 
-      for (const file of dmFiles) {
-        try {
-          let fileNumbers = [];
-          if (file.numbers) {
-            if (Array.isArray(file.numbers)) {
-              // If it's already an array
-              fileNumbers = file.numbers;
-            } else if (typeof file.numbers === 'string') {
-              // Handle potential malformed JSON from old data
-              try {
-                fileNumbers = JSON.parse(file.numbers);
-              } catch (parseError) {
-                console.error(`Error parsing numbers for file ${file.file_name}:`, parseError.message);
-                console.error(`Raw numbers data:`, file.numbers.substring(0, 100));
-
-                // Try to fix common JSON issues
-                try {
-                  // Remove any trailing commas before closing bracket
-                  let cleanedData = file.numbers.trim().replace(/,(\s*\])/g, '$1');
-                  fileNumbers = JSON.parse(cleanedData);
-                } catch (secondError) {
-                  console.error(`Failed to fix JSON for ${file.file_name}:`, secondError.message);
-                  continue;
-                }
-              }
-            } else {
-              console.error(`Numbers field is not a string or array for ${file.file_name}, type:`, typeof file.numbers);
-              continue;
-            }
-          }
-
-          if (Array.isArray(fileNumbers) && fileNumbers.includes(searchNumber)) {
-            foundLocations.push({
-              file_name: file.file_name,
-              prosbc_instance_id: file.prosbc_instance_id,
-              prosbc_instance_name: file.prosbc_instance_name
-            });
-          }
-        } catch (err) {
-          console.error(`Error processing file ${file.file_name}:`, err);
+      for (const file of parsedFiles) {
+        if (file.parsedNumbers.includes(searchNumber)) {
+          foundLocations.push({
+            file_name: file.file_name,
+            prosbc_instance_id: file.prosbc_instance_id,
+            prosbc_instance_name: file.prosbc_instance_name
+          });
         }
       }
 

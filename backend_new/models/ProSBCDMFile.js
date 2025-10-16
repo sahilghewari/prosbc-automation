@@ -50,6 +50,14 @@ const ProSBCDMFile = database.sequelize.define('ProSBCDMFile', {
   timestamps: true,
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
+  indexes: [
+    {
+      fields: ['prosbc_instance_id']
+    },
+    {
+      fields: ['status']
+    }
+  ]
 });
 
 export default ProSBCDMFile;
