@@ -9,17 +9,23 @@ import DashboardLogin from './DashboardLogin';
 import Profile from './components/Profile';
 import ProSBCInstanceManager from './components/ProSBCInstanceManager';
 import CustomerCounts from './components/CustomerCounts';
+import DashboardSidebar from './components/DashboardSidebar';
+import BackgroundTasksPopup from './components/BackgroundTasksPopup';
+import NumberEventsTable from './components/NumberEventsTable';
 
 import { setupAuthentication } from './utils/napApiClientFixed';
 import { ProSBCInstanceProvider, useProSBCInstance } from './contexts/ProSBCInstanceContext';
+import { BackgroundTasksProvider } from './contexts/BackgroundTasksContext';
 import { sessionManager } from './utils/sessionManager';
 import './App.css';
 
 function App() {
   return (
-    <ProSBCInstanceProvider>
+    <BackgroundTasksProvider>
+      <ProSBCInstanceProvider>
       <AppContent />
     </ProSBCInstanceProvider>
+    </BackgroundTasksProvider>
   );
 }
 
@@ -90,6 +96,9 @@ function AppContent() {
     } catch (error) {
       console.error('[App] Failed to refresh instances after login:', error);
     }
+
+    // Redirect to file management center after successful login
+    setActiveSection('dm-df-management');
   };
 
   // Show error state if authentication setup failed
@@ -145,6 +154,8 @@ function AppContent() {
   // Render different content based on active section
   const renderContent = () => {
     switch (activeSection) {
+      case 'dashboard':
+        return <DashboardSidebar configId={selectedConfigId} user={user} />;
       case 'dm-df-upload':
         return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
       case 'dm-df-management':
@@ -155,8 +166,10 @@ function AppContent() {
         return <ActivationGeneration onAuthError={handleAuthError} />;
       case 'prosbc-instances':
         return <ProSBCInstanceManager />;
+      case 'audit-logs':
+        return <NumberEventsTable configId={selectedConfigId} />;
       case 'customer-counts':
-        return <CustomerCounts configId={selectedConfigId} />;
+        return <CustomerCounts configId={selectedConfigId} user={user} />;
       default:
         return <FileUploader onAuthError={handleAuthError} configId={selectedConfigId} />;
     }
@@ -208,6 +221,7 @@ function AppContent() {
           </div>
         </main>
       </div>
+      <BackgroundTasksPopup />
     </div>
   );
 }

@@ -228,6 +228,16 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
 
   const menuItems = [
     {
+      id: 'dashboard',
+      title: 'Dashboard',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 13h8V3H3v10zm10 8h8v-6h-8v6zM13 3v6h8V3h-8zM3 21h8v-6H3v6z" />
+        </svg>
+      ),
+      subtitle: 'Overview and quick stats'
+    },
+    {
       id: 'dm-df-upload',
       title: 'File Upload',
       icon: (
@@ -266,6 +276,16 @@ const Sidebar = ({ isCollapsed, onCollapseToggle, activeSection, onSectionChange
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
       )
+    },
+    {
+      id: 'audit-logs',
+      title: 'Audit Logs',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h18M3 12h18M3 17h18" />
+        </svg>
+      ),
+      subtitle: 'Detailed change history'
     },
     {
       id: 'customer-counts',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
 
-const CustomerCounts = ({ configId }) => {
+const CustomerCounts = ({ configId, user }) => {
   const { selectedInstance, instances } = useProSBCInstance();
   const [liveCounts, setLiveCounts] = useState([]);
   const [historicalCounts, setHistoricalCounts] = useState([]);
@@ -22,6 +22,9 @@ const CustomerCounts = ({ configId }) => {
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
   const [runInBackground, setRunInBackground] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [changeLogs, setChangeLogs] = useState([]);
+  const [pendingRemovals, setPendingRemovals] = useState([]);
+  const [processingRemovals, setProcessingRemovals] = useState(false);
 
   const fetchCounts = async () => {
     if (!configId || !selectedInstance) return;
@@ -120,7 +123,7 @@ const CustomerCounts = ({ configId }) => {
           'X-ProSBC-Instance-ID': selectedInstance.id.toString(),
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ configId })
+        body: JSON.stringify({ configId, userId: user?.id })
       });
 
       if (!response.ok) {
@@ -129,99 +132,12 @@ const CustomerCounts = ({ configId }) => {
 
       const data = await response.json();
       setSyncResult(data);
+      // Refresh counts after sync
+      await fetchCounts();
     } catch (err) {
       setSyncResult({ success: false, error: err.message });
     } finally {
       setSyncing(false);
-    }
-  };
-
-  const replaceDMFiles = async () => {
-    if (!configId || instances.length === 0) return;
-
-    setIsProcessing(true);
-    if (!runInBackground) setSyncing(true);
-    setSyncResult(null);
-    setSyncProgress({ current: 0, total: instances.length });
-    const results = { successes: [], failures: [] };
-
-    try {
-      const token = localStorage.getItem('dashboard_token');
-
-      // Process all instances in parallel
-      const processInstance = async (instance) => {
-        try {
-          // Clear existing data for this instance
-          const clearResponse = await fetch('/backend/api/dm-files/clear', {
-            method: 'DELETE',
-            headers: {
-              'Authorization': token ? `Bearer ${token}` : '',
-              'X-ProSBC-Instance-ID': instance.id.toString()
-            }
-          });
-
-          if (!clearResponse.ok) {
-            throw new Error(`Clear failed for instance ${instance.id}: ${clearResponse.statusText}`);
-          }
-
-          // Sync new data for this instance
-          const syncResponse = await fetch('/backend/api/dm-files/sync', {
-            method: 'POST',
-            headers: {
-              'Authorization': token ? `Bearer ${token}` : '',
-              'X-ProSBC-Instance-ID': instance.id.toString(),
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ configId })
-          });
-
-          if (!syncResponse.ok) {
-            throw new Error(`Sync failed for instance ${instance.id}: ${syncResponse.statusText}`);
-          }
-
-          const data = await syncResponse.json();
-          return { success: true, instanceId: instance.id, ...data };
-        } catch (err) {
-          return { success: false, instanceId: instance.id, error: err.message };
-        }
-      };
-
-      const promises = instances.map(processInstance);
-      const settledResults = await Promise.allSettled(promises);
-
-      // Process results
-      settledResults.forEach((result) => {
-        if (result.status === 'fulfilled') {
-          const data = result.value;
-          if (data.success) {
-            results.successes.push(data);
-          } else {
-            results.failures.push(data);
-          }
-        } else {
-          // This shouldn't happen with our error handling, but just in case
-          results.failures.push({ instanceId: 'unknown', error: result.reason });
-        }
-        setSyncProgress(prev => ({ ...prev, current: prev.current + 1 }));
-      });
-
-      // Aggregate final result
-      const hasSuccesses = results.successes.length > 0;
-      const hasFailures = results.failures.length > 0;
-      setSyncResult({
-        success: hasSuccesses && !hasFailures, // Fully successful only if no failures
-        message: hasSuccesses
-          ? `Data replaced successfully for ${results.successes.length} instance(s). ${hasFailures ? `${results.failures.length} instance(s) failed.` : ''}`
-          : 'All replacements failed.',
-        successes: results.successes,
-        failures: results.failures
-      });
-    } catch (err) {
-      setSyncResult({ success: false, error: err.message });
-    } finally {
-      setIsProcessing(false);
-      if (!runInBackground) setSyncing(false);
-      setSyncProgress({ current: 0, total: 0 });
     }
   };
 
@@ -311,8 +227,80 @@ const CustomerCounts = ({ configId }) => {
     }
   };
 
+  const processPendingRemovals = async () => {
+    if (!selectedInstance) return;
+
+    setProcessingRemovals(true);
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch('/backend/api/customer-counts/process-pending-removals', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ instanceId: selectedInstance.id })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to process removals: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      alert(`Processed ${data.processed.length} pending removals`);
+      // Refresh counts
+      await fetchCounts();
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setProcessingRemovals(false);
+    }
+  };
+
+  const fetchChangeLogs = async () => {
+    if (!selectedInstance) return;
+
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch(`/backend/api/customer-counts/change-logs?instanceId=${selectedInstance.id}`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setChangeLogs(data.changeLogs || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch change logs:', err);
+    }
+  };
+
+  const fetchPendingRemovals = async () => {
+    if (!selectedInstance) return;
+
+    try {
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch(`/backend/api/customer-counts/pending-removals?instanceId=${selectedInstance.id}`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingRemovals(data.pendingRemovals || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch pending removals:', err);
+    }
+  };
+
   useEffect(() => {
     fetchCounts();
+    fetchChangeLogs();
+    fetchPendingRemovals();
   }, [configId, selectedInstance]);
 
   useEffect(() => {
@@ -388,11 +376,11 @@ const CustomerCounts = ({ configId }) => {
             {syncing ? 'Syncing...' : 'Sync DM Files'}
           </button>
           <button
-            onClick={replaceDMFiles}
-            disabled={(!runInBackground && syncing) || !configId || instances.length === 0}
-            className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+            onClick={processPendingRemovals}
+            disabled={processingRemovals || !selectedInstance}
+            className="bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-6 py-3 rounded-lg font-medium transition-colors"
           >
-            {(!runInBackground && syncing) ? 'Replacing...' : 'Replace All Data'}
+            {processingRemovals ? 'Processing...' : 'Process Pending Removals'}
           </button>
           <button
             onClick={cleanupDMFiles}
@@ -544,6 +532,55 @@ const CustomerCounts = ({ configId }) => {
           )}
         </div>
       )}
+
+      {/* Change Logs */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-white mb-4">Recent Change Logs</h2>
+        <div className="bg-gray-800 rounded-xl p-6 shadow-lg max-h-96 overflow-y-auto">
+          {changeLogs.length > 0 ? (
+            <div className="space-y-3">
+              {changeLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
+                  <div>
+                    <div className="text-white font-medium">{log.customerName}</div>
+                    <div className="text-gray-300 text-sm">
+                      {log.changeType === 'add' ? 'Added' : 'Removed'} {log.count} numbers
+                    </div>
+                    <div className="text-gray-400 text-xs">{new Date(log.timestamp).toLocaleString()}</div>
+                  </div>
+                  <div className={`px-2 py-1 rounded text-xs font-medium ${
+                    log.changeType === 'add' ? 'bg-green-900 text-green-100' : 'bg-red-900 text-red-100'
+                  }`}>
+                    {log.changeType.toUpperCase()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400">No change logs available</p>
+          )}
+        </div>
+      </div>
+
+      {/* Pending Removals */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-white mb-4">Pending Removals ({pendingRemovals.length})</h2>
+        <div className="bg-gray-800 rounded-xl p-6 shadow-lg max-h-96 overflow-y-auto">
+          {pendingRemovals.length > 0 ? (
+            <div className="space-y-3">
+              {pendingRemovals.map((removal) => (
+                <div key={removal.id} className="p-3 bg-gray-700 rounded-lg">
+                  <div className="text-white font-medium">{removal.customerName}</div>
+                  <div className="text-gray-300 text-sm">Number: {removal.number}</div>
+                  <div className="text-gray-400 text-xs">Removed on: {new Date(removal.removalDate).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400">No pending removals</p>
+          )}
+        </div>
+      </div>
 
       {/* Search Bar */}
       <div className="mb-6">

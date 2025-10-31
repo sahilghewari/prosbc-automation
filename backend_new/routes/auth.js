@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
       // Delete any existing active session for this user
       await ActiveUser.destroy({ where: { userId: user.id } });
       // Generate JWT
-      const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '1d' });
+      const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
       await ActiveUser.create({ userId: user.id, username: user.username, token });
       return res.json({ token });
     } else {

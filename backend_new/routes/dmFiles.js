@@ -1,11 +1,17 @@
 import express from 'express';
 import csv from 'csv-parser';
+import { Op } from 'sequelize';
 import { Readable } from 'stream';
 import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 import ProSBCDMFile from '../models/ProSBCDMFile.js';
 import ProSBCInstance from '../models/ProSBCInstance.js';
+import CustomerNumber from '../models/CustomerNumber.js';
+import PendingRemoval from '../models/PendingRemoval.js';
+import CustomerNumberChange from '../models/CustomerNumberChange.js';
+import NumberEvent from '../models/NumberEvent.js';
+import MonthlySnapshot from '../models/MonthlySnapshot.js';
 import { getProSBCCredentials } from '../utils/prosbc/multiInstanceManager.js';
 import { ProSBCFileAPI } from '../utils/prosbc/prosbcFileManager.js';
 
@@ -60,7 +66,7 @@ function extractNumbersFromCSV(csvContent) {
 router.post('/sync', async (req, res) => {
   try {
     const instanceId = req.headers['x-prosbc-instance-id'];
-    const { configId } = req.body;
+    const { configId, userId } = req.body;
 
     if (!configId) {
       return res.status(400).json({ success: false, error: 'configId is required' });
@@ -175,6 +181,271 @@ router.post('/sync', async (req, res) => {
 
   } catch (err) {
     console.error('Error syncing DM files:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /dm-files/replace-all
+router.post('/replace-all', async (req, res) => {
+  console.time('replace-all-total');
+  try {
+    const { configId } = req.body;
+
+    if (!configId) {
+      return res.status(400).json({ success: false, error: 'configId is required' });
+    }
+
+    // Get all ProSBC instances
+    const proSbcInstanceService = (await import('../services/proSbcInstanceService.js')).default;
+    const instances = await proSbcInstanceService.getAllInstances();
+
+    const results = { successes: [], failures: [] };
+
+    // Helper to compute end of current month
+    const now = new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    for (const instance of instances) {
+      console.time(`process-instance-${instance.id}`);
+      try {
+        const instanceId = instance.id;
+        const instanceConfig = await getInstanceConfig(instanceId);
+        const fileManager = new ProSBCFileAPI(instanceId);
+
+        // Get DM files
+        const dmResult = await fileManager.listDmFiles(configId);
+        if (!dmResult.success) {
+          throw new Error('Failed to list DM files');
+        }
+        const dmFiles = dmResult.files.filter(file =>
+          file.id &&
+          !isNaN(file.id) &&
+          file.name &&
+          file.name.endsWith('.csv') &&
+          !file.name.includes('called_calling')
+        );
+
+        // Get ProSBC instance details
+        let prosbcInstance;
+        if (instanceId) {
+          prosbcInstance = await ProSBCInstance.findOne({ where: { id: instanceId } });
+          if (!prosbcInstance) {
+            return res.status(400).json({ success: false, error: 'Invalid instance ID' });
+          }
+        } else {
+          prosbcInstance = await ProSBCInstance.findOne({ where: { name: 'default' } });
+          if (!prosbcInstance) {
+            prosbcInstance = { id: 1, name: 'default' };
+          }
+        }
+
+        // Aggregate new numbers across all files for this instance
+        const newNumbersMap = new Map(); // number -> { customerName, fileName }
+        const syncedFiles = [];
+
+        // Fetch and process files sequentially to avoid overwhelming remote host; still parallel within DB ops
+        for (const file of dmFiles) {
+          try {
+            const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
+            const response = await fetch(exportUrl, {
+              headers: await fileManager.getCommonHeaders()
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to fetch file ${file.name}: ${response.status}`);
+            }
+
+            const csvContent = await response.text();
+            let numbers = await extractNumbersFromCSV(csvContent);
+            numbers = numbers.map(n => (n || '').toString().trim()).filter(n => n);
+            numbers = Array.from(new Set(numbers));
+
+            // Upsert DM file record
+            await ProSBCDMFile.upsert({
+              file_name: file.name,
+              file_content: csvContent,
+              numbers: JSON.stringify(numbers),
+              prosbc_file_id: file.id.toString(),
+              prosbc_instance_id: prosbcInstance.id,
+              prosbc_instance_name: prosbcInstance.name,
+              total_numbers: numbers.length,
+              last_synced: new Date(),
+              status: 'active'
+            });
+
+            // Populate newNumbersMap
+            numbers.forEach(num => {
+              if (!newNumbersMap.has(num)) {
+                newNumbersMap.set(num, { customerName: file.name, fileName: file.name });
+              }
+            });
+
+            syncedFiles.push({ file_name: file.name, total_numbers: numbers.length });
+          } catch (err) {
+            console.error(`Error processing file ${file.name}:`, err);
+            results.failures.push({ instanceId: instance.id, file_name: file.name, error: err.message });
+          }
+        }
+
+        // Load existing active numbers for this instance
+        const existingRows = await CustomerNumber.findAll({ where: { prosbcInstanceId: prosbcInstance.id.toString(), removedDate: null } });
+        const existingMap = new Map(); // number -> row
+        existingRows.forEach(r => existingMap.set(r.number, r));
+
+        // Compute additions and removals
+        const additions = [];
+        const removalCandidates = [];
+
+        // Additions: newNumbersMap keys not in existingMap
+        for (const [num, meta] of newNumbersMap.entries()) {
+          if (!existingMap.has(num)) {
+            additions.push({ number: num, customerName: meta.customerName });
+          } else {
+            // If customerName changed, log an update event
+            const existing = existingMap.get(num);
+            if (existing.customerName !== meta.customerName) {
+              await NumberEvent.create({
+                number: num,
+                action: 'update',
+                customerName: meta.customerName,
+                prosbcInstanceId: prosbcInstance.id,
+                userId: req.user?.id || null,
+                userName: req.user?.username || null,
+                fileName: meta.fileName,
+                details: `Customer changed from ${existing.customerName} to ${meta.customerName}`,
+                timestamp: new Date()
+              });
+            }
+          }
+        }
+
+        // Removals: existing numbers not in newNumbersMap -> pending removal
+        for (const [num, row] of existingMap.entries()) {
+          if (!newNumbersMap.has(num)) {
+            removalCandidates.push({ number: num, customerName: row.customerName });
+          }
+        }
+
+        // Persist additions in batches
+        if (additions.length > 0) {
+          const batchSize = 1000;
+          for (let i = 0; i < additions.length; i += batchSize) {
+            const batch = additions.slice(i, i + batchSize).map(a => ({
+              number: a.number,
+              customerName: a.customerName,
+              addedDate: new Date(),
+              prosbcInstanceId: prosbcInstance.id,
+              addedBy: req.user?.id || null
+            }));
+            await CustomerNumber.bulkCreate(batch, { ignoreDuplicates: true });
+          }
+
+          // Create per-number events for additions (batch create)
+          const eventBatches = [];
+          const evBatchSize = 1000;
+          for (let i = 0; i < additions.length; i += evBatchSize) {
+            const eb = additions.slice(i, i + evBatchSize).map(a => ({
+              number: a.number,
+              action: 'add',
+              customerName: a.customerName,
+              prosbcInstanceId: prosbcInstance.id,
+              userId: req.user?.id || null,
+              userName: req.user?.username || null,
+              fileName: a.customerName,
+              details: 'Added during replace-all',
+              timestamp: new Date()
+            }));
+            eventBatches.push(eb);
+          }
+          for (const eb of eventBatches) {
+            await NumberEvent.bulkCreate(eb);
+          }
+
+          // Summary change record
+          await CustomerNumberChange.create({
+            customerName: 'multiple',
+            changeType: 'add',
+            count: additions.length,
+            timestamp: new Date(),
+            prosbcInstanceId: prosbcInstance.id,
+            userId: req.user?.id || null,
+            userName: req.user?.username || null,
+            details: `Replace-all: Added ${additions.length} numbers`
+          });
+        }
+
+        // Persist pending removals
+        if (removalCandidates.length > 0) {
+          const prBatchSize = 1000;
+          for (let i = 0; i < removalCandidates.length; i += prBatchSize) {
+            const batch = removalCandidates.slice(i, i + prBatchSize).map(r => ({
+              number: r.number,
+              customerName: r.customerName,
+              removalDate: endOfMonth,
+              prosbcInstanceId: prosbcInstance.id,
+              removedBy: req.user?.id || null
+            }));
+            await PendingRemoval.bulkCreate(batch, { ignoreDuplicates: true });
+          }
+
+          // Create per-number events for removals
+          const remEvBatches = [];
+          const evBatchSize2 = 1000;
+          for (let i = 0; i < removalCandidates.length; i += evBatchSize2) {
+            const eb = removalCandidates.slice(i, i + evBatchSize2).map(r => ({
+              number: r.number,
+              action: 'remove',
+              customerName: r.customerName,
+              prosbcInstanceId: prosbcInstance.id,
+              userId: req.user?.id || null,
+              userName: req.user?.username || null,
+              fileName: r.customerName,
+              details: `Scheduled removal on ${endOfMonth.toISOString()}`,
+              timestamp: new Date()
+            }));
+            remEvBatches.push(eb);
+          }
+          for (const eb of remEvBatches) {
+            await NumberEvent.bulkCreate(eb);
+          }
+
+          // Summary change record (pending removals logged as remove)
+          await CustomerNumberChange.create({
+            customerName: 'multiple',
+            changeType: 'remove',
+            count: removalCandidates.length,
+            timestamp: new Date(),
+            prosbcInstanceId: prosbcInstance.id,
+            userId: req.user?.id || null,
+            userName: req.user?.username || null,
+            details: `Replace-all: ${removalCandidates.length} numbers scheduled for removal on ${endOfMonth.toISOString()}`
+          });
+        }
+
+        // Push result for this instance
+        results.successes.push({
+          instanceId: instance.id,
+          syncedFiles
+        });
+
+        console.timeEnd(`process-instance-${instance.id}`);
+
+      } catch (error) {
+        console.timeEnd(`process-instance-${instance.id}`);
+        console.error(`Error replacing data for ${instance.id}:`, error);
+        results.failures.push({ instanceId: instance.id, error: error.message });
+      }
+    }
+
+    console.timeEnd('replace-all-total');
+    const hasSuccesses = results.successes.length > 0;
+    const hasFailures = results.failures.length > 0;
+
+    res.json({ success: hasSuccesses && !hasFailures, message: hasSuccesses ? `Data replace queued/completed for ${results.successes.length} instance(s).` : 'All replacements failed.', successes: results.successes, failures: results.failures });
+
+  } catch (err) {
+    console.timeEnd('replace-all-total');
+    console.error('Error replacing all data:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -455,6 +726,108 @@ router.delete('/clear', async (req, res) => {
 
   } catch (err) {
     console.error('Error clearing DM files:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /dm-files/process-pending-removals
+// Processes pending removals whose removalDate is <= now: marks CustomerNumber.removedDate
+router.post('/process-pending-removals', async (req, res) => {
+  try {
+    const now = new Date();
+  const due = await PendingRemoval.findAll({ where: { removalDate: { [Op.lte]: now } } });
+
+    if (!due || due.length === 0) {
+      return res.json({ success: true, message: 'No pending removals due' });
+    }
+
+    const processed = [];
+    for (const rem of due) {
+      try {
+        // Mark CustomerNumber removedDate
+        await CustomerNumber.update({ removedDate: rem.removalDate, removedBy: rem.removedBy }, {
+          where: { number: rem.number, prosbcInstanceId: rem.prosbcInstanceId, removedDate: null }
+        });
+
+        // Log summary change
+        let removedByName = null;
+        if (rem.removedBy) {
+          try {
+            const User = (await import('../models/User.js')).default;
+            const u = await User.findOne({ where: { id: rem.removedBy } });
+            if (u) removedByName = u.username;
+          } catch (err) {
+            console.error('Error resolving removedBy user name:', err);
+          }
+        }
+
+        await CustomerNumberChange.create({
+          customerName: rem.customerName,
+          changeType: 'remove',
+          count: 1,
+          timestamp: new Date(),
+          prosbcInstanceId: rem.prosbcInstanceId,
+          userId: rem.removedBy || null,
+          userName: removedByName,
+          details: `Processed pending removal for ${rem.number}`
+        });
+
+        // Remove pending removal
+        await rem.destroy();
+        processed.push(rem.number);
+      } catch (err) {
+        console.error('Error processing pending removal for', rem.number, err);
+      }
+    }
+
+    res.json({ success: true, processedCount: processed.length, processed });
+  } catch (err) {
+    console.error('Error processing pending removals:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /dm-files/monthly-usage
+// Returns billed unique numbers per customer for a given month (year, month)
+router.get('/monthly-usage', async (req, res) => {
+  try {
+    const instanceId = req.query.instanceId;
+    const year = parseInt(req.query.year, 10);
+    const month = parseInt(req.query.month, 10); // 1..12
+
+    if (!year || !month) {
+      return res.status(400).json({ success: false, error: 'year and month query parameters are required' });
+    }
+
+    const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const whereClause = {
+      addedDate: { [Op.lte]: monthEnd },
+      [Op.or]: [
+        { removedDate: null },
+        { removedDate: { [Op.gte]: monthStart } }
+      ]
+    };
+
+    if (instanceId) whereClause.prosbcInstanceId = instanceId.toString();
+
+    // Find unique numbers matching the condition
+    const rows = await CustomerNumber.findAll({ where: whereClause });
+
+    // Aggregate by customerName
+    const usageMap = new Map();
+    rows.forEach(r => {
+      const key = `${r.customerName}::${r.prosbcInstanceId}`;
+      if (!usageMap.has(key)) usageMap.set(key, { customerName: r.customerName, prosbcInstanceId: r.prosbcInstanceId, numbers: new Set() });
+      usageMap.get(key).numbers.add(r.number);
+    });
+
+    const result = Array.from(usageMap.values()).map(v => ({ customerName: v.customerName, prosbcInstanceId: v.prosbcInstanceId, count: v.numbers.size }));
+
+    res.json({ success: true, year, month, usage: result });
+  } catch (err) {
+    console.error('Error computing monthly usage:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

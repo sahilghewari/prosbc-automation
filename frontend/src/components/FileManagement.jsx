@@ -7,11 +7,13 @@ import CSVFileEditor from './CSVFileEditor';
 import LoadingAnimation from './LoadingAnimation';
 import InlineLoadingAnimation from './InlineLoadingAnimation';
 import { useProSBCInstance } from '../contexts/ProSBCInstanceContext';
+import { useBackgroundTasks } from '../contexts/BackgroundTasksContext';
 import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 
 function FileManagement({ onAuthError, configId }) {
   const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
+  const { startTask, updateTask, completeTask, failTask, tasks } = useBackgroundTasks();
   const instanceAPI = useInstanceAPI();
   // Helper to get auth headers
   const getAuthHeaders = () => {
@@ -76,6 +78,10 @@ function FileManagement({ onAuthError, configId }) {
   // Filter state for search results
   const [resultFilter, setResultFilter] = useState('all');
 
+  // Replace all data functionality
+  const [replaceResult, setReplaceResult] = useState(null);
+  const [replaceInstanceStatuses, setReplaceInstanceStatuses] = useState([]);
+
   // Add instance refresh hook to automatically reload files when instance changes
   useInstanceRefresh(
     async (instance) => {
@@ -100,22 +106,6 @@ function FileManagement({ onAuthError, configId }) {
       refreshOnInstanceChange: true
     }
   );
-
-  // Instance check
-  if (!hasSelectedInstance) {
-    return (
-      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
-        <div className="text-yellow-400 mb-4">
-          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-        </div>
-        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
-        <p className="text-gray-300 mb-4">Please select a ProSBC instance to manage files.</p>
-        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
-      </div>
-    );
-  }
 
   // Load files on component mount and when configId changes
   useEffect(() => {
@@ -153,6 +143,22 @@ function FileManagement({ onAuthError, configId }) {
     }
   }, [searchTerm, selectedFileType, selectedCategory, hasSelectedInstance]);
 
+  // Instance check
+  if (!hasSelectedInstance) {
+    return (
+      <div className="bg-gray-800 border border-yellow-600 rounded-lg p-6 text-center">
+        <div className="text-yellow-400 mb-4">
+          <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">No ProSBC Instance Selected</h3>
+        <p className="text-gray-300 mb-4">Please select a ProSBC instance to manage files.</p>
+        <p className="text-sm text-gray-400">Use the instance selector at the top of the page to choose a ProSBC server.</p>
+      </div>
+    );
+  }
+
   // Database number search function
   const searchNumber = async () => {
     if (!numberSearch.trim()) return;
@@ -188,6 +194,73 @@ function FileManagement({ onAuthError, configId }) {
       setSearchResult({ success: false, error: err.message });
     } finally {
       setSearching(false);
+    }
+  };
+
+  // Replace all data function
+  const replaceAllData = async () => {
+    if (!configId) return;
+
+    const taskId = startTask('Replace All Data', 'Starting data replacement...');
+
+    try {
+      updateTask(taskId, { message: 'Sending request to server...' });
+
+      const token = localStorage.getItem('dashboard_token');
+      const response = await fetch('/backend/api/dm-files/replace-all', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ configId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Replace failed: ${response.statusText}`);
+      }
+
+      updateTask(taskId, { message: 'Processing response...', progress: 50 });
+
+      const data = await response.json();
+      setReplaceResult(data);
+
+      // Populate instance statuses from the response
+      const statuses = [];
+      if (data.successes) {
+        data.successes.forEach(success => {
+          statuses.push({
+            instanceId: success.instanceId,
+            status: 'success',
+            message: `Successfully updated ${success.syncedFiles?.length || 0} files`,
+            details: success.syncedFiles
+          });
+        });
+      }
+      if (data.failures) {
+        data.failures.forEach(failure => {
+          statuses.push({
+            instanceId: failure.instanceId,
+            status: 'error',
+            message: failure.error || 'Update failed',
+            details: failure
+          });
+        });
+      }
+      setReplaceInstanceStatuses(statuses);
+
+      updateTask(taskId, { message: 'Finalizing...', progress: 90 });
+      completeTask(taskId, 'Data replacement completed successfully!');
+
+    } catch (err) {
+      setReplaceResult({ success: false, error: err.message });
+      setReplaceInstanceStatuses([{
+        instanceId: 'unknown',
+        status: 'error',
+        message: err.message,
+        details: null
+      }]);
+      failTask(taskId, `Data replacement failed: ${err.message}`);
     }
   };
 
@@ -520,6 +593,8 @@ function FileManagement({ onAuthError, configId }) {
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        // Trigger replace all data after successful file update
+        setTimeout(() => replaceAllData(), 2000);
       } else {
         setMessage(`❌ Update failed: ${result.error || 'Unknown error'}`);
       }
@@ -598,6 +673,8 @@ function FileManagement({ onAuthError, configId }) {
           fileInputRef.current.value = '';
         }
         setTimeout(() => loadFiles(), 1000);
+        // Trigger replace all data after successful file update
+        setTimeout(() => replaceAllData(), 3000);
       } else {
         setMessage(`❌ Update failed: ${result.message || 'Unknown error'}`);
       }
@@ -1225,6 +1302,9 @@ function FileManagement({ onAuthError, configId }) {
             loadFiles();
           }, 1000);
           
+          // Trigger replace all data after successful file save
+          setTimeout(() => replaceAllData(), 2000);
+          
           return { success: true, message: 'File saved successfully' };
         } else {
           throw new Error(result.message || 'Database update failed');
@@ -1280,6 +1360,9 @@ function FileManagement({ onAuthError, configId }) {
         setTimeout(() => {
           loadFiles();
         }, 1000);
+        
+        // Trigger replace all data after successful file save
+        setTimeout(() => replaceAllData(), 2000);
         
         return { success: true, message: 'File saved successfully' };
       } else {
@@ -1918,19 +2001,32 @@ function FileManagement({ onAuthError, configId }) {
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-bold text-white">Digit Map Files (DM)</h2>
-                  <button
-                    onClick={loadFiles}
-                    disabled={refreshing || switchingInstance}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      refreshing || switchingInstance
-                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                        : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
-                    }`}
-                  >
-                    {refreshing ? '⏳ Refreshing...' : 
-                     switchingInstance ? '🔄 Switching...' : 
-                     '🔄 Refresh'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={loadFiles}
+                      disabled={refreshing || switchingInstance}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        refreshing || switchingInstance
+                          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
+                      }`}
+                    >
+                      {refreshing ? '⏳ Refreshing...' : 
+                       switchingInstance ? '🔄 Switching...' : 
+                       '🔄 Refresh'}
+                    </button>
+                    <button
+                      onClick={replaceAllData}
+                      disabled={tasks.some(task => task.title === 'Replace All Data' && task.status === 'running') || !configId}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        tasks.some(task => task.title === 'Replace All Data' && task.status === 'running') || !configId
+                          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          : 'bg-red-600 text-white hover:bg-red-700'
+                      }`}
+                    >
+                      {tasks.some(task => task.title === 'Replace All Data' && task.status === 'running') ? '🔄 Replacing...' : '🗑️ Replace All Data'}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Search and Sort Controls for DM */}
@@ -2018,6 +2114,72 @@ function FileManagement({ onAuthError, configId }) {
 
           </div>
         </div>
+
+        {/* Replace All Data Result */}
+        {replaceResult && (
+          <div className="bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-700 mb-8">
+            {replaceResult.success ? (
+              <div className="text-green-400">
+                <div className="font-semibold mb-2">✅ Data replaced successfully!</div>
+                <div className="text-sm">{replaceResult.message}</div>
+              </div>
+            ) : (
+              <div className="text-red-400">
+                <div className="font-semibold mb-2">❌ Replace failed</div>
+                <div className="text-sm">{replaceResult.error}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Replace All Data Instance Status */}
+        {replaceInstanceStatuses.length > 0 && (
+          <div className="bg-gray-800 rounded-xl p-6 shadow-lg border border-gray-700 mb-8">
+            <h3 className="text-lg font-semibold text-white mb-4">ProSBC Instance Status</h3>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {replaceInstanceStatuses.map((instance, index) => (
+                <div key={instance.instanceId || index} className="p-4 bg-gray-700 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center">
+                      <span className={`w-3 h-3 rounded-full mr-3 ${
+                        instance.status === 'success' ? 'bg-green-400' :
+                        instance.status === 'error' ? 'bg-red-400' : 'bg-yellow-400'
+                      }`}></span>
+                      <span className="font-medium text-white">Instance: {instance.instanceId}</span>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      instance.status === 'success' ? 'bg-green-900 text-green-100' :
+                      instance.status === 'error' ? 'bg-red-900 text-red-100' : 'bg-yellow-900 text-yellow-100'
+                    }`}>
+                      {instance.status === 'success' ? 'UPDATED' : 'FAILED'}
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-300 mb-2">
+                    {instance.message}
+                  </div>
+                  {instance.details && instance.details.length > 0 && (
+                    <div className="text-xs text-gray-400">
+                      <div className="font-medium mb-1">Files Processed:</div>
+                      <ul className="list-disc list-inside space-y-1">
+                        {instance.details.map((file, fileIndex) => (
+                          <li key={fileIndex}>
+                            {file.file_name} ({file.total_numbers} numbers)
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {instance.status === 'error' && instance.details && (
+                    <div className="text-xs text-red-300 mt-2">
+                      <div className="font-medium">Error Details:</div>
+                      <div className="mt-1">{JSON.stringify(instance.details, null, 2)}</div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Status Message */}
         {message && (
