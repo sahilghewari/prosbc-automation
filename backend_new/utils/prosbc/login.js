@@ -14,16 +14,20 @@ export async function prosbcLogin(baseUrl, username, password) {
     throw new Error("Invalid URL: URL is empty or undefined");
   }
   
-  // Ensure URL has protocol
+  // Ensure URL has protocol and trailing slash
   let normalizedUrl = baseUrl;
   if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
     normalizedUrl = 'https://' + normalizedUrl;
   }
+  // Ensure trailing slash
+  if (!normalizedUrl.endsWith('/')) {
+    normalizedUrl += '/';
+  }
   
   console.log(`Attempting to login to: ${normalizedUrl}`);
   
-  const loginUrl = `${normalizedUrl}/login`;
-  const loginPostUrl = `${normalizedUrl}/login/check`;
+  const loginUrl = `${normalizedUrl}login`;
+  const loginPostUrl = `${normalizedUrl}login/check`;
   
   // Step 1: Fetch login page to get authenticity_token
   let authenticityToken = null;

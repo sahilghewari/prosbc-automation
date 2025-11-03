@@ -39,11 +39,14 @@ class ProSBCInstanceService {
       // Get the raw instance data to see exactly what's in the database
       const rawInstance = instance.get({ plain: true });
       
+      // Normalize baseUrl to remove trailing slashes
+      const normalizedBaseUrl = rawInstance.baseUrl.replace(/\/+$/, '');
+      
       // Get baseUrl directly from the instance data
       return {
         id: instance.id,
         name: instance.id, 
-        baseUrl: rawInstance.baseUrl,
+        baseUrl: normalizedBaseUrl,
         username: instance.username,
         password: instance.password,
         location: ''

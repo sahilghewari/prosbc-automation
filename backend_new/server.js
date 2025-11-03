@@ -227,6 +227,12 @@ app.get('/backend/api/prosbc-files/test-configs', async (req, res) => {
     }
 
     console.log(`[test-configs] Final baseURL: ${baseURL}`);
+    
+    // Normalize baseURL to ensure trailing slash
+    if (!baseURL.endsWith('/')) {
+      baseURL += '/';
+    }
+    
     const { prosbcLogin } = await import('./utils/prosbc/login.js');
     
     // Add retry logic for ProSBC login and config fetching

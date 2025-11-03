@@ -162,10 +162,13 @@ export async function getInstanceContext(instanceId) {
     
     const credentials = await proSbcInstanceService.getInstanceCredentials(instanceId);
     
+    // Normalize baseUrl to remove trailing slashes
+    const normalizedBaseUrl = instance.baseUrl.replace(/\/+$/, '');
+    
     return {
       id: instance.id,
       name: instance.name,
-      baseUrl: instance.baseUrl,
+      baseUrl: normalizedBaseUrl,
       username: credentials.username,
       password: credentials.password,
       location: instance.location,

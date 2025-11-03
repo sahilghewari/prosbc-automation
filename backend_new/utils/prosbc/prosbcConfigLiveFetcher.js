@@ -11,7 +11,9 @@ import fetch from 'node-fetch';
 export async function fetchLiveConfigIds(baseURL, sessionCookie) {
   if (!baseURL || !sessionCookie) throw new Error('Missing baseURL or sessionCookie');
 
-  const url = `${baseURL}/`;
+  // Ensure baseURL has trailing slash
+  const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : baseURL + '/';
+  const url = `${normalizedBaseURL}`;
   const headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'User-Agent': 'Mozilla/5.0 (Node.js)',
