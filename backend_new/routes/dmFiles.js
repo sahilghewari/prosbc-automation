@@ -17,6 +17,19 @@ import { ProSBCFileAPI } from '../utils/prosbc/prosbcFileManager.js';
 
 const router = express.Router();
 
+// In-memory progress tracking (use Redis in production)
+const progressStore = new Map();
+
+// Helper function to add timeout to promises
+function withTimeout(promise, timeoutMs = 60000) { // Increased to 60 seconds
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]);
+}
+
 // Helper to get instance config
 async function getInstanceConfig(instanceId) {
   if (instanceId) {
@@ -185,9 +198,45 @@ router.post('/sync', async (req, res) => {
   }
 });
 
+// Cleanup old progress entries (older than 1 hour)
+setInterval(() => {
+  const now = Date.now();
+  for (const [taskId, progress] of progressStore.entries()) {
+    if (progress.endTime && (now - progress.endTime) > 60 * 60 * 1000) { // 1 hour
+      progressStore.delete(taskId);
+    } else if (!progress.endTime && (now - progress.startTime) > 2 * 60 * 60 * 1000) { // 2 hours for running tasks
+      progressStore.delete(taskId);
+    }
+  }
+}, 10 * 60 * 1000); // Clean up every 10 minutes
+
+// GET /dm-files/replace-all/progress/:taskId
+router.get('/replace-all/progress/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  console.log(`[Progress] Getting progress for task: ${taskId}`);
+  const progress = progressStore.get(taskId);
+  
+  if (!progress) {
+    console.log(`[Progress] No progress found for task: ${taskId}`);
+    return res.status(404).json({ error: 'Progress not found' });
+  }
+  
+  console.log(`[Progress] Returning progress:`, {
+    status: progress.status,
+    message: progress.message,
+    progress: progress.progress,
+    totalInstances: progress.totalInstances,
+    processedInstances: progress.processedInstances
+  });
+  
+  res.json(progress);
+});
+
 // POST /dm-files/replace-all
 router.post('/replace-all', async (req, res) => {
+  const taskId = `replace-all-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   console.time('replace-all-total');
+  
   try {
     const { configId } = req.body;
 
@@ -195,19 +244,82 @@ router.post('/replace-all', async (req, res) => {
       return res.status(400).json({ success: false, error: 'configId is required' });
     }
 
+    // Initialize progress
+    progressStore.set(taskId, {
+      status: 'running',
+      message: 'Starting data replacement...',
+      progress: 0,
+      totalInstances: 0,
+      processedInstances: 0,
+      totalFiles: 0,
+      processedFiles: 0,
+      instances: [],
+      startTime: Date.now()
+    });
+
     // Get all ProSBC instances
     const proSbcInstanceService = (await import('../services/proSbcInstanceService.js')).default;
     const instances = await proSbcInstanceService.getAllInstances();
 
+    // Update progress with total counts
+    progressStore.set(taskId, {
+      ...progressStore.get(taskId),
+      totalInstances: instances.length,
+      message: `Found ${instances.length} instances to process`
+    });
+    console.log(`[ReplaceAll] Task ${taskId}: Starting with ${instances.length} instances`);
+
+    // Respond immediately with taskId
+    res.json({ 
+      success: true, 
+      message: 'Data replacement started', 
+      taskId,
+      totalInstances: instances.length
+    });
+
+    // Continue processing asynchronously
+    processReplaceAllAsync(taskId, instances, configId, req);
+
+  } catch (err) {
+    console.error('Error starting replace-all:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Async function to process replace-all operation
+// Async function to process replace-all operation
+async function processReplaceAllAsync(taskId, instances, configId, req) {
+  try {
     const results = { successes: [], failures: [] };
 
     // Helper to compute end of current month
     const now = new Date();
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    for (const instance of instances) {
+    // Function to process a single instance
+    const processInstance = async (instance) => {
       console.time(`process-instance-${instance.id}`);
+      const instanceStartTime = Date.now();
+      
       try {
+        // Update progress for instance start
+        const currentProgress = progressStore.get(taskId);
+        if (!currentProgress) return; // Task might have been cleaned up
+        
+        currentProgress.instances = currentProgress.instances || [];
+        currentProgress.instances.push({
+          instanceId: instance.id,
+          status: 'processing',
+          message: 'Starting...',
+          filesProcessed: 0,
+          totalFiles: 0,
+          startTime: instanceStartTime
+        });
+        progressStore.set(taskId, {
+          ...currentProgress,
+          message: `Processing instance ${instance.id}...`
+        });
+
         const instanceId = instance.id;
         const instanceConfig = await getInstanceConfig(instanceId);
         const fileManager = new ProSBCFileAPI(instanceId);
@@ -225,12 +337,23 @@ router.post('/replace-all', async (req, res) => {
           !file.name.includes('called_calling')
         );
 
+        // Update instance progress with file count
+        const currentProgress2 = progressStore.get(taskId);
+        if (!currentProgress2) return;
+        
+        const instanceIndex = currentProgress2.instances.findIndex(inst => inst.instanceId === instance.id);
+        if (instanceIndex !== -1) {
+          currentProgress2.instances[instanceIndex].totalFiles = dmFiles.length;
+          currentProgress2.totalFiles += dmFiles.length;
+        }
+        progressStore.set(taskId, currentProgress2);
+
         // Get ProSBC instance details
         let prosbcInstance;
         if (instanceId) {
           prosbcInstance = await ProSBCInstance.findOne({ where: { id: instanceId } });
           if (!prosbcInstance) {
-            return res.status(400).json({ success: false, error: 'Invalid instance ID' });
+            throw new Error('Invalid instance ID');
           }
         } else {
           prosbcInstance = await ProSBCInstance.findOne({ where: { name: 'default' } });
@@ -243,77 +366,118 @@ router.post('/replace-all', async (req, res) => {
         const newNumbersMap = new Map(); // number -> { customerName, fileName }
         const syncedFiles = [];
 
-        // Fetch and process files sequentially to avoid overwhelming remote host; still parallel within DB ops
-        for (const file of dmFiles) {
-          try {
-            const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
-            const response = await fetch(exportUrl, {
-              headers: await fileManager.getCommonHeaders()
-            });
-
-            if (!response.ok) {
-              throw new Error(`Failed to fetch file ${file.name}: ${response.status}`);
-            }
-
-            const csvContent = await response.text();
-            let numbers = await extractNumbersFromCSV(csvContent);
-            numbers = numbers.map(n => (n || '').toString().trim()).filter(n => n);
-            numbers = Array.from(new Set(numbers));
-
-            // Upsert DM file record
-            await ProSBCDMFile.upsert({
-              file_name: file.name,
-              file_content: csvContent,
-              numbers: JSON.stringify(numbers),
-              prosbc_file_id: file.id.toString(),
-              prosbc_instance_id: prosbcInstance.id,
-              prosbc_instance_name: prosbcInstance.name,
-              total_numbers: numbers.length,
-              last_synced: new Date(),
-              status: 'active'
-            });
-
-            // Populate newNumbersMap
-            numbers.forEach(num => {
-              if (!newNumbersMap.has(num)) {
-                newNumbersMap.set(num, { customerName: file.name, fileName: file.name });
-              }
-            });
-
-            syncedFiles.push({ file_name: file.name, total_numbers: numbers.length });
-          } catch (err) {
-            console.error(`Error processing file ${file.name}:`, err);
-            results.failures.push({ instanceId: instance.id, file_name: file.name, error: err.message });
+        // Process files in parallel with concurrency limit
+        const fileConcurrencyLimit = 2; // Reduced from 5 to prevent overwhelming servers
+        for (let i = 0; i < dmFiles.length; i += fileConcurrencyLimit) {
+          const fileBatch = dmFiles.slice(i, i + fileConcurrencyLimit);
+          
+          // Update progress before processing batch
+          const currentProgress3 = progressStore.get(taskId);
+          if (!currentProgress3) return;
+          
+          const instanceIndex2 = currentProgress3.instances.findIndex(inst => inst.instanceId === instance.id);
+          if (instanceIndex2 !== -1) {
+            currentProgress3.instances[instanceIndex2].message = `Processing files ${i + 1}-${Math.min(i + fileConcurrencyLimit, dmFiles.length)}...`;
           }
+          progressStore.set(taskId, currentProgress3);
+          
+          await Promise.allSettled(fileBatch.map(async (file) => {
+            try {
+              const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
+              const response = await withTimeout(fetch(exportUrl, {
+                headers: await fileManager.getCommonHeaders()
+              }), 15000); // 15 second timeout per file
+
+              if (!response.ok) {
+                throw new Error(`Failed to fetch file ${file.name}: ${response.status}`);
+              }
+
+              const csvContent = await response.text();
+              let numbers = await extractNumbersFromCSV(csvContent);
+              numbers = numbers.map(n => (n || '').toString().trim()).filter(n => n);
+              numbers = Array.from(new Set(numbers));
+
+              // Upsert DM file record
+              await ProSBCDMFile.upsert({
+                file_name: file.name,
+                file_content: csvContent,
+                numbers: JSON.stringify(numbers),
+                prosbc_file_id: file.id.toString(),
+                prosbc_instance_id: prosbcInstance.id,
+                prosbc_instance_name: prosbcInstance.name,
+                total_numbers: numbers.length,
+                last_synced: new Date(),
+                status: 'active'
+              });
+
+              // Populate newNumbersMap
+              numbers.forEach(num => {
+                if (!newNumbersMap.has(num)) {
+                  newNumbersMap.set(num, { customerName: file.name, fileName: file.name });
+                }
+              });
+
+              syncedFiles.push({ file_name: file.name, total_numbers: numbers.length });
+              
+              // Update file progress
+              const currentProgress4 = progressStore.get(taskId);
+              if (!currentProgress4) return;
+              
+              const instanceIndex3 = currentProgress4.instances.findIndex(inst => inst.instanceId === instance.id);
+              if (instanceIndex3 !== -1) {
+                currentProgress4.instances[instanceIndex3].filesProcessed += 1;
+                currentProgress4.processedFiles += 1;
+                const overallProgress = Math.round((currentProgress4.processedFiles / currentProgress4.totalFiles) * 100);
+                progressStore.set(taskId, {
+                  ...currentProgress4,
+                  progress: overallProgress,
+                  message: `Processed ${currentProgress4.processedFiles}/${currentProgress4.totalFiles} files across ${currentProgress4.processedInstances}/${currentProgress4.totalInstances} instances`
+                });
+              }
+              
+            } catch (err) {
+              console.error(`Error processing file ${file.name}:`, err);
+              results.failures.push({ instanceId: instance.id, file_name: file.name, error: err.message });
+            }
+          }));
         }
 
         // Load existing active numbers for this instance
+        console.time(`load-existing-${instance.id}`);
         const existingRows = await CustomerNumber.findAll({ where: { prosbcInstanceId: prosbcInstance.id.toString(), removedDate: null } });
+        console.timeEnd(`load-existing-${instance.id}`);
+        console.log(`[ReplaceAll] Instance ${instance.id}: Loaded ${existingRows.length} existing numbers`);
         const existingMap = new Map(); // number -> row
         existingRows.forEach(r => existingMap.set(r.number, r));
 
         // Compute additions and removals
         const additions = [];
         const removalCandidates = [];
+        const updates = []; // Track customer name changes
+
+        // Update progress
+        const currentProgress4 = progressStore.get(taskId);
+        if (!currentProgress4) return;
+        
+        const instanceIndex3 = currentProgress4.instances.findIndex(inst => inst.instanceId === instance.id);
+        if (instanceIndex3 !== -1) {
+          currentProgress4.instances[instanceIndex3].message = `Analyzing ${existingRows.length} existing numbers...`;
+        }
+        progressStore.set(taskId, currentProgress4);
 
         // Additions: newNumbersMap keys not in existingMap
         for (const [num, meta] of newNumbersMap.entries()) {
           if (!existingMap.has(num)) {
             additions.push({ number: num, customerName: meta.customerName });
           } else {
-            // If customerName changed, log an update event
+            // If customerName changed, track for batch update
             const existing = existingMap.get(num);
             if (existing.customerName !== meta.customerName) {
-              await NumberEvent.create({
+              updates.push({
                 number: num,
-                action: 'update',
-                customerName: meta.customerName,
-                prosbcInstanceId: prosbcInstance.id,
-                userId: req.user?.id || null,
-                userName: req.user?.username || null,
-                fileName: meta.fileName,
-                details: `Customer changed from ${existing.customerName} to ${meta.customerName}`,
-                timestamp: new Date()
+                oldCustomerName: existing.customerName,
+                newCustomerName: meta.customerName,
+                fileName: meta.fileName
               });
             }
           }
@@ -328,6 +492,9 @@ router.post('/replace-all', async (req, res) => {
 
         // Persist additions in batches
         if (additions.length > 0) {
+          console.log(`[ReplaceAll] Instance ${instance.id}: Adding ${additions.length} new numbers`);
+          console.time(`add-numbers-${instance.id}`);
+          
           const batchSize = 1000;
           for (let i = 0; i < additions.length; i += batchSize) {
             const batch = additions.slice(i, i + batchSize).map(a => ({
@@ -339,7 +506,9 @@ router.post('/replace-all', async (req, res) => {
             }));
             await CustomerNumber.bulkCreate(batch, { ignoreDuplicates: true });
           }
-
+          console.timeEnd(`add-numbers-${instance.id}`);
+          
+          console.time(`add-events-${instance.id}`);
           // Create per-number events for additions (batch create)
           const eventBatches = [];
           const evBatchSize = 1000;
@@ -360,8 +529,8 @@ router.post('/replace-all', async (req, res) => {
           for (const eb of eventBatches) {
             await NumberEvent.bulkCreate(eb);
           }
-
-          // Summary change record
+          console.timeEnd(`add-events-${instance.id}`);
+          
           await CustomerNumberChange.create({
             customerName: 'multiple',
             changeType: 'add',
@@ -374,8 +543,37 @@ router.post('/replace-all', async (req, res) => {
           });
         }
 
+        // Persist updates in batches
+        if (updates.length > 0) {
+          console.log(`[ReplaceAll] Instance ${instance.id}: Updating ${updates.length} customer names`);
+          
+          // Batch create update events
+          const updateEventBatches = [];
+          const updateBatchSize = 1000;
+          for (let i = 0; i < updates.length; i += updateBatchSize) {
+            const eb = updates.slice(i, i + updateBatchSize).map(u => ({
+              number: u.number,
+              action: 'update',
+              customerName: u.newCustomerName,
+              prosbcInstanceId: prosbcInstance.id,
+              userId: req.user?.id || null,
+              userName: req.user?.username || null,
+              fileName: u.fileName,
+              details: `Customer changed from ${u.oldCustomerName} to ${u.newCustomerName}`,
+              timestamp: new Date()
+            }));
+            updateEventBatches.push(eb);
+          }
+          for (const eb of updateEventBatches) {
+            await NumberEvent.bulkCreate(eb);
+          }
+        }
+
         // Persist pending removals
         if (removalCandidates.length > 0) {
+          console.log(`[ReplaceAll] Instance ${instance.id}: Scheduling ${removalCandidates.length} numbers for removal`);
+          console.time(`remove-numbers-${instance.id}`);
+          
           const prBatchSize = 1000;
           for (let i = 0; i < removalCandidates.length; i += prBatchSize) {
             const batch = removalCandidates.slice(i, i + prBatchSize).map(r => ({
@@ -387,7 +585,9 @@ router.post('/replace-all', async (req, res) => {
             }));
             await PendingRemoval.bulkCreate(batch, { ignoreDuplicates: true });
           }
-
+          console.timeEnd(`remove-numbers-${instance.id}`);
+          
+          console.time(`remove-events-${instance.id}`);
           // Create per-number events for removals
           const remEvBatches = [];
           const evBatchSize2 = 1000;
@@ -408,7 +608,8 @@ router.post('/replace-all', async (req, res) => {
           for (const eb of remEvBatches) {
             await NumberEvent.bulkCreate(eb);
           }
-
+          console.timeEnd(`remove-events-${instance.id}`);
+          
           // Summary change record (pending removals logged as remove)
           await CustomerNumberChange.create({
             customerName: 'multiple',
@@ -422,33 +623,89 @@ router.post('/replace-all', async (req, res) => {
           });
         }
 
+        console.log(`[ReplaceAll] Instance ${instance.id} summary: ${syncedFiles.length} files, ${additions.length} additions, ${removalCandidates.length} removals, ${updates.length} updates`);
+
         // Push result for this instance
         results.successes.push({
           instanceId: instance.id,
           syncedFiles
         });
 
+        // Update instance as completed
+        const currentProgress5 = progressStore.get(taskId);
+        if (!currentProgress5) return;
+        
+        const instanceIndex4 = currentProgress5.instances.findIndex(inst => inst.instanceId === instance.id);
+        if (instanceIndex4 !== -1) {
+          currentProgress5.instances[instanceIndex4].status = 'completed';
+          currentProgress5.instances[instanceIndex4].message = `Completed: ${syncedFiles.length} files processed`;
+          currentProgress5.processedInstances += 1;
+        }
+        progressStore.set(taskId, currentProgress5);
+        console.log(`[ReplaceAll] Task ${taskId}: Instance ${instance.id} completed, ${currentProgress5.processedInstances}/${currentProgress5.totalInstances} instances done`);
+
         console.timeEnd(`process-instance-${instance.id}`);
+        return { success: true, instanceId: instance.id, syncedFiles };
 
       } catch (error) {
         console.timeEnd(`process-instance-${instance.id}`);
         console.error(`Error replacing data for ${instance.id}:`, error);
         results.failures.push({ instanceId: instance.id, error: error.message });
+        
+        // Update instance as failed
+        const currentProgress6 = progressStore.get(taskId);
+        if (currentProgress6) {
+          const instanceIndex5 = currentProgress6.instances.findIndex(inst => inst.instanceId === instance.id);
+          if (instanceIndex5 !== -1) {
+            currentProgress6.instances[instanceIndex5].status = 'failed';
+            currentProgress6.instances[instanceIndex5].message = `Failed: ${error.message}`;
+          }
+          progressStore.set(taskId, currentProgress6);
+        }
+        
+        return { success: false, instanceId: instance.id, error: error.message };
       }
+    };
+
+    // Process instances in parallel with concurrency limit
+    const instanceConcurrencyLimit = 1; // Process one instance at a time to avoid overwhelming servers
+    for (let i = 0; i < instances.length; i += instanceConcurrencyLimit) {
+      const instanceBatch = instances.slice(i, i + instanceConcurrencyLimit);
+      await Promise.allSettled(instanceBatch.map(processInstance));
     }
 
     console.timeEnd('replace-all-total');
     const hasSuccesses = results.successes.length > 0;
     const hasFailures = results.failures.length > 0;
 
-    res.json({ success: hasSuccesses && !hasFailures, message: hasSuccesses ? `Data replace queued/completed for ${results.successes.length} instance(s).` : 'All replacements failed.', successes: results.successes, failures: results.failures });
+    // Mark progress as completed
+    const finalProgress = progressStore.get(taskId);
+    if (finalProgress) {
+      progressStore.set(taskId, {
+        ...finalProgress,
+        status: 'completed',
+        progress: 100,
+        message: hasSuccesses ? `Data replace completed for ${results.successes.length} instance(s).` : 'All replacements failed.',
+        endTime: Date.now()
+      });
+    }
+
+    console.log(`[ReplaceAll] Task ${taskId} completed: ${results.successes.length} successes, ${results.failures.length} failures`);
 
   } catch (err) {
-    console.timeEnd('replace-all-total');
-    console.error('Error replacing all data:', err);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error in async replace-all processing:', err);
+    // Mark progress as failed
+    const errorProgress = progressStore.get(taskId);
+    if (errorProgress) {
+      progressStore.set(taskId, {
+        ...errorProgress,
+        status: 'completed',
+        message: `Replace-all failed: ${err.message}`,
+        endTime: Date.now()
+      });
+    }
   }
-});
+}
 
 // POST /dm-files - Create a new DM file entry
 router.post('/', async (req, res) => {

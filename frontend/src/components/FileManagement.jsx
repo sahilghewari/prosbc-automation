@@ -220,37 +220,94 @@ function FileManagement({ onAuthError, configId }) {
         throw new Error(`Replace failed: ${response.statusText}`);
       }
 
-      updateTask(taskId, { message: 'Processing response...', progress: 50 });
-
       const data = await response.json();
-      setReplaceResult(data);
+      const serverTaskId = data.taskId;
 
-      // Populate instance statuses from the response
-      const statuses = [];
-      if (data.successes) {
-        data.successes.forEach(success => {
-          statuses.push({
-            instanceId: success.instanceId,
-            status: 'success',
-            message: `Successfully updated ${success.syncedFiles?.length || 0} files`,
-            details: success.syncedFiles
-          });
-        });
-      }
-      if (data.failures) {
-        data.failures.forEach(failure => {
-          statuses.push({
-            instanceId: failure.instanceId,
-            status: 'error',
-            message: failure.error || 'Update failed',
-            details: failure
-          });
-        });
-      }
-      setReplaceInstanceStatuses(statuses);
+      // Poll for progress
+      const pollProgress = async (startTime = Date.now()) => {
+        // Timeout after 30 minutes
+        if (Date.now() - startTime > 30 * 60 * 1000) {
+          console.log('[ReplaceAll] Polling timed out');
+          failTask(taskId, 'Operation timed out after 30 minutes');
+          return;
+        }
 
-      updateTask(taskId, { message: 'Finalizing...', progress: 90 });
-      completeTask(taskId, 'Data replacement completed successfully!');
+        try {
+          console.log('[ReplaceAll] Polling progress for task:', serverTaskId);
+          const progressResponse = await fetch(`/backend/api/dm-files/replace-all/progress/${serverTaskId}`, {
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : ''
+            }
+          });
+          console.log('[ReplaceAll] Progress response status:', progressResponse.status);
+          
+          if (progressResponse.ok) {
+            const progress = await progressResponse.json();
+            console.log('[ReplaceAll] Progress data:', progress);
+            
+            // Extract detailed information for the popup
+            let currentOperation = '';
+            if (progress.instances && progress.instances.length > 0) {
+              const activeInstance = progress.instances.find(inst => inst.status === 'processing');
+              if (activeInstance) {
+                currentOperation = `${activeInstance.instanceId}: ${activeInstance.message}`;
+              }
+            }
+
+            updateTask(taskId, { 
+              message: progress.message,
+              progress: progress.progress,
+              details: {
+                totalInstances: progress.totalInstances,
+                processedInstances: progress.processedInstances,
+                totalFiles: progress.totalFiles,
+                processedFiles: progress.processedFiles,
+                currentOperation: currentOperation
+              }
+            });
+
+            if (progress.status === 'running') {
+              // Continue polling
+              setTimeout(() => pollProgress(startTime), 2000); // Poll every 2 seconds
+            } else if (progress.status === 'completed') {
+              console.log('[ReplaceAll] Operation completed');
+              // Process completed
+              setReplaceResult(data);
+              
+              // Populate instance statuses from progress data
+              const statuses = [];
+              if (progress.instances) {
+                progress.instances.forEach(instance => {
+                  statuses.push({
+                    instanceId: instance.instanceId,
+                    status: instance.status === 'completed' ? 'success' : instance.status === 'failed' ? 'error' : 'processing',
+                    message: instance.message,
+                    details: instance.filesProcessed ? [{ file_name: `Processed ${instance.filesProcessed}/${instance.totalFiles} files`, total_numbers: 0 }] : []
+                  });
+                });
+              }
+              setReplaceInstanceStatuses(statuses);
+              
+              completeTask(taskId, 'Data replacement completed successfully!');
+            }
+          } else if (progressResponse.status === 404) {
+            console.log('[ReplaceAll] Progress not found, continuing to poll');
+            // Progress not found, might be an old task, continue polling
+            setTimeout(() => pollProgress(startTime), 2000);
+          } else {
+            console.log('[ReplaceAll] Progress response error:', progressResponse.status);
+            // Continue polling on other errors
+            setTimeout(() => pollProgress(startTime), 2000);
+          }
+        } catch (err) {
+          console.error('[ReplaceAll] Error polling progress:', err);
+          // Continue polling on error, but with longer interval
+          setTimeout(() => pollProgress(startTime), 5000);
+        }
+      };
+
+      // Start polling
+      setTimeout(pollProgress, 1000);
 
     } catch (err) {
       setReplaceResult({ success: false, error: err.message });
