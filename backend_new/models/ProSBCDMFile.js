@@ -56,6 +56,10 @@ const ProSBCDMFile = database.sequelize.define('ProSBCDMFile', {
     },
     {
       fields: ['status']
+    },
+    {
+      unique: true,
+      fields: ['file_name', 'prosbc_instance_id']
     }
   ]
 });

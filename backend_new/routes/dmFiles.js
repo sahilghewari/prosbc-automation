@@ -57,7 +57,7 @@ async function getInstanceConfig(instanceId) {
 // Function to extract numbers from CSV content
 function extractNumbersFromCSV(csvContent) {
   return new Promise((resolve, reject) => {
-    const numbers = [];
+    const numbersSet = new Set();
     const stream = Readable.from(csvContent);
 
     stream
@@ -67,10 +67,10 @@ function extractNumbersFromCSV(csvContent) {
         const calledValue = Object.values(row)[0] || '';
 
         if (calledValue && calledValue.trim() !== '' && calledValue.trim() !== 'called') {
-          numbers.push(calledValue.trim());
+          numbersSet.add(calledValue.trim());
         }
       })
-      .on('end', () => resolve(numbers))
+      .on('end', () => resolve(Array.from(numbersSet)))
       .on('error', reject);
   });
 }
@@ -1215,14 +1215,20 @@ router.post('/search', async (req, res) => {
 
     for (const searchNumber of numbers) {
       const foundLocations = [];
+      const seenLocations = new Set();
 
       for (const file of parsedFiles) {
         if (file.parsedNumbers.includes(searchNumber)) {
-          foundLocations.push({
-            file_name: file.file_name,
-            prosbc_instance_id: file.prosbc_instance_id,
-            prosbc_instance_name: file.prosbc_instance_name
-          });
+          const locationKey = `${file.file_name}|${file.prosbc_instance_id}`;
+          
+          if (!seenLocations.has(locationKey)) {
+            seenLocations.add(locationKey);
+            foundLocations.push({
+              file_name: file.file_name,
+              prosbc_instance_id: file.prosbc_instance_id,
+              prosbc_instance_name: file.prosbc_instance_name
+            });
+          }
         }
       }
 
