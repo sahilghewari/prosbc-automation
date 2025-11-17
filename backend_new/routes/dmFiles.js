@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import ProSBCDMFile from '../models/ProSBCDMFile.js';
 import ProSBCInstance from '../models/ProSBCInstance.js';
+import database from '../config/database.js';
 import { getProSBCCredentials } from '../utils/prosbc/multiInstanceManager.js';
 import { ProSBCFileAPI } from '../utils/prosbc/prosbcFileManager.js';
 
@@ -58,6 +59,7 @@ function extractNumbersFromCSV(csvContent) {
 
 // POST /dm-files/sync
 router.post('/sync', async (req, res) => {
+  const transaction = await database.sequelize.transaction();
   try {
     const instanceId = req.headers['x-prosbc-instance-id'];
     const { configId } = req.body;
@@ -85,33 +87,23 @@ router.post('/sync', async (req, res) => {
     // Get ProSBC instance details
     let prosbcInstance;
     if (instanceId) {
-      prosbcInstance = await ProSBCInstance.findOne({ where: { id: instanceId } });
+      prosbcInstance = await ProSBCInstance.findOne({ where: { id: instanceId }, transaction });
       if (!prosbcInstance) {
+        await transaction.rollback();
         return res.status(400).json({ success: false, error: 'Invalid instance ID' });
       }
     } else {
       // Default instance
-      prosbcInstance = await ProSBCInstance.findOne({ where: { name: 'default' } });
+      prosbcInstance = await ProSBCInstance.findOne({ where: { name: 'default' }, transaction });
       if (!prosbcInstance) {
         prosbcInstance = { id: 1, name: 'default' }; // Assume 1 if not found
       }
     }
 
-    const syncedFiles = [];
-    const errors = [];
-
-    for (const file of dmFiles) {
+    // Process files in parallel with concurrency limit
+    const concurrencyLimit = 5; // Limit to 5 concurrent requests
+    const processFile = async (file) => {
       try {
-        // Update status to syncing
-        await ProSBCDMFile.upsert({
-          file_name: file.name,
-          prosbc_file_id: file.id.toString(),
-          prosbc_instance_id: prosbcInstance.id,
-          prosbc_instance_name: prosbcInstance.name,
-          status: 'syncing',
-          last_synced: new Date()
-        });
-
         // Fetch the file content
         const exportUrl = `${fileManager.baseURL}${file.exportUrl}`;
         const response = await fetch(exportUrl, {
@@ -125,55 +117,77 @@ router.post('/sync', async (req, res) => {
         const csvContent = await response.text();
         const numbers = await extractNumbersFromCSV(csvContent);
 
-        // Store full CSV content and numbers array
-        await ProSBCDMFile.upsert({
-          file_name: file.name,
-          file_content: csvContent,
-          numbers: JSON.stringify(numbers),
-          prosbc_file_id: file.id.toString(),
-          prosbc_instance_id: prosbcInstance.id,
-          prosbc_instance_name: prosbcInstance.name,
-          total_numbers: numbers.length,
-          last_synced: new Date(),
-          status: 'active'
-        });
-
-        syncedFiles.push({
-          file_name: file.name,
-          total_numbers: numbers.length
-        });
-
-      } catch (err) {
-        console.error(`Error processing file ${file.name}:`, err);
-        errors.push({
-          file_name: file.name,
-          error: err.message
-        });
-
-        // Update status to inactive on error
-        try {
-          await ProSBCDMFile.upsert({
+        return {
+          success: true,
+          record: {
             file_name: file.name,
+            file_content: csvContent,
+            numbers: JSON.stringify(numbers),
             prosbc_file_id: file.id.toString(),
             prosbc_instance_id: prosbcInstance.id,
             prosbc_instance_name: prosbcInstance.name,
-            status: 'inactive',
-            last_synced: new Date()
-          });
-        } catch (dbError) {
-          console.error('Error updating file status:', dbError);
-        }
+            total_numbers: numbers.length,
+            last_synced: new Date(),
+            status: 'active'
+          },
+          file_name: file.name,
+          total_numbers: numbers.length
+        };
+      } catch (err) {
+        console.error(`Error processing file ${file.name}:`, err);
+        return {
+          success: false,
+          file_name: file.name,
+          error: err.message
+        };
+      }
+    };
+
+    // Chunk files into batches for concurrency control
+    const results = [];
+    for (let i = 0; i < dmFiles.length; i += concurrencyLimit) {
+      const batch = dmFiles.slice(i, i + concurrencyLimit);
+      const batchPromises = batch.map(processFile);
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+    }
+
+    // Separate successes and failures
+    const successes = results.filter(r => r.success);
+    const failures = results.filter(r => !r.success);
+
+    // Bulk create successful records
+    if (successes.length > 0) {
+      const records = successes.map(s => s.record);
+      await ProSBCDMFile.bulkCreate(records, { transaction, ignoreDuplicates: true });
+    }
+
+    // Handle failures - update status to inactive
+    for (const failure of failures) {
+      try {
+        await ProSBCDMFile.upsert({
+          file_name: failure.file_name,
+          prosbc_instance_id: prosbcInstance.id,
+          prosbc_instance_name: prosbcInstance.name,
+          status: 'inactive',
+          last_synced: new Date()
+        }, { transaction });
+      } catch (dbError) {
+        console.error('Error updating failed file status:', dbError);
       }
     }
 
+    await transaction.commit();
+
     res.json({
       success: true,
-      message: `Synced ${syncedFiles.length} files, ${errors.length} errors`,
-      syncedFiles,
-      errors
+      message: `Synced ${successes.length} files, ${failures.length} errors`,
+      syncedFiles: successes.map(s => ({ file_name: s.file_name, total_numbers: s.total_numbers })),
+      errors: failures
     });
 
   } catch (err) {
+    await transaction.rollback();
     console.error('Error syncing DM files:', err);
     res.status(500).json({ success: false, error: err.message });
   }
@@ -434,10 +448,12 @@ router.put('/:id/content', async (req, res) => {
 
 // DELETE /dm-files/clear
 router.delete('/clear', async (req, res) => {
+  const transaction = await database.sequelize.transaction();
   try {
     const instanceId = req.headers['x-prosbc-instance-id'];
 
     if (!instanceId) {
+      await transaction.rollback();
       return res.status(400).json({ success: false, error: 'instanceId is required in headers' });
     }
 
@@ -445,8 +461,11 @@ router.delete('/clear', async (req, res) => {
     const deletedCount = await ProSBCDMFile.destroy({
       where: {
         prosbc_instance_id: instanceId
-      }
+      },
+      transaction
     });
+
+    await transaction.commit();
 
     res.json({
       success: true,
@@ -454,6 +473,7 @@ router.delete('/clear', async (req, res) => {
     });
 
   } catch (err) {
+    await transaction.rollback();
     console.error('Error clearing DM files:', err);
     res.status(500).json({ success: false, error: err.message });
   }

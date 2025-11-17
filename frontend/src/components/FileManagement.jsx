@@ -2015,6 +2015,15 @@ function FileManagement({ onAuthError, configId }) {
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-bold text-white">Digit Map Files (DM)</h2>
                   <div className="flex gap-4 items-center">
+                    <label className="flex items-center text-gray-300 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={runInBackground}
+                        onChange={(e) => setRunInBackground(e.target.checked)}
+                        className="mr-2"
+                      />
+                      Run in background
+                    </label>
                     <button
                       onClick={loadFiles}
                       disabled={refreshing || switchingInstance}
@@ -2030,14 +2039,14 @@ function FileManagement({ onAuthError, configId }) {
                     </button>
                     <button
                       onClick={replaceDMFiles}
-                      disabled={(!runInBackground && replacing) || !configId || instances.length === 0}
+                      disabled={replacing || !runInBackground && isProcessing}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                        (!runInBackground && replacing) || !configId || instances.length === 0
+                        replacing || (!runInBackground && isProcessing)
                           ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
                           : 'bg-red-600/20 text-red-300 hover:bg-red-600/40 border border-red-600/30'
                       }`}
                     >
-                      {(!runInBackground && replacing) ? '🔄 Replacing...' : '🔄 Replace All Data'}
+                      {replacing ? '🔄 Replacing...' : 'Replace All Data'}
                     </button>
                   </div>
                 </div>
