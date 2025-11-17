@@ -20,6 +20,9 @@ export async function prosbcLogin(baseUrl, username, password) {
     normalizedUrl = 'https://' + normalizedUrl;
   }
   
+  // Remove trailing slashes to avoid double slashes in URLs
+  normalizedUrl = normalizedUrl.replace(/\/+$/, '');
+  
   console.log(`Attempting to login to: ${normalizedUrl}`);
   
   const loginUrl = `${normalizedUrl}/login`;

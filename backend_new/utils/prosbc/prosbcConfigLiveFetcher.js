@@ -11,6 +11,9 @@ import fetch from 'node-fetch';
 export async function fetchLiveConfigIds(baseURL, sessionCookie) {
   if (!baseURL || !sessionCookie) throw new Error('Missing baseURL or sessionCookie');
 
+  // Remove trailing slashes to avoid double slashes in URLs
+  baseURL = baseURL.replace(/\/+$/, '');
+  
   const url = `${baseURL}/`;
   const headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

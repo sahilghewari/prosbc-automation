@@ -11,7 +11,7 @@ import { useInstanceAPI } from '../hooks/useInstanceAPI.jsx';
 import { useInstanceRefresh } from '../hooks/useInstanceRefresh';
 
 function FileManagement({ onAuthError, configId }) {
-  const { selectedInstance, hasSelectedInstance } = useProSBCInstance();
+  const { selectedInstance, hasSelectedInstance, instances } = useProSBCInstance();
   const instanceAPI = useInstanceAPI();
   // Helper to get auth headers
   const getAuthHeaders = () => {
@@ -75,6 +75,13 @@ function FileManagement({ onAuthError, configId }) {
 
   // Filter state for search results
   const [resultFilter, setResultFilter] = useState('all');
+
+  // Replace all data functionality
+  const [replacing, setReplacing] = useState(false);
+  const [replaceResult, setReplaceResult] = useState(null);
+  const [replaceProgress, setReplaceProgress] = useState({ current: 0, total: 0 });
+  const [runInBackground, setRunInBackground] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Add instance refresh hook to automatically reload files when instance changes
   useInstanceRefresh(
@@ -1481,6 +1488,95 @@ function FileManagement({ onAuthError, configId }) {
     return filteredFiles;
   };
 
+  const replaceDMFiles = async () => {
+    if (!configId || instances.length === 0) return;
+
+    setIsProcessing(true);
+    if (!runInBackground) setReplacing(true);
+    setReplaceResult(null);
+    setReplaceProgress({ current: 0, total: instances.length });
+    const results = { successes: [], failures: [] };
+
+    try {
+      const token = localStorage.getItem('dashboard_token');
+
+      // Process all instances in parallel
+      const processInstance = async (instance) => {
+        try {
+          // Clear existing data for this instance
+          const clearResponse = await fetch('/backend/api/dm-files/clear', {
+            method: 'DELETE',
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'X-ProSBC-Instance-ID': instance.id.toString()
+            }
+          });
+
+          if (!clearResponse.ok) {
+            throw new Error(`Clear failed for instance ${instance.id}: ${clearResponse.statusText}`);
+          }
+
+          // Sync new data for this instance
+          const syncResponse = await fetch('/backend/api/dm-files/sync', {
+            method: 'POST',
+            headers: {
+              'Authorization': token ? `Bearer ${token}` : '',
+              'X-ProSBC-Instance-ID': instance.id.toString(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ configId })
+          });
+
+          if (!syncResponse.ok) {
+            throw new Error(`Sync failed for instance ${instance.id}: ${syncResponse.statusText}`);
+          }
+
+          const data = await syncResponse.json();
+          return { success: true, instanceId: instance.id, ...data };
+        } catch (err) {
+          return { success: false, instanceId: instance.id, error: err.message };
+        }
+      };
+
+      const promises = instances.map(processInstance);
+      const settledResults = await Promise.allSettled(promises);
+
+      // Process results
+      settledResults.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          const data = result.value;
+          if (data.success) {
+            results.successes.push(data);
+          } else {
+            results.failures.push(data);
+          }
+        } else {
+          // This shouldn't happen with our error handling, but just in case
+          results.failures.push({ instanceId: 'unknown', error: result.reason });
+        }
+        setReplaceProgress(prev => ({ ...prev, current: prev.current + 1 }));
+      });
+
+      // Aggregate final result
+      const hasSuccesses = results.successes.length > 0;
+      const hasFailures = results.failures.length > 0;
+      setReplaceResult({
+        success: hasSuccesses && !hasFailures, // Fully successful only if no failures
+        message: hasSuccesses
+          ? `Data replaced successfully for ${results.successes.length} instance(s). ${hasFailures ? `${results.failures.length} instance(s) failed.` : ''}`
+          : 'All replacements failed.',
+        successes: results.successes,
+        failures: results.failures
+      });
+    } catch (err) {
+      setReplaceResult({ success: false, error: err.message });
+    } finally {
+      setIsProcessing(false);
+      if (!runInBackground) setReplacing(false);
+      setReplaceProgress({ current: 0, total: 0 });
+    }
+  };
+
   // Render file table
   const renderFileTable = (files, fileType, typeLabel, colorClass) => {
     const totalFiles = fileType === 'routesets_definitions' ? dfFiles.length : dmFiles.length;
@@ -1918,20 +2014,87 @@ function FileManagement({ onAuthError, configId }) {
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <h2 className="text-2xl font-bold text-white">Digit Map Files (DM)</h2>
-                  <button
-                    onClick={loadFiles}
-                    disabled={refreshing || switchingInstance}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      refreshing || switchingInstance
-                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                        : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
-                    }`}
-                  >
-                    {refreshing ? '⏳ Refreshing...' : 
-                     switchingInstance ? '🔄 Switching...' : 
-                     '🔄 Refresh'}
-                  </button>
+                  <div className="flex gap-4 items-center">
+                    <button
+                      onClick={loadFiles}
+                      disabled={refreshing || switchingInstance}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        refreshing || switchingInstance
+                          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          : 'bg-pink-600/20 text-pink-300 hover:bg-pink-600/40 border border-pink-600/30'
+                      }`}
+                    >
+                      {refreshing ? '⏳ Refreshing...' : 
+                       switchingInstance ? '🔄 Switching...' : 
+                       '🔄 Refresh'}
+                    </button>
+                    <button
+                      onClick={replaceDMFiles}
+                      disabled={(!runInBackground && replacing) || !configId || instances.length === 0}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                        (!runInBackground && replacing) || !configId || instances.length === 0
+                          ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                          : 'bg-red-600/20 text-red-300 hover:bg-red-600/40 border border-red-600/30'
+                      }`}
+                    >
+                      {(!runInBackground && replacing) ? '🔄 Replacing...' : '🔄 Replace All Data'}
+                    </button>
+                  </div>
                 </div>
+
+                {/* Replace Progress */}
+                {isProcessing && replaceProgress.total > 0 && (
+                  <div className="mb-4">
+                    <div className="text-sm text-gray-300 mb-2">
+                      Processing instances: {replaceProgress.current} / {replaceProgress.total}
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-red-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(replaceProgress.current / replaceProgress.total) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Replace Result */}
+                {replaceResult && (
+                  <div className="mb-4">
+                    {replaceResult.success ? (
+                      <div className="p-4 bg-green-900 border border-green-700 text-green-100 rounded-lg">
+                        <div className="font-semibold mb-2">Replacement completed!</div>
+                        <div className="text-sm">
+                          {replaceResult.message}
+                          {replaceResult.successes && replaceResult.successes.length > 0 && (
+                            <div className="mt-2">
+                              <div className="font-medium">Successful Instances:</div>
+                              <ul className="list-disc list-inside mt-1">
+                                {replaceResult.successes.map((success, index) => (
+                                  <li key={index}>Instance {success.instanceId}: {success.message}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {replaceResult.failures && replaceResult.failures.length > 0 && (
+                            <div className="mt-2">
+                              <div className="font-medium text-red-300">Failed Instances:</div>
+                              <ul className="list-disc list-inside mt-1">
+                                {replaceResult.failures.map((failure, index) => (
+                                  <li key={index}>Instance {failure.instanceId}: {failure.error}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-red-900 border border-red-700 text-red-100 rounded-lg">
+                        <div className="font-semibold mb-2">Replacement failed!</div>
+                        <div className="text-sm">{replaceResult.error || replaceResult.message}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Search and Sort Controls for DM */}
                 <div className="bg-gray-700/50 border border-gray-600 rounded-xl p-4">

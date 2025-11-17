@@ -115,6 +115,9 @@ class ProSBCFileAPI {
       console.log(`[ProSBC FileAPI] Using environment-based configuration: ${this.baseURL}`);
     }
     
+    // Normalize baseURL to remove trailing slashes
+    this.baseURL = this.baseURL.replace(/\/+$/, '');
+    
     return this.instanceContext;
   }
 
